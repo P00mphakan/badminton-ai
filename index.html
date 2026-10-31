@@ -31,8 +31,8 @@
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
 
-    <!-- Top Header -->
-    <header class="sticky top-0 z-30 glass-panel border-b border-slate-800/80 px-4 py-2.5">
+    <!-- Top Header (Visible on Stats / 2D Analytics / AI Coach tabs; Live tab uses Fullscreen HUD On-Top) -->
+    <header id="mainAppHeader" class="sticky top-0 z-10 glass-panel border-b border-slate-800/80 px-4 py-2.5">
         <div class="max-w-6xl mx-auto flex items-center justify-between gap-2">
             <div class="flex items-center gap-2.5">
                 <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center shadow-md shadow-emerald-500/20 shrink-0">
@@ -136,215 +136,230 @@
 
     <!-- Main Content -->
     <main class="flex-1 max-w-6xl w-full mx-auto p-3 sm:p-4">
-        <!-- ==================== PAGE 1: REAL CAMERA, LINE/NET CV & AUTO AI SCOREBOARD ==================== -->
-        <section id="tab-live" class="space-y-3">
+        <!-- ==================== PAGE 1: FULLSCREEN REALTIME CAMERA & FLOATING GRAPHICS ON TOP ==================== -->
+        <section id="tab-live" class="live-fullscreen-stage">
             <input type="file" id="videoUploadInput" accept="video/*" class="hidden" onchange="handleVideoUpload(event)">
 
-            <!-- AI AUTOMATIC BWF SCOREBOARD PANEL -->
-            <div class="glass-panel rounded-2xl p-3 sm:p-3.5 border border-emerald-500/30 shadow-lg">
-                <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-800/90">
-                    <div class="flex items-center gap-2">
-                        <span id="boardSetNumber" class="px-2.5 py-0.5 rounded-md bg-emerald-500 text-slate-950 font-extrabold text-[11px] tracking-wide">SET 1</span>
-                        <span class="text-xs font-semibold text-slate-300">เซต: <b id="boardSetsA" class="text-cyan-300">0</b> - <b id="boardSetsB" class="text-rose-400">0</b></span>
-                        <span class="text-slate-600">|</span>
-                        <span id="boardServiceBoxText" class="text-[11px] text-amber-300 font-medium">ทีม A เสิร์ฟ • คอร์ทขวา (แต้มคู่)</span>
-                    </div>
-
-                    <!-- AI Hawkeye Line Call Status Badge -->
-                    <div class="flex items-center gap-2">
-                        <span id="boardLastCallBadge" class="px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700">
-                            รอเริ่มแรลลี่ (พร้อมตรวจจับอัตโนมัติ)
-                        </span>
-                    </div>
-                </div>
-
-                <!-- Main Score Readout & Manual/Override Controls -->
-                <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-                    <!-- Team A Score Box -->
-                    <div class="md:col-span-4 bg-slate-900/95 border border-cyan-500/30 rounded-xl px-3.5 py-2 flex items-center justify-between">
-                        <div>
-                            <div class="flex items-center gap-1.5">
-                                <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
-                                <span class="text-xs font-bold text-cyan-300">ทีม A (แดนไกล)</span>
-                                <span id="serveBadgeA" class="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-bold">เสิร์ฟ</span>
-                            </div>
-                            <div class="flex items-center gap-1 mt-1.5">
-                                <button onclick="manualAdjustScore('A', 1)" class="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold">+1 แต้ม</button>
-                                <button onclick="manualAdjustScore('A', -1)" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 text-[10px]">-1</button>
-                            </div>
-                        </div>
-                        <div id="boardScoreA" class="text-3xl sm:text-4xl font-extrabold font-mono text-white">0</div>
-                    </div>
-
-                    <!-- Center AI Referee Controls (Undo, Singles/Doubles, Voice Umpire) -->
-                    <div class="md:col-span-4 flex flex-wrap items-center justify-center gap-1.5">
-                        <button id="btnMatchFormat" onclick="toggleMatchTypeSinglesDoubles()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-[11px] font-medium">
-                            ประเภทคู่ (Doubles 6.10m)
-                        </button>
-                        <button id="btnVoiceReferee" onclick="toggleVoiceReferee()" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-medium flex items-center gap-1">
-                            <i class="ph-fill ph-speaker-high"></i>
-                            <span>เสียงขานแต้ม</span>
-                        </button>
-                        <button onclick="undoLastPoint()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-[11px] font-medium flex items-center gap-1" title="ย้อนกลับแต้มล่าสุด">
-                            <i class="ph-bold ph-arrow-u-up-left"></i>
-                            <span>Undo</span>
-                        </button>
-                    </div>
-
-                    <!-- Team B Score Box -->
-                    <div class="md:col-span-4 bg-slate-900/95 border border-rose-500/30 rounded-xl px-3.5 py-2 flex items-center justify-between">
-                        <div id="boardScoreB" class="text-3xl sm:text-4xl font-extrabold font-mono text-white">0</div>
-                        <div class="text-right">
-                            <div class="flex items-center justify-end gap-1.5">
-                                <span id="serveBadgeB" class="hidden px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-bold">เสิร์ฟ</span>
-                                <span class="text-xs font-bold text-rose-300">ทีม B (แดนใกล้)</span>
-                                <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                            </div>
-                            <div class="flex items-center justify-end gap-1 mt-1.5">
-                                <button onclick="manualAdjustScore('B', -1)" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 text-[10px]">-1</button>
-                                <button onclick="manualAdjustScore('B', 1)" class="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[10px] font-bold">+1 แต้ม</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Real Camera / Video Viewport -->
-            <div id="cameraViewportContainer" class="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl camera-viewport-landscape w-full mx-auto">
-                <video id="webcamVideo" autoplay playsinline muted class="w-full h-full object-contain hidden"></video>
+            <!-- Full-Screen Camera / Video Viewport (100vw x 100dvh) -->
+            <div id="cameraViewportContainer" class="relative w-full h-full overflow-hidden bg-slate-950">
+                <video id="webcamVideo" autoplay playsinline muted class="w-full h-full object-cover hidden"></video>
                 <canvas id="liveCanvas" class="w-full h-full block cursor-crosshair"></canvas>
 
-                <!-- Unified Non-Overlapping Top HUD Bar -->
-                <div class="absolute top-2.5 inset-x-2.5 flex items-start justify-between gap-2 pointer-events-none z-10">
-                    <!-- Top-Left Real CV & Pose Status Badges (Never collides with right box) -->
-                    <div class="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
-                        <div class="flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 max-w-full">
-                            <span id="recDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0"></span>
-                            <span id="modeStatusText" class="text-[10px] sm:text-[11px] font-medium text-slate-200 truncate">AI พร้อมใช้งานจริง</span>
+                <!-- ==================== TOP FLOATING BROADCAST HUD (ON TOP OF CAMERA) ==================== -->
+                <div class="absolute top-2 sm:top-3 inset-x-2.5 sm:inset-x-4 z-20 flex flex-col gap-1.5 pointer-events-none" style="padding-top: env(safe-area-inset-top);">
+                    <!-- Top Row: Floating Broadcast BWF Scoreboard (Left) + Real Shuttle Speedometer (Right) -->
+                    <div class="flex items-start justify-between gap-2">
+                        <!-- Floating BWF Scoreboard & AI Line Call Overlay -->
+                        <div class="hud-overlay-panel rounded-2xl px-2.5 py-2 sm:px-3.5 sm:py-2.5 pointer-events-auto shadow-2xl border border-emerald-500/35 max-w-[66%] sm:max-w-xl">
+                            <!-- Set & Hawkeye Call Status Row -->
+                            <div class="flex flex-wrap items-center gap-1.5 pb-1.5 mb-1.5 border-b border-white/10">
+                                <span id="boardSetNumber" class="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-extrabold text-[10px] tracking-wide">SET 1</span>
+                                <span class="text-[11px] font-semibold text-slate-200">เซต <b id="boardSetsA" class="text-cyan-300">0</b>-<b id="boardSetsB" class="text-rose-400">0</b></span>
+                                <span class="hidden md:inline text-slate-600">|</span>
+                                <span id="boardServiceBoxText" class="hidden md:inline text-[10px] text-amber-300 font-medium">ทีม A เสิร์ฟ • คอร์ทขวา</span>
+                                <span id="boardLastCallBadge" class="px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-medium bg-slate-900/90 text-emerald-300 border border-emerald-500/30 truncate max-w-[165px] sm:max-w-xs">
+                                    พร้อมตรวจจับอัตโนมัติ
+                                </span>
+                            </div>
+
+                            <!-- Compact Broadcast Score & Quick Controls -->
+                            <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+                                <!-- Team A -->
+                                <div class="flex items-center gap-1.5 bg-slate-950/75 border border-cyan-500/30 rounded-xl px-2 py-1">
+                                    <div>
+                                        <div class="flex items-center gap-1">
+                                            <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+                                            <span class="text-[10px] font-bold text-cyan-300">ทีม A</span>
+                                            <span id="serveBadgeA" class="px-1 py-0.2 rounded bg-amber-400/20 text-amber-300 text-[8px] font-bold">เสิร์ฟ</span>
+                                        </div>
+                                        <div class="flex items-center gap-1 mt-0.5">
+                                            <button onclick="manualAdjustScore('A', 1)" class="px-1.5 py-0.5 rounded bg-cyan-500/25 hover:bg-cyan-500/40 text-cyan-200 text-[9px] font-bold">+1</button>
+                                            <button onclick="manualAdjustScore('A', -1)" class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[9px]">-1</button>
+                                        </div>
+                                    </div>
+                                    <div id="boardScoreA" class="text-2xl sm:text-3xl font-extrabold font-mono text-white pl-1">0</div>
+                                </div>
+
+                                <span class="text-xs font-bold text-slate-400">VS</span>
+
+                                <!-- Team B -->
+                                <div class="flex items-center gap-1.5 bg-slate-950/75 border border-rose-500/30 rounded-xl px-2 py-1">
+                                    <div id="boardScoreB" class="text-2xl sm:text-3xl font-extrabold font-mono text-white pr-1">0</div>
+                                    <div class="text-right">
+                                        <div class="flex items-center justify-end gap-1">
+                                            <span id="serveBadgeB" class="hidden px-1 py-0.2 rounded bg-amber-400/20 text-amber-300 text-[8px] font-bold">เสิร์ฟ</span>
+                                            <span class="text-[10px] font-bold text-rose-300">ทีม B</span>
+                                            <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+                                        </div>
+                                        <div class="flex items-center justify-end gap-1 mt-0.5">
+                                            <button onclick="manualAdjustScore('B', -1)" class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[9px]">-1</button>
+                                            <button onclick="manualAdjustScore('B', 1)" class="px-1.5 py-0.5 rounded bg-rose-500/25 hover:bg-rose-500/40 text-rose-200 text-[9px] font-bold">+1</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Quick Referee Buttons -->
+                                <div class="flex items-center gap-1">
+                                    <button id="btnMatchFormat" onclick="toggleMatchTypeSinglesDoubles()" class="px-2 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-cyan-300 border border-white/10 text-[10px] font-medium">
+                                        คู่ 6.1m
+                                    </button>
+                                    <button id="btnVoiceReferee" onclick="toggleVoiceReferee()" class="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-medium flex items-center gap-1" title="เปิด/ปิดเสียงกรรมการขานแต้ม">
+                                        <i class="ph-fill ph-speaker-high"></i>
+                                        <span class="hidden sm:inline">เสียงขาน</span>
+                                    </button>
+                                    <button onclick="undoLastPoint()" class="px-2 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-amber-300 border border-white/10 text-[10px] font-medium flex items-center gap-0.5" title="ย้อนกลับแต้มล่าสุด">
+                                        <i class="ph-bold ph-arrow-u-up-left"></i>
+                                        <span class="hidden sm:inline">Undo</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 flex items-center gap-1.5 shrink-0">
-                            <span id="cvCourtConfText" class="text-[10px] font-semibold text-amber-300">คอร์ท: 0%</span>
-                            <span class="text-slate-600">•</span>
-                            <span id="cvNetConfText" class="text-[10px] font-semibold text-cyan-300">เน็ท: 0%</span>
-                        </div>
-                        <div class="bg-slate-950/85 backdrop-blur-md px-2 py-1 rounded-full border border-white/10 text-[10px] text-cyan-300 font-medium flex items-center gap-1 shrink-0">
-                            <i id="orientationIcon" class="ph-bold ph-device-mobile-camera rotate-90"></i>
-                            <span id="orientationBadgeText">Auto</span>
-                        </div>
-                        <div class="bg-slate-950/85 backdrop-blur-md px-2 py-1 rounded-full border border-white/10 text-[10px] text-emerald-300 font-mono shrink-0">
-                            <span id="fpsCounter">60</span> FPS
+
+                        <!-- Top-Right Real Shuttle Speed HUD (On Top of Camera) -->
+                        <div class="shrink-0 hud-overlay-panel border border-amber-500/40 rounded-2xl px-3 py-2 text-right shadow-2xl pointer-events-auto min-w-[116px] sm:min-w-[140px]">
+                            <div class="text-[9px] sm:text-[10px] text-amber-400 font-semibold uppercase tracking-wider flex items-center justify-end gap-1">
+                                <i class="ph-fill ph-lightning"></i>
+                                <span>ความเร็วลูกจริง</span>
+                            </div>
+                            <div class="flex items-baseline justify-end gap-1 leading-none my-0.5">
+                                <span id="liveSpeedValue" class="text-2xl sm:text-3xl font-extrabold font-mono text-white">0</span>
+                                <span class="text-[10px] text-slate-300">km/h</span>
+                            </div>
+                            <div id="liveShotTypeBadge" class="text-[9px] sm:text-[10px] text-amber-300 font-medium truncate max-w-[130px]">
+                                รอตรวจจับลูกตี
+                            </div>
+                            <div class="mt-1 pt-1 border-t border-white/10 flex items-center justify-end gap-2 text-[9px] text-slate-300">
+                                <span>สูงสุด <b id="hudMaxSmashQuick" class="text-amber-400">0</b></span>
+                                <span>•</span>
+                                <span>เฉลี่ย <b id="hudAvgSmashQuick" class="text-emerald-400">0</b></span>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Top-Right Real Shuttle Speed HUD (Shrink-0, Compact & Clean) -->
-                    <div class="shrink-0 bg-slate-950/90 backdrop-blur-md border border-amber-500/30 rounded-2xl px-3 py-1.5 text-right shadow-xl min-w-[112px]">
-                        <div class="text-[9px] sm:text-[10px] text-amber-400 font-semibold uppercase tracking-wider flex items-center justify-end gap-1">
-                            <i class="ph-fill ph-lightning"></i>
-                            <span>ความเร็วลูก</span>
+                    <!-- Second Top Row: Compact Telemetry Pills & Fullscreen/HUD Toggles -->
+                    <div class="flex flex-wrap items-center justify-between gap-1.5">
+                        <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+                            <div class="flex items-center gap-1.5 hud-overlay-panel px-2.5 py-1 rounded-full">
+                                <span id="recDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0"></span>
+                                <span id="modeStatusText" class="text-[10px] font-medium text-slate-200 truncate max-w-[150px] sm:max-w-xs">AI พร้อมใช้งานจริง</span>
+                            </div>
+                            <div class="hud-overlay-panel px-2.5 py-1 rounded-full flex items-center gap-1.5 shrink-0">
+                                <span id="cvCourtConfText" class="text-[10px] font-semibold text-emerald-300">คอร์ท: ล็อกแล้ว</span>
+                                <span class="text-slate-500">•</span>
+                                <span id="cvNetConfText" class="text-[10px] font-semibold text-cyan-300">เน็ท: ล็อกแล้ว</span>
+                            </div>
+                            <div class="hud-overlay-panel px-2 py-1 rounded-full text-[10px] text-emerald-300 font-mono shrink-0">
+                                <span id="fpsCounter">60</span> FPS
+                            </div>
+                            <div class="hidden sm:flex hud-overlay-panel px-2 py-1 rounded-full text-[10px] text-cyan-300 font-medium items-center gap-1 shrink-0">
+                                <i id="orientationIcon" class="ph-bold ph-device-mobile-camera"></i>
+                                <span id="orientationBadgeText">Full Screen</span>
+                            </div>
                         </div>
-                        <div class="flex items-baseline justify-end gap-1 leading-none my-0.5">
-                            <span id="liveSpeedValue" class="text-xl sm:text-2xl font-extrabold font-mono text-white">0</span>
-                            <span class="text-[9px] text-slate-400">km/h</span>
-                        </div>
-                        <div id="liveShotTypeBadge" class="text-[9px] sm:text-[10px] text-amber-300 font-medium truncate max-w-[120px]">
-                            รอตรวจจับลูกตี
+
+                        <!-- Right Quick HUD Utility Buttons -->
+                        <div class="flex items-center gap-1.5 pointer-events-auto">
+                            <button onclick="toggleApiKeyModal()" class="hud-overlay-panel hover:bg-slate-800/80 text-amber-300 px-2.5 py-1 rounded-full text-[10px] font-medium flex items-center gap-1" title="ตั้งค่า Gemini API Key">
+                                <i class="ph-fill ph-key text-amber-400"></i>
+                                <span class="hidden sm:inline">AI Key</span>
+                            </button>
+                            <button onclick="toggleBottomDockVisibility()" id="btnToggleHudDock" class="hud-overlay-panel hover:bg-slate-800/80 text-slate-200 px-2.5 py-1 rounded-full text-[10px] font-medium flex items-center gap-1" title="ซ่อนหรือแสดงแถบปุ่มควบคุมด้านล่าง">
+                                <i class="ph-bold ph-sliders-horizontal text-cyan-400"></i>
+                                <span id="lblToggleHudDock">ซ่อนปุ่ม</span>
+                            </button>
+                            <button onclick="toggleBrowserFullscreen()" class="hud-overlay-panel hover:bg-slate-800/80 text-emerald-300 px-2.5 py-1 rounded-full text-[10px] font-medium flex items-center gap-1" title="ขยายเต็มหน้าจอ 100%">
+                                <i id="fullscreenIcon" class="ph-bold ph-corners-out"></i>
+                                <span class="hidden sm:inline">เต็มจอ</span>
+                            </button>
                         </div>
                     </div>
                 </div>
 
-                <!-- Bottom Info Strip (Clean Single-Line Responsive Layout) -->
-                <div class="absolute bottom-2 inset-x-2.5 flex items-center justify-between gap-2 pointer-events-none text-[10px] sm:text-[11px] bg-slate-950/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 z-10">
-                    <div class="flex items-center gap-2.5 shrink-0">
-                        <span class="text-slate-200"><b class="text-amber-400">ตบสูงสุด:</b> <span id="hudMaxSmashQuick">0</span> km/h</span>
-                        <span class="text-slate-600">|</span>
-                        <span class="text-slate-200"><b class="text-emerald-400">ตบเฉลี่ย:</b> <span id="hudAvgSmashQuick">0</span> km/h</span>
+                <!-- ==================== BOTTOM FLOATING CONTROLS (ON TOP OF CAMERA) ==================== -->
+                <div id="floatingBottomDock" class="absolute bottom-[62px] inset-x-2.5 sm:inset-x-4 z-20 flex flex-col gap-2 pointer-events-none max-w-5xl mx-auto">
+                    <!-- Uploaded Video Playback Timeline Bar (Floating On Top) -->
+                    <div id="videoPlaybackControls" class="hidden hud-overlay-panel rounded-2xl px-3 py-2 border border-cyan-500/35 space-y-1.5 pointer-events-auto shadow-2xl">
+                        <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold text-[10px]">คลิปสนามจริง</span>
+                                <span id="uploadedFileName" class="text-slate-200 font-medium truncate max-w-[160px] sm:max-w-xs text-[11px]">IMG_7847.MOV</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <button onclick="setVideoSpeed(0.5)" id="spd-0.5" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] hover:bg-slate-700">0.5x</button>
+                                <button onclick="setVideoSpeed(1)" id="spd-1" class="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-bold text-[10px]">1.0x</button>
+                                <button onclick="setVideoSpeed(1.5)" id="spd-1.5" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] hover:bg-slate-700">1.5x</button>
+                                <button onclick="exitUploadedVideoMode()" class="ml-1 px-2 py-0.5 rounded bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[10px]">ปิดคลิป</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span id="videoCurTime" class="text-[10px] font-mono text-slate-300 w-9">00:00</span>
+                            <input type="range" id="videoSeekSlider" min="0" max="100" value="0" step="0.1" oninput="seekUploadedVideo(this.value)" class="flex-1 accent-cyan-400 cursor-pointer h-1.5">
+                            <span id="videoDurTime" class="text-[10px] font-mono text-slate-300 w-9 text-right">00:00</span>
+                        </div>
                     </div>
-                    <span class="hidden sm:inline text-emerald-300/90 text-[10px] truncate">BWF 13.4m × 6.1m Homography</span>
-                </div>
-            </div>
 
-            <!-- Uploaded Video Playback Timeline Bar -->
-            <div id="videoPlaybackControls" class="hidden glass-panel rounded-2xl p-3 border border-cyan-500/30 space-y-2">
-                <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <div class="flex items-center gap-2">
-                        <span class="px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold text-[10px]">วิเคราะห์คลิปสนามจริง</span>
-                        <span id="uploadedFileName" class="text-slate-200 font-medium truncate max-w-[180px] sm:max-w-xs">match.mp4</span>
+                    <!-- Floating Control Dock (Camera, Sample Video, Calibration, Overlays) -->
+                    <div class="hud-overlay-panel rounded-2xl p-2 sm:p-2.5 flex flex-wrap items-center justify-between gap-2 pointer-events-auto shadow-2xl">
+                        <div class="flex flex-wrap items-center gap-1.5 flex-1">
+                            <button id="btnToggleCamera" onclick="toggleWebcam()" class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-all shadow-md shadow-emerald-500/20">
+                                <i class="ph-bold ph-camera text-sm"></i>
+                                <span id="cameraBtnText">เปิดกล้องสดเต็มจอ</span>
+                            </button>
+
+                            <button onclick="loadBuiltInSampleVideo()" class="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition-all" title="โหลดคลิปตัวอย่างสนามจริง IMG_7847.MOV พร้อมกราฟิกเต็มจอ">
+                                <i class="ph-fill ph-film-strip text-emerald-400 text-sm"></i>
+                                <span>คลิปตัวอย่าง (IMG_7847)</span>
+                            </button>
+
+                            <button onclick="triggerVideoUploadSelect()" class="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-medium transition-all">
+                                <i class="ph-bold ph-upload-simple text-cyan-400 text-sm"></i>
+                                <span>อัปโหลดคลิป</span>
+                            </button>
+
+                            <button id="btnCalibrateCourt" onclick="toggleCourtCalibrationMode()" class="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold transition-all" title="ลากปรับมุมคอร์ท 4 จุด และความสูงเน็ทพร้อมแว่นขยาย 3x">
+                                <i class="ph-bold ph-crosshair text-amber-400 text-sm"></i>
+                                <span>ล็อกเส้น & เน็ท</span>
+                            </button>
+
+                            <button onclick="triggerAutoSnapCourtCV()" class="hidden sm:flex items-center justify-center gap-1 px-2.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-emerald-300 border border-white/10 text-xs font-medium transition-all">
+                                <i class="ph-bold ph-scan text-emerald-400 text-sm"></i>
+                                <span>สแกนเส้น</span>
+                            </button>
+
+                            <button onclick="verifyFrameWithGeminiAI()" class="flex items-center justify-center gap-1 px-2.5 py-2 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-xs font-medium transition-all">
+                                <i class="ph-fill ph-sparkle text-purple-400 text-sm"></i>
+                                <span>AI Vision</span>
+                            </button>
+
+                            <button id="btnPauseResume" onclick="toggleTrackingPause()" class="flex items-center justify-center gap-1 px-2.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-white/10 text-xs font-medium transition-all">
+                                <i id="pauseIcon" class="ph-fill ph-pause text-sm"></i>
+                                <span id="pauseBtnText" class="hidden sm:inline">หยุดชั่วคราว</span>
+                            </button>
+                        </div>
+
+                        <!-- Compact Graphic Layer Toggles -->
+                        <div class="flex flex-wrap items-center justify-end gap-1.5 w-full sm:w-auto pt-1.5 sm:pt-0 border-t sm:border-t-0 border-white/10">
+                            <button onclick="cycleCameraOrientation()" class="hidden sm:flex items-center gap-1 text-[11px] text-slate-200 bg-slate-950/80 hover:bg-slate-800 px-2 py-1.5 rounded-lg border border-white/10">
+                                <i class="ph-bold ph-arrows-clockwise text-cyan-400"></i>
+                                <span id="btnOrientationLabel">Auto</span>
+                            </button>
+                            <label class="flex items-center gap-1 text-[11px] text-slate-200 cursor-pointer bg-slate-950/80 px-2 py-1.5 rounded-lg border border-white/10">
+                                <input type="checkbox" id="chkShowCourtLines" checked class="accent-emerald-500 rounded">
+                                <span>เส้นคอร์ท</span>
+                            </label>
+                            <label class="flex items-center gap-1 text-[11px] text-slate-200 cursor-pointer bg-slate-950/80 px-2 py-1.5 rounded-lg border border-white/10">
+                                <input type="checkbox" id="chkShowTrails" checked class="accent-emerald-500 rounded">
+                                <span>เส้นวิ่ง</span>
+                            </label>
+                            <label class="flex items-center gap-1 text-[11px] text-slate-200 cursor-pointer bg-slate-950/80 px-2 py-1.5 rounded-lg border border-white/10">
+                                <input type="checkbox" id="chkShowSkeleton" checked class="accent-emerald-500 rounded">
+                                <span>Pose</span>
+                            </label>
+                            <button onclick="resetMatchData()" class="p-1.5 rounded-lg bg-slate-950/80 hover:bg-rose-500/20 hover:text-rose-300 text-slate-300 border border-white/10" title="รีเซ็ตสกอร์และข้อมูลใหม่">
+                                <i class="ph-bold ph-arrow-counter-clockwise text-sm"></i>
+                            </button>
+                        </div>
                     </div>
-                    <div class="flex items-center gap-1.5">
-                        <span class="text-[11px] text-slate-400">ความเร็วคลิป:</span>
-                        <button onclick="setVideoSpeed(0.5)" id="spd-0.5" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] hover:bg-slate-700">0.5x</button>
-                        <button onclick="setVideoSpeed(1)" id="spd-1" class="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-bold text-[10px]">1.0x</button>
-                        <button onclick="setVideoSpeed(1.5)" id="spd-1.5" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] hover:bg-slate-700">1.5x</button>
-                        <button onclick="exitUploadedVideoMode()" class="ml-1 px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px]">ปิดคลิป</button>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2.5">
-                    <span id="videoCurTime" class="text-[11px] font-mono text-slate-400 w-10">00:00</span>
-                    <input type="range" id="videoSeekSlider" min="0" max="100" value="0" step="0.1" oninput="seekUploadedVideo(this.value)" class="flex-1 accent-cyan-400 cursor-pointer">
-                    <span id="videoDurTime" class="text-[11px] font-mono text-slate-400 w-10 text-right">00:00</span>
-                </div>
-            </div>
-
-            <!-- Control Dock (Real Camera, Video Upload, Precision Line & Net Calibration) -->
-            <div class="glass-panel rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2.5">
-                <div class="flex flex-wrap items-center gap-2 flex-1">
-                    <button id="btnToggleCamera" onclick="toggleWebcam()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-all shadow-md shadow-emerald-500/15">
-                        <i class="ph-bold ph-camera text-base"></i>
-                        <span id="cameraBtnText">เปิดกล้องสด</span>
-                    </button>
-
-                    <button onclick="triggerVideoUploadSelect()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-medium transition-all">
-                        <i class="ph-bold ph-upload-simple text-cyan-400 text-base"></i>
-                        <span>อัปโหลดคลิปสนามจริง</span>
-                    </button>
-
-                    <button onclick="loadBuiltInSampleVideo()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition-all" title="โหลดคลิปตัวอย่างสนามจริง IMG_7847.MOV พร้อมล็อกคอร์ท 3D">
-                        <i class="ph-fill ph-film-strip text-emerald-400 text-base"></i>
-                        <span>คลิปตัวอย่างจริง (IMG_7847)</span>
-                    </button>
-
-                    <button id="btnCalibrateCourt" onclick="toggleCourtCalibrationMode()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold transition-all" title="ล็อกมุมคอร์ท 4 จุด และความสูงเน็ทพร้อมแว่นขยาย 3x">
-                        <i class="ph-bold ph-crosshair text-amber-400 text-base"></i>
-                        <span>ล็อกพิกัดเส้นสนาม & เน็ท</span>
-                    </button>
-
-                    <button onclick="triggerAutoSnapCourtCV()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 text-xs font-medium transition-all" title="ให้ CV สแกนหาเส้นขาวและขอบเน็ทอัตโนมัติ">
-                        <i class="ph-bold ph-scan text-emerald-400 text-base"></i>
-                        <span>สแกนเส้นอัตโนมัติ</span>
-                    </button>
-
-                    <button onclick="verifyFrameWithGeminiAI()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-xs font-medium transition-all" title="ส่งเฟรมภาพให้ Gemini Vision AI ช่วยล็อกเส้นคอร์ท">
-                        <i class="ph-fill ph-sparkle text-purple-400 text-base"></i>
-                        <span>AI Vision ตรวจสนาม</span>
-                    </button>
-
-                    <button id="btnPauseResume" onclick="toggleTrackingPause()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition-all">
-                        <i id="pauseIcon" class="ph-fill ph-pause text-base"></i>
-                        <span id="pauseBtnText">หยุดชั่วคราว</span>
-                    </button>
-                </div>
-
-                <!-- Overlay & Orientation Toggles -->
-                <div class="flex flex-wrap items-center justify-end gap-1.5 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/80">
-                    <button onclick="cycleCameraOrientation()" class="flex items-center gap-1 text-xs text-slate-200 bg-slate-900/90 hover:bg-slate-800 px-2.5 py-2 rounded-xl border border-slate-800 transition-all">
-                        <i class="ph-bold ph-arrows-clockwise text-cyan-400"></i>
-                        <span id="btnOrientationLabel">หมุนจอ: Auto</span>
-                    </button>
-                    <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer bg-slate-900/90 px-2.5 py-2 rounded-xl border border-slate-800">
-                        <input type="checkbox" id="chkShowCourtLines" checked class="accent-emerald-500 rounded">
-                        <span>เส้นคอร์ท</span>
-                    </label>
-                    <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer bg-slate-900/90 px-2.5 py-2 rounded-xl border border-slate-800">
-                        <input type="checkbox" id="chkShowTrails" checked class="accent-emerald-500 rounded">
-                        <span>เส้นวิ่ง</span>
-                    </label>
-                    <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer bg-slate-900/90 px-2.5 py-2 rounded-xl border border-slate-800">
-                        <input type="checkbox" id="chkShowSkeleton" checked class="accent-emerald-500 rounded">
-                        <span>Pose</span>
-                    </label>
-                    <button onclick="resetMatchData()" class="p-2 rounded-xl bg-slate-900 hover:bg-rose-500/20 hover:text-rose-300 text-slate-400 border border-slate-800 transition-all" title="รีเซ็ตสกอร์และข้อมูลใหม่">
-                        <i class="ph-bold ph-arrow-counter-clockwise text-base"></i>
-                    </button>
                 </div>
             </div>
         </section>

@@ -13,8 +13,10 @@ let frameCount = 0;
 let lastFpsUpdate = performance.now();
 let currentFps = 0;
 
+let videoRenderRect = { x: 0, y: 0, w: 800, h: 450 };
+let isBottomDockHidden = false;
+
 function applyOrientationLayout() {
-    const container = document.getElementById('cameraViewportContainer');
     const badgeText = document.getElementById('orientationBadgeText');
     const icon = document.getElementById('orientationIcon');
     const btnLabel = document.getElementById('btnOrientationLabel');
@@ -25,27 +27,45 @@ function applyOrientationLayout() {
         } else {
             isPortraitViewport = window.innerHeight > window.innerWidth;
         }
-        if (btnLabel) btnLabel.textContent = 'หมุนจอ: Auto';
+        if (btnLabel) btnLabel.textContent = 'เต็มจอ: Auto';
+        if (badgeText) badgeText.textContent = 'Full Screen Auto';
     } else if (orientationSetting === 'portrait') {
         isPortraitViewport = true;
-        if (btnLabel) btnLabel.textContent = 'หมุนจอ: แนวตั้ง';
+        if (btnLabel) btnLabel.textContent = 'เต็มจอ: Fit';
+        if (badgeText) badgeText.textContent = 'Full Screen Fit';
     } else {
         isPortraitViewport = false;
-        if (btnLabel) btnLabel.textContent = 'หมุนจอ: แนวนอน';
+        if (btnLabel) btnLabel.textContent = 'เต็มจอ: Stretch';
+        if (badgeText) badgeText.textContent = 'Full Screen Stretch';
     }
 
-    if (container) {
-        if (isPortraitViewport) {
-            container.classList.remove('camera-viewport-landscape');
-            container.classList.add('camera-viewport-portrait', 'max-w-md');
-            if (badgeText) badgeText.textContent = orientationSetting === 'auto' ? 'แนวตั้ง Auto' : 'แนวตั้ง (Portrait)';
-            if (icon) icon.className = 'ph-bold ph-device-mobile-camera';
-        } else {
-            container.classList.remove('camera-viewport-portrait', 'max-w-md');
-            container.classList.add('camera-viewport-landscape');
-            if (badgeText) badgeText.textContent = orientationSetting === 'auto' ? 'แนวนอน Auto' : 'แนวนอน (Landscape)';
-            if (icon) icon.className = 'ph-bold ph-device-mobile-camera rotate-90';
-        }
+    if (icon) {
+        icon.className = isPortraitViewport
+            ? 'ph-bold ph-device-mobile-camera'
+            : 'ph-bold ph-device-mobile-camera rotate-90';
+    }
+}
+
+function toggleBottomDockVisibility() {
+    isBottomDockHidden = !isBottomDockHidden;
+    const dock = document.getElementById('floatingBottomDock');
+    const lbl = document.getElementById('lblToggleHudDock');
+    if (dock) {
+        dock.classList.toggle('hidden', isBottomDockHidden);
+    }
+    if (lbl) {
+        lbl.textContent = isBottomDockHidden ? 'แสดงปุ่ม' : 'ซ่อนปุ่ม';
+    }
+}
+
+function toggleBrowserFullscreen() {
+    const icon = document.getElementById('fullscreenIcon');
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch(() => {});
+        if (icon) icon.className = 'ph-bold ph-corners-in';
+    } else {
+        document.exitFullscreen?.().catch(() => {});
+        if (icon) icon.className = 'ph-bold ph-corners-out';
     }
 }
 
@@ -86,8 +106,8 @@ async function toggleWebcam() {
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     facingMode: { ideal: 'environment' },
-                    width: { ideal: isPort ? 720 : 1280 },
-                    height: { ideal: isPort ? 1280 : 720 },
+                    width: { ideal: isPort ? 1080 : 1920 },
+                    height: { ideal: isPort ? 1920 : 1080 },
                     frameRate: { ideal: 60 }
                 },
                 audio: false
@@ -99,7 +119,7 @@ async function toggleWebcam() {
             btnText.textContent = 'ปิดกล้องสด';
             initPoseDetectionModel();
             resizeCanvases();
-            showToast('เปิดกล้องสดแล้ว! เล็งกล้องไปที่สนามแบดมินตันจริง หรือกด "ล็อกพิกัดเส้นสนาม & เน็ท"');
+            showToast('เปิดกล้องสดเต็มหน้าจอแล้ว! กราฟิกสนาม ผู้เล่น และสกอร์บอร์ดแสดงแบบ On-Top');
         } catch (err) {
             showToast('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตสิทธิ์กล้อง หรืออัปโหลดคลิปวิดีโอสนามจริง');
         }
@@ -109,7 +129,7 @@ async function toggleWebcam() {
             webcamVideo.srcObject = null;
         }
         isWebcamActive = false;
-        btnText.textContent = 'เปิดกล้องสด';
+        btnText.textContent = 'เปิดกล้องสดเต็มจอ';
         showToast('ปิดกล้องสดแล้ว');
     }
 }
@@ -259,9 +279,13 @@ function getPointerNormPos(evt) {
     const rect = liveCanvas.getBoundingClientRect();
     const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
     const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    const rw = videoRenderRect.w || rect.width;
+    const rh = videoRenderRect.h || rect.height;
     return {
-        x: Math.max(0.01, Math.min(0.99, (clientX - rect.left) / rect.width)),
-        y: Math.max(0.01, Math.min(0.99, (clientY - rect.top) / rect.height))
+        x: Math.max(0.01, Math.min(0.99, (px - videoRenderRect.x) / rw)),
+        y: Math.max(0.01, Math.min(0.99, (py - videoRenderRect.y) / rh))
     };
 }
 
@@ -353,7 +377,39 @@ function renderLiveScene() {
         return;
     }
 
-    liveCtx.drawImage(webcamVideo, 0, 0, w, h);
+    // Compute full-screen render area: Realtime Camera always fills 100% of screen;
+    // Uploaded portrait video on wide desktop fills 100% height with ambient blurred wings unless Stretch mode is selected.
+    const vW = webcamVideo.videoWidth || w;
+    const vH = webcamVideo.videoHeight || h;
+    const videoAspect = vW / vH;
+    const screenAspect = w / h;
+
+    if (isWebcamActive || orientationSetting === 'landscape' || Math.abs(videoAspect - screenAspect) < 0.38) {
+        videoRenderRect = { x: 0, y: 0, w, h };
+        liveCtx.drawImage(webcamVideo, 0, 0, w, h);
+    } else {
+        // Draw full-bleed ambient stadium background across entire screen
+        liveCtx.save();
+        liveCtx.globalAlpha = 0.32;
+        liveCtx.drawImage(webcamVideo, 0, 0, w, h);
+        liveCtx.fillStyle = 'rgba(5, 8, 17, 0.55)';
+        liveCtx.fillRect(0, 0, w, h);
+        liveCtx.restore();
+
+        let rw = w;
+        let rh = h;
+        if (screenAspect > videoAspect) {
+            rh = h;
+            rw = Math.round(h * videoAspect);
+        } else {
+            rw = w;
+            rh = Math.round(w / videoAspect);
+        }
+        const rx = Math.round((w - rw) / 2);
+        const ry = Math.round((h - rh) / 2);
+        videoRenderRect = { x: rx, y: ry, w: rw, h: rh };
+        liveCtx.drawImage(webcamVideo, rx, ry, rw, rh);
+    }
 
     if (!isTrackingPaused) {
         runRealPoseEstimation(webcamVideo);
@@ -365,14 +421,20 @@ function renderLiveScene() {
     const chkCourtLines = document.getElementById('chkShowCourtLines')?.checked ?? true;
     const showCourtOverlay = isCalibratingCourt || (chkCourtLines && ShuttleCV.isCourtValidOrLocked());
 
+    // Render all court, net, player, and shuttle graphics on top of the active camera/video frame
+    liveCtx.save();
+    liveCtx.translate(videoRenderRect.x, videoRenderRect.y);
+    const rw = videoRenderRect.w;
+    const rh = videoRenderRect.h;
+
     if (showCourtOverlay) {
-        drawHomographyCourtAndNet(liveCtx, w, h);
+        drawHomographyCourtAndNet(liveCtx, rw, rh);
     } else if (!ShuttleCV.isCourtValidOrLocked()) {
         liveCtx.save();
-        const boxW = Math.min(w - 24, 420);
+        const boxW = Math.min(rw - 24, 420);
         const boxH = 36;
-        const bx = (w - boxW) / 2;
-        const by = h - 68;
+        const bx = (rw - boxW) / 2;
+        const by = rh - 140;
         liveCtx.fillStyle = 'rgba(9, 13, 22, 0.85)';
         liveCtx.beginPath();
         liveCtx.roundRect(bx, by, boxW, boxH, 10);
@@ -384,16 +446,17 @@ function renderLiveScene() {
         liveCtx.fillStyle = '#fbbf24';
         liveCtx.font = '600 11px Prompt, sans-serif';
         liveCtx.textAlign = 'center';
-        liveCtx.fillText('กดปุ่ม "ล็อกพิกัดเส้นสนาม & เน็ท" เพื่อทาบเส้นคอร์ทให้ตรงกับมุมกล้องของคุณ', w / 2, by + 22);
+        liveCtx.fillText('กดปุ่ม "ล็อกเส้น & เน็ท" เพื่อทาบเส้นคอร์ทให้ตรงกับมุมกล้องของคุณ', rw / 2, by + 22);
         liveCtx.restore();
     }
 
-    drawRealDetectedPlayers(liveCtx, w, h);
-    drawRealShuttleAndHawkeye(liveCtx, w, h);
+    drawRealDetectedPlayers(liveCtx, rw, rh);
+    drawRealShuttleAndHawkeye(liveCtx, rw, rh);
 
     if (isCalibratingCourt) {
-        drawCalibrationHandlesAndLoupe(liveCtx, w, h);
+        drawCalibrationHandlesAndLoupe(liveCtx, rw, rh);
     }
+    liveCtx.restore();
 }
 
 function drawHomographyCourtAndNet(ctx, w, h) {
