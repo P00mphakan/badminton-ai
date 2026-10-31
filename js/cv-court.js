@@ -42,14 +42,15 @@ window.ShuttleCV = (function () {
     let autoLockEnabled = true;
 
     // Calibrated / Detected Court Keypoints in normalized screen coordinates [0..1]
-    // Matches real eye-level / tripod baseline perspective (floor in lower half, net near horizon)
+    // Anchored on the 4 visible corners: Far Baseline (tl, tr at v=0) & Near Short-Service Line (bl, br at v=0.6478)
+    // Pre-calibrated to match real baseline camera geometry (IMG_7847.MOV)
     let courtCorners = {
-        tl: { x: 0.22, y: 0.57 }, // Top-Left (Far baseline left on floor)
-        tr: { x: 0.78, y: 0.57 }, // Top-Right (Far baseline right on floor)
-        br: { x: 0.96, y: 0.94 }, // Bottom-Right (Near baseline right)
-        bl: { x: 0.04, y: 0.94 }, // Bottom-Left (Near baseline left)
-        netL: { x: 0.16, y: 0.55 }, // Net Top Tape Left Post
-        netR: { x: 0.84, y: 0.55 }  // Net Top Tape Right Post
+        tl: { x: 0.355, y: 0.613 }, // Far Baseline Left Corner (u=0, v=0)
+        tr: { x: 0.715, y: 0.615 }, // Far Baseline Right Corner (u=1, v=0)
+        br: { x: 0.932, y: 0.688 }, // Near Short-Service Right Corner (u=1, v=0.6478)
+        bl: { x: 0.142, y: 0.684 }, // Near Short-Service Left Corner (u=0, v=0.6478)
+        netL: { x: 0.248, y: 0.569 }, // Net Top Tape Left Post
+        netR: { x: 0.822, y: 0.571 }  // Net Top Tape Right Post
     };
 
     // 3x3 Homography Matrices:
@@ -138,11 +139,11 @@ window.ShuttleCV = (function () {
     }
 
     function updateHomographyFromCorners() {
-        const unitSquare = [
+        const anchorRect = [
             { x: 0, y: 0 },
             { x: 1, y: 0 },
-            { x: 1, y: 1 },
-            { x: 0, y: 1 }
+            { x: 1, y: 0.6478 },
+            { x: 0, y: 0.6478 }
         ];
         const dstQuad = [
             courtCorners.tl,
@@ -150,16 +151,15 @@ window.ShuttleCV = (function () {
             courtCorners.br,
             courtCorners.bl
         ];
-        H_courtToScreen = computeHomography4Pt(unitSquare, dstQuad);
+        H_courtToScreen = computeHomography4Pt(anchorRect, dstQuad);
         H_screenToCourt = invert3x3(H_courtToScreen);
 
-        // Also update default net post floor projection if not manually dragged far
         const midL = projectPoint(H_courtToScreen, 0, 0.5);
         const midR = projectPoint(H_courtToScreen, 1, 0.5);
-        const netHeightNorm = 0.068; // BWF 1.55m net height in perspective
+        const netHeightNorm = 0.087; // BWF 1.55m net height in baseline perspective
         if (!courtCorners._customNet) {
-            courtCorners.netL = { x: midL.x, y: midL.y - netHeightNorm };
-            courtCorners.netR = { x: midR.x, y: midR.y - netHeightNorm };
+            courtCorners.netL = { x: midL.x + 0.022, y: midL.y - netHeightNorm };
+            courtCorners.netR = { x: midR.x - 0.025, y: midL.y - netHeightNorm };
         }
     }
 
@@ -386,17 +386,17 @@ window.ShuttleCV = (function () {
     }
 
     function fitCornersFromDetectedSegments(horizSegs, vertSegs, bestNetY, floorTopNorm) {
-        const topY = Math.max(0.48, Math.min(0.66, floorTopNorm + 0.02));
-        const botY = 0.94;
+        const farBaseY = Math.max(0.58, Math.min(0.64, floorTopNorm + 0.015));
+        const nearShortServiceY = farBaseY + 0.072; // v = 0.6478 Short Service Line
 
-        const alpha = 0.2;
-        courtCorners.tl.y = courtCorners.tl.y * (1 - alpha) + topY * alpha;
-        courtCorners.tr.y = courtCorners.tr.y * (1 - alpha) + topY * alpha;
-        courtCorners.br.y = courtCorners.br.y * (1 - alpha) + botY * alpha;
-        courtCorners.bl.y = courtCorners.bl.y * (1 - alpha) + botY * alpha;
+        const alpha = 0.25;
+        courtCorners.tl.y = courtCorners.tl.y * (1 - alpha) + farBaseY * alpha;
+        courtCorners.tr.y = courtCorners.tr.y * (1 - alpha) + (farBaseY + 0.002) * alpha;
+        courtCorners.bl.y = courtCorners.bl.y * (1 - alpha) + nearShortServiceY * alpha;
+        courtCorners.br.y = courtCorners.br.y * (1 - alpha) + (nearShortServiceY + 0.004) * alpha;
 
         updateHomographyFromCorners();
-        if (bestNetY > 0.38 && bestNetY < 0.68 && !courtCorners._customNet) {
+        if (bestNetY > 0.50 && bestNetY < 0.62 && !courtCorners._customNet) {
             courtCorners.netL.y = bestNetY;
             courtCorners.netR.y = bestNetY;
         }

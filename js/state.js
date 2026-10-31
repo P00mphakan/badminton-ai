@@ -4,7 +4,7 @@
  *          and BWF scoreboard state (Production Mode - Zero Simulation).
  ********************************************************************/
 
-let geminiApiKey = localStorage.getItem('shuttlepro_gemini_key') || "";
+let geminiApiKey = localStorage.getItem('shuttlepro_gemini_key') || (window.SHUTTLEPRO_ENV && window.SHUTTLEPRO_ENV.GEMINI_API_KEY) || "";
 
 let activeTab = 'live';
 let isWebcamActive = false;

@@ -39,22 +39,80 @@ function updateAIModelBadge(text) {
     if (statusText) statusText.textContent = text;
 }
 
+const poseCropCanvas = document.createElement('canvas');
+poseCropCanvas.width = 512;
+poseCropCanvas.height = 384;
+const poseCropCtx = poseCropCanvas.getContext('2d', { willReadFrequently: true });
+
+function updatePlayerSlotMetrics(targetSlot, courtU, courtV, footSx, footSy, kpsNorm, wristVel, dtSec, now) {
+    const clampedU = Math.max(0, Math.min(1, courtU));
+    const clampedV = Math.max(0, Math.min(1, courtV));
+
+    if (targetSlot.detected) {
+        const dxMeters = (clampedU - targetSlot.u) * ShuttleCV.COURT_WIDTH_M;
+        const dyMeters = (clampedV - targetSlot.v) * ShuttleCV.COURT_LENGTH_M;
+        const stepMeters = Math.hypot(dxMeters, dyMeters);
+
+        if (stepMeters >= 0.035 && stepMeters < 2.2) {
+            targetSlot.distanceMeters = +(targetSlot.distanceMeters + stepMeters).toFixed(2);
+            const instSpeedKmh = Math.min(32, (stepMeters / dtSec) * 3.6);
+            targetSlot.currentSpeedKmh = +(targetSlot.currentSpeedKmh * 0.62 + instSpeedKmh * 0.38).toFixed(1);
+            if (targetSlot.currentSpeedKmh > targetSlot.maxSpeedKmh) {
+                targetSlot.maxSpeedKmh = targetSlot.currentSpeedKmh;
+            }
+            targetSlot.positions.push({ x: clampedU, y: clampedV, t: matchSeconds });
+            if (targetSlot.positions.length > 500) targetSlot.positions.shift();
+        } else {
+            targetSlot.currentSpeedKmh = +(targetSlot.currentSpeedKmh * 0.78).toFixed(1);
+        }
+    } else {
+        targetSlot.positions.push({ x: clampedU, y: clampedV, t: matchSeconds });
+    }
+
+    targetSlot.wristSpeedPx = wristVel;
+    targetSlot.u = targetSlot.detected ? (targetSlot.u * 0.35 + clampedU * 0.65) : clampedU;
+    targetSlot.v = targetSlot.detected ? (targetSlot.v * 0.35 + clampedV * 0.65) : clampedV;
+    targetSlot.screenX = targetSlot.detected ? (targetSlot.screenX * 0.35 + footSx * 0.65) : footSx;
+    targetSlot.screenY = targetSlot.detected ? (targetSlot.screenY * 0.35 + footSy * 0.65) : footSy;
+    if (kpsNorm) targetSlot.keypoints = kpsNorm;
+    targetSlot.detected = true;
+    targetSlot.lastSeenMs = now;
+}
+
 async function runRealPoseEstimation(videoEl) {
-    if (!poseModelReady || !poseDetector || !videoEl || videoEl.readyState < 2) return;
+    if (!videoEl || videoEl.readyState < 2) return;
     const now = performance.now();
     if (now - lastPoseTimestamp < 45) return; // ~22 Hz pose inference
     const dtSec = Math.max(0.016, (now - lastPoseTimestamp) / 1000);
     lastPoseTimestamp = now;
 
     try {
-        const poses = await poseDetector.estimatePoses(videoEl, {
-            maxPoses: 4,
-            flipHorizontal: false
-        });
-
         const vW = videoEl.videoWidth || 1280;
         const vH = videoEl.videoHeight || 720;
+        const isPortraitVid = vH > vW;
+
+        // Crop active court zone so far-court players (A1/A2) have 2.2x higher pixel resolution
+        const cropX0 = isPortraitVid ? 0.12 : 0.05;
+        const cropY0 = isPortraitVid ? 0.44 : 0.15;
+        const cropW = isPortraitVid ? 0.80 : 0.90;
+        const cropH = isPortraitVid ? 0.48 : 0.80;
+
+        poseCropCtx.drawImage(
+            videoEl,
+            cropX0 * vW, cropY0 * vH, cropW * vW, cropH * vH,
+            0, 0, poseCropCanvas.width, poseCropCanvas.height
+        );
+
+        let poses = [];
+        if (poseModelReady && poseDetector) {
+            poses = await poseDetector.estimatePoses(poseCropCanvas, {
+                maxPoses: 4,
+                flipHorizontal: false
+            });
+        }
+
         const newHumanBoxes = [];
+        const assignedSlots = new Set();
 
         Object.values(players).forEach(p => {
             if (now - p.lastSeenMs > 900) {
@@ -66,8 +124,14 @@ async function runRealPoseEstimation(videoEl) {
         const courtValid = ShuttleCV.isCourtValidOrLocked();
 
         poses.forEach(pose => {
-            if (pose.score < 0.25) return;
-            const kps = pose.keypoints;
+            if (pose.score < 0.20) return;
+            const kps = pose.keypoints.map(k => ({
+                name: k.name,
+                x: cropX0 + (k.x / poseCropCanvas.width) * cropW,
+                y: cropY0 + (k.y / poseCropCanvas.height) * cropH,
+                score: k.score
+            }));
+
             const lAnkle = kps.find(k => k.name === 'left_ankle');
             const rAnkle = kps.find(k => k.name === 'right_ankle');
             const lHip = kps.find(k => k.name === 'left_hip');
@@ -75,95 +139,127 @@ async function runRealPoseEstimation(videoEl) {
             const lWrist = kps.find(k => k.name === 'left_wrist');
             const rWrist = kps.find(k => k.name === 'right_wrist');
 
-            const validKps = kps.filter(k => k.score > 0.2);
+            const validKps = kps.filter(k => k.score > 0.18);
             if (validKps.length < 4) return;
 
-            const xs = validKps.map(k => k.x / vW);
-            const ys = validKps.map(k => k.y / vH);
-            const xMin = Math.max(0, Math.min(...xs) - 0.03);
-            const xMax = Math.min(1, Math.max(...xs) + 0.03);
-            const yMin = Math.max(0, Math.min(...ys) - 0.03);
-            const yMax = Math.min(1, Math.max(...ys) + 0.03);
+            const xs = validKps.map(k => k.x);
+            const ys = validKps.map(k => k.y);
+            const xMin = Math.max(0, Math.min(...xs) - 0.025);
+            const xMax = Math.min(1, Math.max(...xs) + 0.025);
+            const yMin = Math.max(0, Math.min(...ys) - 0.025);
+            const yMax = Math.min(1, Math.max(...ys) + 0.025);
             newHumanBoxes.push({ xMin, xMax, yMin, yMax });
 
             let footSx = (xMin + xMax) / 2;
             let footSy = yMax;
-            if (lAnkle && rAnkle && lAnkle.score > 0.25 && rAnkle.score > 0.25) {
-                footSx = ((lAnkle.x + rAnkle.x) * 0.5) / vW;
-                footSy = Math.max(lAnkle.y, rAnkle.y) / vH;
-            } else if (lHip && rHip && lHip.score > 0.25 && rHip.score > 0.25) {
-                footSx = ((lHip.x + rHip.x) * 0.5) / vW;
-                footSy = Math.min(0.98, ((lHip.y + rHip.y) * 0.5) / vH + 0.18);
+            if (lAnkle && rAnkle && lAnkle.score > 0.22 && rAnkle.score > 0.22) {
+                footSx = (lAnkle.x + rAnkle.x) * 0.5;
+                footSy = Math.max(lAnkle.y, rAnkle.y);
+            } else if (lHip && rHip && lHip.score > 0.22 && rHip.score > 0.22) {
+                footSx = (lHip.x + rHip.x) * 0.5;
+                footSy = Math.min(0.96, (lHip.y + rHip.y) * 0.5 + 0.11);
             }
 
             const courtUV = ShuttleCV.screenToCourtNormalized(footSx, footSy);
-
             if (courtValid && (courtUV.x < -0.22 || courtUV.x > 1.22 || courtUV.y < -0.22 || courtUV.y > 1.22)) {
                 return;
             }
 
             const isTeamA = courtUV.y < 0.5;
             const slotIds = isTeamA ? ['A1', 'A2'] : ['B1', 'B2'];
-            let targetSlot = players[slotIds[0]];
-            let minSlotDist = Math.hypot(targetSlot.u - courtUV.x, targetSlot.v - courtUV.y);
-
-            const secondSlot = players[slotIds[1]];
-            if (Math.hypot(secondSlot.u - courtUV.x, secondSlot.v - courtUV.y) < minSlotDist) {
-                targetSlot = secondSlot;
-            }
-
-            const clampedU = Math.max(0, Math.min(1, courtUV.x));
-            const clampedV = Math.max(0, Math.min(1, courtUV.y));
-
-            if (targetSlot.detected) {
-                const dxMeters = (clampedU - targetSlot.u) * ShuttleCV.COURT_WIDTH_M;
-                const dyMeters = (clampedV - targetSlot.v) * ShuttleCV.COURT_LENGTH_M;
-                const stepMeters = Math.hypot(dxMeters, dyMeters);
-
-                if (stepMeters >= 0.04 && stepMeters < 2.2) {
-                    targetSlot.distanceMeters = +(targetSlot.distanceMeters + stepMeters).toFixed(2);
-                    const instSpeedKmh = Math.min(34, (stepMeters / dtSec) * 3.6);
-                    targetSlot.currentSpeedKmh = +(targetSlot.currentSpeedKmh * 0.6 + instSpeedKmh * 0.4).toFixed(1);
-                    if (targetSlot.currentSpeedKmh > targetSlot.maxSpeedKmh) {
-                        targetSlot.maxSpeedKmh = targetSlot.currentSpeedKmh;
-                    }
-                    targetSlot.positions.push({ x: clampedU, y: clampedV, t: matchSeconds });
-                    if (targetSlot.positions.length > 500) targetSlot.positions.shift();
-                } else {
-                    targetSlot.currentSpeedKmh = +(targetSlot.currentSpeedKmh * 0.75).toFixed(1);
+            let targetSlot = null;
+            let bestDist = Infinity;
+            slotIds.forEach(id => {
+                if (assignedSlots.has(id)) return;
+                const d = Math.hypot(players[id].u - courtUV.x, players[id].v - courtUV.y);
+                if (d < bestDist) {
+                    bestDist = d;
+                    targetSlot = players[id];
                 }
-            } else {
-                targetSlot.positions.push({ x: clampedU, y: clampedV, t: matchSeconds });
-            }
+            });
+            if (!targetSlot) return;
+            assignedSlots.add(targetSlot.id);
 
             let maxWristVel = 0;
             [lWrist, rWrist].forEach(w => {
-                if (w && w.score > 0.3) {
-                    const wx = w.x / vW;
-                    const wy = w.y / vH;
+                if (w && w.score > 0.25) {
                     if (targetSlot._lastWx !== undefined) {
-                        const wDist = Math.hypot(wx - targetSlot._lastWx, wy - targetSlot._lastWy);
+                        const wDist = Math.hypot(w.x - targetSlot._lastWx, w.y - targetSlot._lastWy);
                         maxWristVel = Math.max(maxWristVel, wDist / dtSec);
                     }
-                    targetSlot._lastWx = wx;
-                    targetSlot._lastWy = wy;
+                    targetSlot._lastWx = w.x;
+                    targetSlot._lastWy = w.y;
                 }
             });
-            targetSlot.wristSpeedPx = maxWristVel;
 
-            targetSlot.u = clampedU;
-            targetSlot.v = clampedV;
-            targetSlot.screenX = footSx;
-            targetSlot.screenY = footSy;
-            targetSlot.keypoints = kps.map(k => ({
-                name: k.name,
-                x: k.x / vW,
-                y: k.y / vH,
-                score: k.score
-            }));
-            targetSlot.detected = true;
-            targetSlot.lastSeenMs = now;
+            updatePlayerSlotMetrics(targetSlot, courtUV.x, courtUV.y, footSx, footSy, kps, maxWristVel, dtSec, now);
         });
+
+        // Supplement MoveNet with Court-Zone Player Silhouette/Shoe detector for small far-court players (A1/A2) or occluded doubles partner
+        if (courtValid && assignedSlots.size < 4) {
+            const imgData = poseCropCtx.getImageData(0, 0, poseCropCanvas.width, poseCropCanvas.height).data;
+            const cw = poseCropCanvas.width;
+            const ch = poseCropCanvas.height;
+
+            const searchZones = [
+                { id: 'A1', uMin: 0.06, uMax: 0.49, vMin: 0.04, vMax: 0.46, bodyH: 0.085, bodyW: 0.045 },
+                { id: 'A2', uMin: 0.51, uMax: 0.94, vMin: 0.04, vMax: 0.46, bodyH: 0.085, bodyW: 0.045 },
+                { id: 'B1', uMin: 0.06, uMax: 0.54, vMin: 0.52, vMax: 0.92, bodyH: 0.145, bodyW: 0.065 },
+                { id: 'B2', uMin: 0.46, uMax: 0.94, vMin: 0.52, vMax: 0.92, bodyH: 0.145, bodyW: 0.065 }
+            ];
+
+            searchZones.forEach(zone => {
+                if (assignedSlots.has(zone.id)) return;
+                let sumU = 0, sumV = 0, sumW = 0;
+
+                for (let u = zone.uMin; u <= zone.uMax; u += 0.035) {
+                    for (let v = zone.vMin; v <= zone.vMax; v += 0.035) {
+                        const sc = ShuttleCV.courtNormalizedToScreen(u, v);
+                        // Skip if already covered by a MoveNet human box
+                        const insideExisting = newHumanBoxes.some(b =>
+                            sc.x >= b.xMin - 0.02 && sc.x <= b.xMax + 0.02 &&
+                            sc.y >= b.yMin - 0.02 && sc.y <= b.yMax + 0.02
+                        );
+                        if (insideExisting) continue;
+
+                        // Check torso pixel ~4% above ankle point for dark/colored jersey contrast against court floor
+                        const torsoSy = sc.y - zone.bodyH * 0.48;
+                        const cx = Math.round(((sc.x - cropX0) / cropW) * cw);
+                        const cy = Math.round(((torsoSy - cropY0) / cropH) * ch);
+                        if (cx < 4 || cx >= cw - 4 || cy < 4 || cy >= ch - 4) continue;
+
+                        const idx = (cy * cw + cx) * 4;
+                        const r = imgData[idx], g = imgData[idx + 1], b = imgData[idx + 2];
+                        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                        // Court floor is bright blue/teal (b > r + 15, luma 95..175). Players wear dark black or red jerseys (luma < 72 or r > b + 35)
+                        const isDarkJersey = luma < 68;
+                        const isRedJersey = r > b + 30 && r > g + 25;
+
+                        if (isDarkJersey || isRedJersey) {
+                            const weight = isRedJersey ? 2.2 : (75 - luma) / 25;
+                            sumU += u * weight;
+                            sumV += v * weight;
+                            sumW += weight;
+                        }
+                    }
+                }
+
+                if (sumW >= 3.2) {
+                    const detU = sumU / sumW;
+                    const detV = sumV / sumW;
+                    const footSc = ShuttleCV.courtNormalizedToScreen(detU, detV);
+                    const box = {
+                        xMin: Math.max(0, footSc.x - zone.bodyW * 0.5),
+                        xMax: Math.min(1, footSc.x + zone.bodyW * 0.5),
+                        yMin: Math.max(0, footSc.y - zone.bodyH),
+                        yMax: Math.min(1, footSc.y + 0.015)
+                    };
+                    newHumanBoxes.push(box);
+                    assignedSlots.add(zone.id);
+                    updatePlayerSlotMetrics(players[zone.id], detU, detV, footSc.x, footSc.y, null, 0, dtSec, now);
+                }
+            });
+        }
 
         detectedHumanBoxes = newHumanBoxes;
     } catch (e) {

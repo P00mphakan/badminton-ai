@@ -145,9 +145,48 @@ function handleVideoUpload(event) {
         document.getElementById('videoDurTime').textContent = formatTimeSec(webcamVideo.duration || 0);
         initPoseDetectionModel();
         resetMatchData(true);
+        // Auto-apply calibrated 3D perspective court & net lock for portrait baseline court videos (e.g. IMG_7847.MOV)
+        if (webcamVideo.videoHeight > webcamVideo.videoWidth) {
+            ShuttleCV.setCourtLocked(true);
+        }
         webcamVideo.play();
         resizeCanvases();
-        showToast(`โหลดคลิปสนามจริง "${file.name}" สำเร็จ!`);
+        showToast(`โหลดคลิปสนามจริง "${file.name}" สำเร็จ! ล็อกเส้นคอร์ท 3D พร้อมวัดความเร็วลูกจริง`);
+    };
+}
+
+function loadBuiltInSampleVideo() {
+    if (isWebcamActive && webcamVideo.srcObject) {
+        webcamVideo.srcObject.getTracks().forEach(t => t.stop());
+        webcamVideo.srcObject = null;
+        isWebcamActive = false;
+        const btnText = document.getElementById('cameraBtnText');
+        if (btnText) btnText.textContent = 'เปิดกล้องสด';
+    }
+
+    if (uploadedVideoURL) {
+        URL.revokeObjectURL(uploadedVideoURL);
+        uploadedVideoURL = null;
+    }
+
+    webcamVideo.srcObject = null;
+    webcamVideo.src = 'sample-court.mp4';
+    webcamVideo.loop = true;
+    webcamVideo.muted = true;
+    webcamVideo.playbackRate = 1.0;
+
+    webcamVideo.onloadedmetadata = () => {
+        isUploadedVideoActive = true;
+        isTrackingPaused = false;
+        document.getElementById('videoPlaybackControls').classList.remove('hidden');
+        document.getElementById('uploadedFileName').textContent = 'IMG_7847.MOV (สนามจริง 60FPS)';
+        document.getElementById('videoDurTime').textContent = formatTimeSec(webcamVideo.duration || 0);
+        ShuttleCV.setCourtLocked(true);
+        initPoseDetectionModel();
+        resetMatchData(true);
+        webcamVideo.play();
+        resizeCanvases();
+        showToast('โหลดคลิปตัวอย่างสนามจริง IMG_7847.MOV พร้อมล็อกพิกัดคอร์ท 3D & ตรวจจับผู้เล่นทั้ง 4 คน!');
     };
 }
 
@@ -450,10 +489,10 @@ function drawHomographyCourtAndNet(ctx, w, h) {
 function drawCalibrationHandlesAndLoupe(ctx, w, h) {
     const corners = ShuttleCV.getCorners();
     const labels = {
-        tl: 'มุมบนซ้าย (TL)',
-        tr: 'มุมบนขวา (TR)',
-        br: 'มุมล่างขวา (BR)',
-        bl: 'มุมล่างซ้าย (BL)',
+        tl: 'เส้นหลังซ้าย (TL)',
+        tr: 'เส้นหลังขวา (TR)',
+        br: 'เส้นเสิร์ฟขวา (SR)',
+        bl: 'เส้นเสิร์ฟซ้าย (SL)',
         netL: 'หัวเน็ทซ้าย (Net-L)',
         netR: 'หัวเน็ทขวา (Net-R)'
     };
@@ -594,26 +633,58 @@ function drawRealDetectedPlayers(ctx, w, h) {
             ctx.restore();
         }
 
+        // Perspective scale factor based on court depth (far court v~0.25 -> 0.72x, near court v~0.75 -> 1.18x)
+        const depthScale = 0.62 + Math.max(0, Math.min(1, p.v)) * 0.65;
+        const ringRx = 18 * depthScale;
+        const ringRy = 7 * depthScale;
+
+        // Tactical torso bracket above the floor ring
+        const boxW = 30 * depthScale;
+        const boxH = 56 * depthScale;
+        const bx = px - boxW / 2;
+        const by = py - boxH;
+        const cLen = 6 * depthScale;
+
         ctx.save();
+        ctx.strokeStyle = p.color + 'aa';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(bx, by + cLen); ctx.lineTo(bx, by); ctx.lineTo(bx + cLen, by);
+        ctx.moveTo(bx + boxW - cLen, by); ctx.lineTo(bx + boxW, by); ctx.lineTo(bx + boxW, by + cLen);
+        ctx.moveTo(bx, by + boxH - cLen); ctx.lineTo(bx, by + boxH); ctx.lineTo(bx + cLen, by + boxH);
+        ctx.moveTo(bx + boxW - cLen, by + boxH); ctx.lineTo(bx + boxW, by + boxH); ctx.lineTo(bx + boxW, by + boxH - cLen);
+        ctx.stroke();
+
+        // Dual concentric glowing floor rings (Pro Hawkeye / Broadcast style)
         ctx.shadowColor = p.color;
         ctx.shadowBlur = 12;
         ctx.strokeStyle = p.color;
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = 2.4;
         ctx.beginPath();
-        ctx.ellipse(px, py, 20, 8, 0, 0, Math.PI * 2);
+        ctx.ellipse(px, py, ringRx, ringRy, 0, 0, Math.PI * 2);
         ctx.stroke();
+
         ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#ffffffcc';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.ellipse(px, py, ringRx * 0.48, ringRy * 0.48, 0, 0, Math.PI * 2);
+        ctx.stroke();
 
         const label = `${p.id} • ${p.currentSpeedKmh} km/h`;
         ctx.font = 'bold 10px Prompt, sans-serif';
         const tw = ctx.measureText(label).width + 12;
-        ctx.fillStyle = 'rgba(9, 13, 22, 0.85)';
+        const labelY = py + ringRy + 4;
+        ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
         ctx.beginPath();
-        ctx.roundRect(px - tw / 2, py + 10, tw, 16, 6);
+        ctx.roundRect(px - tw / 2, labelY, tw, 16, 6);
         ctx.fill();
+        ctx.strokeStyle = p.color + '66';
+        ctx.lineWidth = 1;
+        ctx.stroke();
         ctx.fillStyle = p.color;
         ctx.textAlign = 'center';
-        ctx.fillText(label, px, py + 21);
+        ctx.fillText(label, px, labelY + 11.5);
         ctx.restore();
     });
 }

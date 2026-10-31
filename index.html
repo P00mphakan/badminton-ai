@@ -298,6 +298,11 @@
                         <span>อัปโหลดคลิปสนามจริง</span>
                     </button>
 
+                    <button onclick="loadBuiltInSampleVideo()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition-all" title="โหลดคลิปตัวอย่างสนามจริง IMG_7847.MOV พร้อมล็อกคอร์ท 3D">
+                        <i class="ph-fill ph-film-strip text-emerald-400 text-base"></i>
+                        <span>คลิปตัวอย่างจริง (IMG_7847)</span>
+                    </button>
+
                     <button id="btnCalibrateCourt" onclick="toggleCourtCalibrationMode()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold transition-all" title="ล็อกมุมคอร์ท 4 จุด และความสูงเน็ทพร้อมแว่นขยาย 3x">
                         <i class="ph-bold ph-crosshair text-amber-400 text-base"></i>
                         <span>ล็อกพิกัดเส้นสนาม & เน็ท</span>
@@ -485,6 +490,7 @@
         </div>
     </nav>
 
+    <script src="js/env.local.js" onerror="window.SHUTTLEPRO_ENV={}"></script>
     <script src="js/state.js"></script>
     <script src="js/cv-court.js"></script>
     <script src="js/pose-tracker.js"></script>
