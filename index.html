@@ -8,10 +8,13 @@
     <meta name="apple-mobile-web-app-title" content="ShuttlePro AI">
     <meta name="theme-color" content="#090d16">
     <link rel="apple-touch-icon" href="https://placehold.co/180x180/10b981/090d16?text=SP+AI">
-    <title>ShuttlePro AI - ระบบวิเคราะห์แบดมินตันและผู้ช่วยโค้ชอัจฉริยะ</title>
+    <title>ShuttlePro AI - ระบบตรวจจับเส้นสนาม เน็ท และสกอร์บอร์ด AI อัตโนมัติ (Production)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <!-- Real On-Device AI Pose Detection (TensorFlow.js + MoveNet MultiPose) -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -19,13 +22,6 @@
                 extend: {
                     fontFamily: {
                         sans: ['Prompt', 'sans-serif'],
-                    },
-                    colors: {
-                        court: {
-                            green: '#0d7a5f',
-                            dark: '#064e3b',
-                            line: '#ffffff'
-                        }
                     }
                 }
             }
@@ -41,69 +37,43 @@
             padding-bottom: calc(5rem + env(safe-area-inset-bottom));
         }
         .glass-panel {
-            background: rgba(15, 23, 42, 0.82);
+            background: rgba(15, 23, 42, 0.85);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.08);
         }
         .ios-bottom-nav {
             padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
-            background: rgba(9, 13, 22, 0.9);
+            background: rgba(9, 13, 22, 0.92);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
         }
-        .neon-border-emerald {
-            box-shadow: 0 0 15px rgba(16, 185, 129, 0.25);
-        }
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #0f172a;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #334155;
-            border-radius: 9999px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #10b981;
-        }
-        @keyframes pulse-fast {
-            0%, 100% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.08); opacity: 0.85; }
-        }
-        .animate-smash {
-            animation: pulse-fast 0.4s ease-in-out infinite;
-        }
-        /* Dynamic Viewport Aspect Ratio for Portrait & Landscape Camera Setup */
         .camera-viewport-landscape {
             aspect-ratio: 16 / 9;
         }
         .camera-viewport-portrait {
             aspect-ratio: 9 / 14;
-            max-height: 70vh;
+            max-height: 68vh;
+        }
+        canvas {
+            touch-action: none;
         }
     </style>
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
 
-    <!-- Clean Minimalist Top Header (iOS App Style) -->
+    <!-- Top Header -->
     <header class="sticky top-0 z-30 glass-panel border-b border-slate-800/80 px-4 py-2.5">
         <div class="max-w-6xl mx-auto flex items-center justify-between gap-2">
-            <!-- Brand & Current Page Title -->
             <div class="flex items-center gap-2.5">
                 <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center shadow-md shadow-emerald-500/20 shrink-0">
                     <i class="ph-fill ph-racquet text-slate-950 text-xl"></i>
                 </div>
                 <div>
                     <div class="flex items-center gap-1.5">
-                        <h1 class="text-sm sm:text-base font-bold tracking-tight text-white">
-                            ShuttlePro AI
-                        </h1>
-                        <span id="headerPageBadge" class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                            กล้องจับความเร็วสด
+                        <h1 class="text-sm sm:text-base font-bold tracking-tight text-white">ShuttlePro AI</h1>
+                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            ใช้งานจริง (Real CV + AI)
                         </span>
                     </div>
                 </div>
@@ -113,33 +83,29 @@
             <div class="flex items-center gap-2 bg-slate-900/95 border border-slate-800 px-3 py-1 rounded-full">
                 <div class="flex items-center gap-1">
                     <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
-                    <span class="text-[11px] font-semibold text-cyan-300 hidden xs:inline">A</span>
-                    <span id="scoreA" class="text-sm font-bold text-white px-1">14</span>
+                    <span class="text-[11px] font-semibold text-cyan-300">A</span>
+                    <span id="scoreA" class="text-sm font-bold text-white px-1">0</span>
                 </div>
                 <span class="text-[10px] text-slate-500 font-bold">:</span>
                 <div class="flex items-center gap-1">
-                    <span id="scoreB" class="text-sm font-bold text-white px-1">12</span>
-                    <span class="text-[11px] font-semibold text-rose-400 hidden xs:inline">B</span>
+                    <span id="scoreB" class="text-sm font-bold text-white px-1">0</span>
+                    <span class="text-[11px] font-semibold text-rose-400">B</span>
                     <span class="w-2 h-2 rounded-full bg-rose-500"></span>
                 </div>
                 <div class="h-3.5 w-[1px] bg-slate-700 mx-0.5"></div>
                 <div class="flex items-center gap-1 text-emerald-400 font-mono text-xs">
-                    <i class="ph-fill ph-timer animate-pulse"></i>
+                    <i class="ph-fill ph-timer"></i>
                     <span id="matchTimer">00:00</span>
                 </div>
             </div>
 
-            <!-- Right Action Buttons: Low Data Mode + Deploy Guide + iOS Guide -->
+            <!-- Action Buttons -->
             <div class="flex items-center gap-1.5">
-                <button id="btnLowDataMode" onclick="toggleLowDataMode()" class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[11px] font-medium transition-all" title="โหมดประหยัดดาต้ามือถือ (ประมวลผลบนเครื่อง 100%)">
-                    <i class="ph-fill ph-leaf text-emerald-400 text-sm"></i>
-                    <span id="lowDataText" class="hidden md:inline">ประหยัดเน็ต: เปิด</span>
+                <button onclick="toggleApiKeyModal()" class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs transition-all" title="ตั้งค่า Gemini API Key สำหรับ AI Vision Referee">
+                    <i class="ph-bold ph-key text-amber-400 text-sm"></i>
+                    <span class="hidden sm:inline">ตั้งค่า AI Key</span>
                 </button>
-                <button onclick="toggleDeployModal()" class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-xs transition-all" title="คู่มือ Deploy, Database & AI Engine">
-                    <i class="ph-bold ph-cloud-arrow-up text-cyan-400 text-sm"></i>
-                    <span class="hidden lg:inline">คู่มือ Deploy</span>
-                </button>
-                <button onclick="toggleIOSGuideModal()" class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs transition-all" title="วิธีทำ Shortcut ลงหน้าจอโฮม iPhone">
+                <button onclick="toggleIOSGuideModal()" class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs transition-all">
                     <i class="ph-bold ph-device-mobile text-emerald-400 text-sm"></i>
                     <span class="hidden sm:inline">iOS App</span>
                 </button>
@@ -147,68 +113,31 @@
         </div>
     </header>
 
-    <!-- Deploy & Architecture Modal Guide -->
-    <div id="deployGuideModal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="glass-panel rounded-3xl max-w-2xl w-full p-5 border border-slate-700 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+    <!-- Gemini API Key Modal -->
+    <div id="apiKeyModal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="glass-panel rounded-3xl max-w-md w-full p-5 border border-slate-700 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2.5">
-                    <div class="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
-                        <i class="ph-fill ph-rocket-launch text-xl"></i>
+                    <div class="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                        <i class="ph-fill ph-key text-xl"></i>
                     </div>
                     <div>
-                        <h3 class="text-sm sm:text-base font-bold text-white">สถาปัตยกรรมครบจบ: Deploy + Database + AI Engine + ประหยัดเน็ต</h3>
-                        <p class="text-[11px] text-slate-400">พร้อมใช้งานจริงบนมือถือทันทีโดยไม่ต้องส่งสตรีมวิดีโอขึ้นเซิร์ฟเวอร์</p>
+                        <h3 class="text-sm font-bold text-white">เชื่อมต่อ Gemini Vision AI</h3>
+                        <p class="text-[11px] text-slate-400">ใช้ตรวจสอบเส้นสนามและผู้เล่นเพิ่มเติมด้วย Multimodal AI</p>
                     </div>
                 </div>
-                <button onclick="toggleDeployModal()" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
+                <button onclick="toggleApiKeyModal()" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
                     <i class="ph-bold ph-x"></i>
                 </button>
             </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                <div class="bg-slate-900/90 p-3.5 rounded-2xl border border-slate-800 space-y-1.5">
-                    <div class="font-bold text-emerald-400 flex items-center gap-1.5">
-                        <i class="ph-fill ph-globe"></i> 1. Deploy ที่ไหนดี? (ฟรี + HTTPS สำหรับกล้อง)
-                    </div>
-                    <p class="text-slate-300 leading-relaxed">
-                        แนะนำ <b>Cloudflare Pages</b> หรือ <b>Vercel</b> หรือ <b>Firebase Hosting</b> เพราะให้ HTTPS อัตโนมัติ (iOS บังคับใช้ HTTPS ถึงจะยอมให้เปิดกล้องได้) และมี CDN ทั่วโลก โหลดไวมาก
-                    </p>
-                </div>
-
-                <div class="bg-slate-900/90 p-3.5 rounded-2xl border border-slate-800 space-y-1.5">
-                    <div class="font-bold text-cyan-400 flex items-center gap-1.5">
-                        <i class="ph-fill ph-database"></i> 2. ใช้ Database อะไรดี?
-                    </div>
-                    <p class="text-slate-300 leading-relaxed">
-                        • <b>ในเครื่อง (Offline):</b> ใช้ <b>IndexedDB</b> เก็บพิกัดการวิ่งระหว่างตีแบด (ไม่เสียเน็ตเลย)<br>
-                        • <b>บน Cloud:</b> ใช้ <b>Supabase (PostgreSQL)</b> หรือ <b>Firebase Firestore</b> ซิงค์เฉพาะไฟล์ JSON สรุปหลังจบเกม (ใช้เน็ตแค่ ~15 KB ต่อแมตช์)
-                    </p>
-                </div>
-
-                <div class="bg-slate-900/90 p-3.5 rounded-2xl border border-slate-800 space-y-1.5">
-                    <div class="font-bold text-amber-400 flex items-center gap-1.5">
-                        <i class="ph-fill ph-cpu"></i> 3. ต้องใช้ AI Engine อะไรเพิ่มไหม?
-                    </div>
-                    <p class="text-slate-300 leading-relaxed">
-                        • <b>ตรวจจับผู้เล่น 4 คน:</b> ใช้ <b>MediaPipe Pose / YOLOv8n (WebGPU / TensorFlow.js)</b> รันบนชิป iPhone โดยตรง<br>
-                        • <b>จับความเร็วลูกแบด:</b> ใช้ <b>TrackNetV3 (ONNX Runtime Web)</b> รันบนเบราว์เซอร์<br>
-                        • <b>โค้ชวิเคราะห์:</b> ใช้ <b>Gemini Flash API</b> ส่งเฉพาะตัวเลขสถิติไปถาม
-                    </p>
-                </div>
-
-                <div class="bg-slate-900/90 p-3.5 rounded-2xl border border-slate-800 space-y-1.5">
-                    <div class="font-bold text-rose-400 flex items-center gap-1.5">
-                        <i class="ph-fill ph-wifi-slash"></i> 4. ลดการใช้ Mobile Data ได้อย่างไร?
-                    </div>
-                    <p class="text-slate-300 leading-relaxed">
-                        <b>ห้ามอัปโหลดคลิปวิดีโอขึ้น Cloud!</b> ให้ประมวลผลภาพกล้องและคลิปวิดีโอด้วยชิปในมือถือ (Edge AI 100%) แล้วส่งเฉพาะข้อความสรุปสถิติเมื่อกดปุ่มถามโค้ช AI เท่านั้น ประหยัดเน็ตได้ถึง 99.9%
-                    </p>
-                </div>
+            <div class="space-y-2">
+                <label class="text-xs text-slate-300 block">Gemini API Key (เก็บไว้ในเครื่องของคุณเท่านั้น):</label>
+                <input type="password" id="geminiKeyInput" placeholder="AIzaSy..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-400">
             </div>
-
-            <button onclick="toggleDeployModal()" class="w-full py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">
-                เข้าใจแล้ว พร้อมใช้งาน
-            </button>
+            <div class="flex gap-2">
+                <button onclick="saveGeminiApiKey()" class="flex-1 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">บันทึก API Key</button>
+                <button onclick="toggleApiKeyModal()" class="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs">ปิด</button>
+            </div>
         </div>
     </div>
 
@@ -216,106 +145,162 @@
     <div id="iosGuideModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="glass-panel rounded-3xl max-w-sm w-full p-5 border border-slate-700 shadow-2xl space-y-4">
             <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2.5">
-                    <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
-                        <i class="ph-fill ph-export text-xl"></i>
-                    </div>
-                    <div>
-                        <h3 class="text-sm font-bold text-white">ตั้งเป็นแอปบนหน้าจอโฮม iPhone</h3>
-                        <p class="text-[11px] text-slate-400">เปิดใช้งานเต็มจอแบบ Clean Display</p>
-                    </div>
-                </div>
+                <h3 class="text-sm font-bold text-white">ตั้งเป็นแอปบนหน้าจอโฮม iPhone</h3>
                 <button onclick="toggleIOSGuideModal()" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
                     <i class="ph-bold ph-x"></i>
                 </button>
             </div>
-            <div class="space-y-2.5 text-xs text-slate-300 bg-slate-900/90 p-3.5 rounded-2xl border border-slate-800">
-                <div class="flex items-start gap-2.5">
-                    <span class="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 font-bold flex items-center justify-center shrink-0 text-[11px]">1</span>
-                    <p>เปิดลิงก์เว็บนี้ด้วยแอป <b>Safari</b> บน iPhone ของคุณ</p>
-                </div>
-                <div class="flex items-start gap-2.5">
-                    <span class="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 font-bold flex items-center justify-center shrink-0 text-[11px]">2</span>
-                    <p>แตะปุ่ม <b>แชร์ (Share)</b> <i class="ph-bold ph-export text-emerald-400"></i> ที่แถบเมนูด้านล่างของ Safari</p>
-                </div>
-                <div class="flex items-start gap-2.5">
-                    <span class="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 font-bold flex items-center justify-center shrink-0 text-[11px]">3</span>
-                    <p>เลื่อนลงมาและเลือก <b>"เพิ่มไปยังหน้าจอโฮม" (Add to Home Screen)</b> แล้วกดเพิ่ม</p>
-                </div>
+            <div class="space-y-2 text-xs text-slate-300 bg-slate-900/90 p-3.5 rounded-2xl border border-slate-800">
+                <p>1. เปิดลิงก์เว็บนี้ด้วยแอป <b>Safari</b> บน iPhone</p>
+                <p>2. แตะปุ่ม <b>แชร์ (Share)</b> ด้านล่าง</p>
+                <p>3. เลือก <b>"เพิ่มไปยังหน้าจอโฮม" (Add to Home Screen)</b></p>
             </div>
-            <button onclick="toggleIOSGuideModal()" class="w-full py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">
-                เข้าใจแล้ว
-            </button>
+            <button onclick="toggleIOSGuideModal()" class="w-full py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">เข้าใจแล้ว</button>
         </div>
     </div>
 
-    <!-- Main Content Container (Clean Single-Page Views) -->
+    <!-- Toast Notification Banner -->
+    <div id="toastBanner" class="hidden fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-emerald-500/40 text-emerald-300 px-4 py-2 rounded-2xl shadow-2xl text-xs font-medium flex items-center gap-2 max-w-md w-[92%]">
+        <i class="ph-fill ph-check-circle text-emerald-400 text-base shrink-0"></i>
+        <span id="toastMessage">พร้อมใช้งาน</span>
+    </div>
+
+    <!-- Main Content -->
     <main class="flex-1 max-w-6xl w-full mx-auto p-3 sm:p-4">
-        <!-- ==================== PAGE 1: CLEAN LIVE CAMERA & VIDEO UPLOAD VIEW ==================== -->
+        <!-- ==================== PAGE 1: REAL CAMERA, LINE/NET CV & AUTO AI SCOREBOARD ==================== -->
         <section id="tab-live" class="space-y-3">
-            
-            <!-- Hidden File Input for Video Upload Analysis -->
             <input type="file" id="videoUploadInput" accept="video/*" class="hidden" onchange="handleVideoUpload(event)">
 
-            <!-- Clean Auto-Rotating Camera / Video Viewport -->
+            <!-- AI AUTOMATIC BWF SCOREBOARD PANEL -->
+            <div class="glass-panel rounded-2xl p-3 sm:p-3.5 border border-emerald-500/30 shadow-lg">
+                <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-800/90">
+                    <div class="flex items-center gap-2">
+                        <span id="boardSetNumber" class="px-2.5 py-0.5 rounded-md bg-emerald-500 text-slate-950 font-extrabold text-[11px] tracking-wide">SET 1</span>
+                        <span class="text-xs font-semibold text-slate-300">เซต: <b id="boardSetsA" class="text-cyan-300">0</b> - <b id="boardSetsB" class="text-rose-400">0</b></span>
+                        <span class="text-slate-600">|</span>
+                        <span id="boardServiceBoxText" class="text-[11px] text-amber-300 font-medium">ทีม A เสิร์ฟ • คอร์ทขวา (แต้มคู่)</span>
+                    </div>
+
+                    <!-- AI Hawkeye Line Call Status Badge -->
+                    <div class="flex items-center gap-2">
+                        <span id="boardLastCallBadge" class="px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700">
+                            รอเริ่มแรลลี่ (พร้อมตรวจจับอัตโนมัติ)
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Main Score Readout & Manual/Override Controls -->
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                    <!-- Team A Score Box -->
+                    <div class="md:col-span-4 bg-slate-900/95 border border-cyan-500/30 rounded-xl px-3.5 py-2 flex items-center justify-between">
+                        <div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                                <span class="text-xs font-bold text-cyan-300">ทีม A (แดนไกล)</span>
+                                <span id="serveBadgeA" class="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-bold">เสิร์ฟ</span>
+                            </div>
+                            <div class="flex items-center gap-1 mt-1.5">
+                                <button onclick="manualAdjustScore('A', 1)" class="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold">+1 แต้ม</button>
+                                <button onclick="manualAdjustScore('A', -1)" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 text-[10px]">-1</button>
+                            </div>
+                        </div>
+                        <div id="boardScoreA" class="text-3xl sm:text-4xl font-extrabold font-mono text-white">0</div>
+                    </div>
+
+                    <!-- Center AI Referee Controls (Undo, Singles/Doubles, Voice Umpire) -->
+                    <div class="md:col-span-4 flex flex-wrap items-center justify-center gap-1.5">
+                        <button id="btnMatchFormat" onclick="toggleMatchTypeSinglesDoubles()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-[11px] font-medium">
+                            ประเภทคู่ (Doubles 6.10m)
+                        </button>
+                        <button id="btnVoiceReferee" onclick="toggleVoiceReferee()" class="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-medium flex items-center gap-1">
+                            <i class="ph-fill ph-speaker-high"></i>
+                            <span>เสียงขานแต้ม</span>
+                        </button>
+                        <button onclick="undoLastPoint()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-[11px] font-medium flex items-center gap-1" title="ย้อนกลับแต้มล่าสุด">
+                            <i class="ph-bold ph-arrow-u-up-left"></i>
+                            <span>Undo</span>
+                        </button>
+                    </div>
+
+                    <!-- Team B Score Box -->
+                    <div class="md:col-span-4 bg-slate-900/95 border border-rose-500/30 rounded-xl px-3.5 py-2 flex items-center justify-between">
+                        <div id="boardScoreB" class="text-3xl sm:text-4xl font-extrabold font-mono text-white">0</div>
+                        <div class="text-right">
+                            <div class="flex items-center justify-end gap-1.5">
+                                <span id="serveBadgeB" class="hidden px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-bold">เสิร์ฟ</span>
+                                <span class="text-xs font-bold text-rose-300">ทีม B (แดนใกล้)</span>
+                                <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                            </div>
+                            <div class="flex items-center justify-end gap-1 mt-1.5">
+                                <button onclick="manualAdjustScore('B', -1)" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 text-[10px]">-1</button>
+                                <button onclick="manualAdjustScore('B', 1)" class="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[10px] font-bold">+1 แต้ม</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real Camera / Video Viewport -->
             <div id="cameraViewportContainer" class="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl camera-viewport-landscape w-full mx-auto transition-all duration-300">
-                <!-- Real Webcam or Uploaded Video Element -->
                 <video id="webcamVideo" autoplay playsinline muted class="w-full h-full object-cover hidden"></video>
-                
-                <!-- Main AI Overlay Canvas -->
                 <canvas id="liveCanvas" class="w-full h-full block cursor-crosshair"></canvas>
 
-                <!-- Minimal Top-Left Status Pill + Orientation Badge -->
+                <!-- Top-Left Real CV & Pose Status Badges -->
                 <div class="absolute top-3 left-3 flex flex-wrap items-center gap-1.5 pointer-events-none">
-                    <div class="flex items-center gap-1.5 bg-slate-950/75 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
+                    <div class="flex items-center gap-1.5 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
                         <span id="recDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                        <span id="modeStatusText" class="text-[11px] font-medium text-slate-200">AI Tracking</span>
+                        <span id="modeStatusText" class="text-[11px] font-medium text-slate-200">พร้อมตรวจจับสนามจริง</span>
                     </div>
-                    <div class="bg-slate-950/75 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[10px] text-cyan-300 font-medium flex items-center gap-1">
+                    <div class="bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 flex items-center gap-2">
+                        <span id="cvCourtConfText" class="text-[10px] font-semibold text-amber-300">เส้นสนาม: 0%</span>
+                        <span class="text-slate-600">•</span>
+                        <span id="cvNetConfText" class="text-[10px] font-semibold text-cyan-300">เน็ท: 0%</span>
+                    </div>
+                    <div class="bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[10px] text-cyan-300 font-medium flex items-center gap-1">
                         <i id="orientationIcon" class="ph-bold ph-device-mobile-camera rotate-90"></i>
                         <span id="orientationBadgeText">แนวนอน Auto</span>
                     </div>
-                    <div class="hidden sm:flex bg-slate-950/75 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[10px] text-emerald-300 font-mono">
+                    <div class="hidden sm:flex bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[10px] text-emerald-300 font-mono">
                         <span id="fpsCounter">60</span> FPS
                     </div>
                 </div>
 
-                <!-- Minimal Top-Right Shuttle Speed HUD -->
+                <!-- Top-Right Real Shuttle Speed HUD -->
                 <div class="absolute top-3 right-3 bg-slate-950/80 backdrop-blur-md border border-white/10 rounded-2xl px-3.5 py-2 text-right pointer-events-none shadow-lg">
                     <div class="text-[10px] text-amber-400 font-semibold uppercase tracking-wider flex items-center justify-end gap-1">
                         <i class="ph-fill ph-lightning"></i>
-                        <span>ความเร็วลูก</span>
+                        <span>ความเร็วลูกจริง</span>
                     </div>
                     <div class="flex items-baseline justify-end gap-1">
-                        <span id="liveSpeedValue" class="text-2xl sm:text-3xl font-extrabold font-mono text-white">218</span>
+                        <span id="liveSpeedValue" class="text-2xl sm:text-3xl font-extrabold font-mono text-white">0</span>
                         <span class="text-[10px] text-slate-400">km/h</span>
                     </div>
-                    <div id="liveShotTypeBadge" class="text-[10px] text-amber-300 font-medium truncate max-w-[130px]">
-                        Jump Smash
+                    <div id="liveShotTypeBadge" class="text-[10px] text-amber-300 font-medium truncate max-w-[140px]">
+                        รอตรวจจับลูกแบด
                     </div>
                 </div>
 
-                <!-- Clean Quick Smash Strip at Bottom of Video -->
-                <div class="absolute bottom-2.5 left-3 right-3 flex items-center justify-between pointer-events-none text-[11px] bg-slate-950/75 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10">
+                <!-- Bottom Info Strip -->
+                <div class="absolute bottom-2.5 left-3 right-3 flex items-center justify-between pointer-events-none text-[11px] bg-slate-950/80 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10">
                     <div class="flex items-center gap-3">
-                        <span class="text-slate-300"><b class="text-amber-400">ตบสูงสุด:</b> <span id="hudMaxSmashQuick">312</span> km/h</span>
+                        <span class="text-slate-300"><b class="text-amber-400">ตบสูงสุด:</b> <span id="hudMaxSmashQuick">0</span> km/h</span>
                         <span class="text-slate-500">|</span>
-                        <span class="text-slate-300"><b class="text-emerald-400">ตบเฉลี่ย:</b> <span id="hudAvgSmashQuick">264</span> km/h</span>
+                        <span class="text-slate-300"><b class="text-emerald-400">ตบเฉลี่ย:</b> <span id="hudAvgSmashQuick">0</span> km/h</span>
                     </div>
-                    <span id="bottomHintText" class="hidden md:inline text-slate-400 text-[10px]">แตะบนคอร์ทเพื่อจำลองลูกตบ •ประมวลผลในเครื่องไม่เปลืองเน็ต</span>
+                    <span class="hidden md:inline text-emerald-300 text-[10px]">ตรวจจับเส้นขาว ตาข่าย ผู้เล่น และขานแต้ม IN/OUT อัตโนมัติ (BWF 13.4m × 6.1m)</span>
                 </div>
             </div>
 
-            <!-- Uploaded Video Playback Timeline Bar (Shown only when analyzing an uploaded video clip) -->
+            <!-- Uploaded Video Playback Timeline Bar -->
             <div id="videoPlaybackControls" class="hidden glass-panel rounded-2xl p-3 border border-cyan-500/30 space-y-2">
                 <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div class="flex items-center gap-2">
-                        <span class="px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold text-[10px]">โหมดวิเคราะห์คลิปวิดีโอ</span>
-                        <span id="uploadedFileName" class="text-slate-200 font-medium truncate max-w-[180px] sm:max-w-xs">match_clip.mp4</span>
+                        <span class="px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold text-[10px]">วิเคราะห์คลิปสนามจริง</span>
+                        <span id="uploadedFileName" class="text-slate-200 font-medium truncate max-w-[180px] sm:max-w-xs">match.mp4</span>
                     </div>
                     <div class="flex items-center gap-1.5">
                         <span class="text-[11px] text-slate-400">ความเร็วคลิป:</span>
-                        <button onclick="setVideoSpeed(0.5)" id="spd-0.5" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] hover:bg-slate-700">0.5x (Slow)</button>
+                        <button onclick="setVideoSpeed(0.5)" id="spd-0.5" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] hover:bg-slate-700">0.5x</button>
                         <button onclick="setVideoSpeed(1)" id="spd-1" class="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-bold text-[10px]">1.0x</button>
                         <button onclick="setVideoSpeed(1.5)" id="spd-1.5" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] hover:bg-slate-700">1.5x</button>
                         <button onclick="exitUploadedVideoMode()" class="ml-1 px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px]">ปิดคลิป</button>
@@ -328,33 +313,43 @@
                 </div>
             </div>
 
-            <!-- Clean Control Dock -->
+            <!-- Control Dock (Real Camera, Video Upload, Precision Line & Net Calibration) -->
             <div class="glass-panel rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2.5">
                 <div class="flex flex-wrap items-center gap-2 flex-1">
-                    <button id="btnToggleCamera" onclick="toggleWebcam()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium border border-slate-700 transition-all">
-                        <i class="ph-bold ph-camera text-emerald-400 text-base"></i>
+                    <button id="btnToggleCamera" onclick="toggleWebcam()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-all shadow-md shadow-emerald-500/15">
+                        <i class="ph-bold ph-camera text-base"></i>
                         <span id="cameraBtnText">เปิดกล้องสด</span>
                     </button>
 
                     <button onclick="triggerVideoUploadSelect()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-medium transition-all">
                         <i class="ph-bold ph-upload-simple text-cyan-400 text-base"></i>
-                        <span>อัปโหลดคลิปวิเคราะห์</span>
+                        <span>อัปโหลดคลิปสนามจริง</span>
                     </button>
 
-                    <button id="btnPauseResume" onclick="toggleTrackingPause()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-all shadow-md shadow-emerald-500/15">
+                    <button id="btnCalibrateCourt" onclick="toggleCourtCalibrationMode()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold transition-all" title="ล็อกมุมคอร์ท 4 จุด และความสูงเน็ทพร้อมแว่นขยาย 3x">
+                        <i class="ph-bold ph-crosshair text-amber-400 text-base"></i>
+                        <span>ล็อกพิกัดเส้นสนาม & เน็ท</span>
+                    </button>
+
+                    <button onclick="triggerAutoSnapCourtCV()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 text-xs font-medium transition-all" title="ให้ CV สแกนหาเส้นขาวและขอบเน็ทอัตโนมัติ">
+                        <i class="ph-bold ph-scan text-emerald-400 text-base"></i>
+                        <span>สแกนเส้นอัตโนมัติ</span>
+                    </button>
+
+                    <button onclick="verifyFrameWithGeminiAI()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-xs font-medium transition-all" title="ส่งเฟรมภาพให้ Gemini Vision AI ช่วยล็อกเส้นคอร์ท">
+                        <i class="ph-fill ph-sparkle text-purple-400 text-base"></i>
+                        <span>AI Vision ตรวจสนาม</span>
+                    </button>
+
+                    <button id="btnPauseResume" onclick="toggleTrackingPause()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition-all">
                         <i id="pauseIcon" class="ph-fill ph-pause text-base"></i>
                         <span id="pauseBtnText">หยุดชั่วคราว</span>
-                    </button>
-
-                    <button onclick="triggerManualSmash()" class="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-medium transition-all">
-                        <i class="ph-fill ph-fire text-amber-400 text-base"></i>
-                        <span>ทดสอบตบ</span>
                     </button>
                 </div>
 
                 <!-- Overlay & Orientation Toggles -->
                 <div class="flex items-center justify-end gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/80">
-                    <button onclick="cycleCameraOrientation()" class="flex items-center gap-1.5 text-xs text-slate-200 bg-slate-900/90 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-all" title="สลับแนวตั้ง / แนวนอน / Auto">
+                    <button onclick="cycleCameraOrientation()" class="flex items-center gap-1.5 text-xs text-slate-200 bg-slate-900/90 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-all">
                         <i class="ph-bold ph-arrows-clockwise text-cyan-400"></i>
                         <span id="btnOrientationLabel">หมุนจอ: Auto</span>
                     </button>
@@ -363,374 +358,149 @@
                         <span>เส้นวิ่ง</span>
                     </label>
                     <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer bg-slate-900/90 px-3 py-2 rounded-xl border border-slate-800">
-                        <input type="checkbox" id="chkShowSkeleton" class="accent-emerald-500 rounded">
-                        <span>โครงร่าง</span>
+                        <input type="checkbox" id="chkShowSkeleton" checked class="accent-emerald-500 rounded">
+                        <span>โครงร่าง Pose</span>
                     </label>
-                    <button onclick="resetMatchData()" class="p-2 rounded-xl bg-slate-900 hover:bg-rose-500/20 hover:text-rose-300 text-slate-400 border border-slate-800 transition-all" title="รีเซ็ตข้อมูลใหม่">
+                    <button onclick="resetMatchData()" class="p-2 rounded-xl bg-slate-900 hover:bg-rose-500/20 hover:text-rose-300 text-slate-400 border border-slate-800 transition-all" title="รีเซ็ตสกอร์และข้อมูลใหม่">
                         <i class="ph-bold ph-arrow-counter-clockwise text-base"></i>
                     </button>
                 </div>
             </div>
         </section>
 
-        <!-- ==================== PAGE 2: SMASH STATS & PLAYERS SEPARATION ==================== -->
+        <!-- ==================== PAGE 2: REAL SMASH STATS & PLAYERS ==================== -->
         <section id="tab-stats" class="hidden space-y-4">
-            
-            <!-- Highlight Smash Speed Card (Max / Min / Avg) -->
             <div class="glass-panel rounded-2xl p-4 border border-amber-500/30">
                 <div class="flex items-center justify-between mb-3">
                     <div>
                         <h2 class="text-sm font-bold text-amber-400 flex items-center gap-1.5">
                             <i class="ph-fill ph-lightning text-lg"></i>
-                            <span>สถิติความเร็วลูกตบทั้งเกม (Smash Speed)</span>
+                            <span>สถิติความเร็วลูกตบจริง (Real Smash Speed)</span>
                         </h2>
-                        <p class="text-[11px] text-slate-400">บันทึกเฉพาะจังหวะตบ (Smash & Jump Smash)</p>
+                        <p class="text-[11px] text-slate-400">คำนวณจากระยะทางจริงบนคอร์ท 13.40m × 6.10m ด้วย Homography</p>
                     </div>
                     <span class="text-xs px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-medium">
-                        รวม <b id="statTotalSmashes" class="text-white">13</b> ลูกตบ
+                        รวม <b id="statTotalSmashes" class="text-white">0</b> ลูกตบ
                     </span>
                 </div>
 
                 <div class="grid grid-cols-3 gap-2.5 text-center">
-                    <!-- Max Smash -->
                     <div class="bg-slate-900/95 border border-slate-800 rounded-2xl p-3">
                         <span class="text-[11px] text-slate-400 block">ตบเร็วสุด (Max)</span>
                         <div class="flex items-baseline justify-center gap-1 mt-1">
-                            <span id="statMaxSpeed" class="text-2xl sm:text-3xl font-extrabold font-mono text-amber-400">312</span>
+                            <span id="statMaxSpeed" class="text-2xl sm:text-3xl font-extrabold font-mono text-amber-400">0</span>
                             <span class="text-[10px] text-slate-500">km/h</span>
                         </div>
-                        <div id="statMaxHolder" class="text-[10px] text-amber-300/90 truncate mt-1 font-medium">A1 (กวิน)</div>
+                        <div id="statMaxHolder" class="text-[10px] text-amber-300/90 truncate mt-1 font-medium">-</div>
                     </div>
-                    <!-- Min Smash -->
                     <div class="bg-slate-900/95 border border-slate-800 rounded-2xl p-3">
                         <span class="text-[11px] text-slate-400 block">ตบช้าสุด (Min)</span>
                         <div class="flex items-baseline justify-center gap-1 mt-1">
-                            <span id="statMinSmashSpeed" class="text-2xl sm:text-3xl font-extrabold font-mono text-cyan-400">204</span>
+                            <span id="statMinSmashSpeed" class="text-2xl sm:text-3xl font-extrabold font-mono text-cyan-400">0</span>
                             <span class="text-[10px] text-slate-500">km/h</span>
                         </div>
-                        <div id="statMinHolder" class="text-[10px] text-cyan-300/90 truncate mt-1 font-medium">B1 (เตชินท์)</div>
+                        <div id="statMinHolder" class="text-[10px] text-cyan-300/90 truncate mt-1 font-medium">-</div>
                     </div>
-                    <!-- Avg Smash -->
                     <div class="bg-slate-900/95 border border-slate-800 rounded-2xl p-3">
                         <span class="text-[11px] text-slate-400 block">ตบเฉลี่ย (Avg)</span>
                         <div class="flex items-baseline justify-center gap-1 mt-1">
-                            <span id="statAvgSmashSpeed" class="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-400">264</span>
+                            <span id="statAvgSmashSpeed" class="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-400">0</span>
                             <span class="text-[10px] text-slate-500">km/h</span>
                         </div>
-                        <div class="text-[10px] text-emerald-300/90 truncate mt-1 font-medium">ทุกลูกเฉลี่ย <span id="statAvgSpeed">184</span></div>
+                        <div class="text-[10px] text-emerald-300/90 truncate mt-1 font-medium">ทุกลูกเฉลี่ย <span id="statAvgSpeed">0</span></div>
                     </div>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- 4 Players Separation & Live Speed -->
                 <div class="glass-panel rounded-2xl p-4">
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="text-sm font-bold text-white flex items-center gap-2">
                             <i class="ph-fill ph-users-four text-emerald-400 text-lg"></i>
-                            <span>แยกคน แยกทีม (4 ผู้เล่นในสนาม)</span>
+                            <span>ผู้เล่นที่ตรวจพบในสนาม (MoveNet MultiPose)</span>
                         </h3>
-                        <span class="text-[11px] text-slate-400">อัปเดตเรียลไทม์</span>
                     </div>
-                    <div id="livePlayersContainer" class="space-y-2.5">
-                        <!-- Populated dynamically by JS -->
-                    </div>
+                    <div id="livePlayersContainer" class="space-y-2.5"></div>
                 </div>
 
-                <!-- Recent Shot Speed Log -->
                 <div class="glass-panel rounded-2xl p-4 flex flex-col justify-between">
                     <div>
                         <div class="flex items-center justify-between mb-3">
                             <h3 class="text-sm font-bold text-white flex items-center gap-2">
                                 <i class="ph-bold ph-list-bullets text-amber-400 text-lg"></i>
-                                <span>บันทึกความเร็วลูกตีล่าสุด</span>
+                                <span>บันทึกความเร็วลูกตีจริงล่าสุด</span>
                             </h3>
                             <button onclick="exportReportJSON()" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 flex items-center gap-1">
                                 <i class="ph-bold ph-download-simple"></i>
                                 <span>Export JSON</span>
                             </button>
                         </div>
-                        <div id="shotHistoryList" class="space-y-2 max-h-72 overflow-y-auto pr-1">
-                            <!-- Dynamic shot logs -->
-                        </div>
+                        <div id="shotHistoryList" class="space-y-2 max-h-72 overflow-y-auto pr-1"></div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- ==================== PAGE 3: POST-MATCH RUNNING GRAPHICS ==================== -->
+        <!-- ==================== PAGE 3: 2D COURT FOOTWORK ANALYTICS ==================== -->
         <section id="tab-analytics" class="hidden space-y-4">
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                
-                <!-- Left 7 Cols: 2D Court Graphic Visualization -->
                 <div class="lg:col-span-7 glass-panel rounded-2xl p-4 flex flex-col gap-3">
                     <div class="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                            <h2 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                                <i class="ph-fill ph-map-trifold text-emerald-400 text-xl"></i>
-                                <span>กราฟิกตำแหน่งการวิ่งย้อนหลัง (2D Court)</span>
-                            </h2>
-                        </div>
-
-                        <!-- Graphic Mode Selector -->
+                        <h2 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                            <i class="ph-fill ph-map-trifold text-emerald-400 text-xl"></i>
+                            <span>กราฟิกตำแหน่งการวิ่งจริง (2D Homography Court)</span>
+                        </h2>
                         <div class="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800">
-                            <button onclick="setGraphicMode('both')" id="gMode-both" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-500 text-slate-950">
-                                รวม
-                            </button>
-                            <button onclick="setGraphicMode('heatmap')" id="gMode-heatmap" class="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white">
-                                Heatmap
-                            </button>
-                            <button onclick="setGraphicMode('trails')" id="gMode-trails" class="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white">
-                                เส้นวิ่ง
-                            </button>
+                            <button onclick="setGraphicMode('both')" id="gMode-both" class="px-3 py-1 rounded-lg text-xs font-medium bg-emerald-500 text-slate-950">รวม</button>
+                            <button onclick="setGraphicMode('heatmap')" id="gMode-heatmap" class="px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white">Heatmap</button>
+                            <button onclick="setGraphicMode('trails')" id="gMode-trails" class="px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white">เส้นวิ่ง</button>
                         </div>
                     </div>
-
-                    <!-- Filter Players / Teams (Horizontal Scrollable on Mobile) -->
-                    <div class="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                        <button onclick="setAnalyticsFilter('ALL')" id="filter-ALL" class="shrink-0 px-3 py-1 rounded-full text-xs font-semibold bg-white text-slate-950">
-                            ทุกคน (4)
-                        </button>
-                        <button onclick="setAnalyticsFilter('TEAM_A')" id="filter-TEAM_A" class="shrink-0 px-3 py-1 rounded-full text-xs font-medium bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                            ทีม A
-                        </button>
-                        <button onclick="setAnalyticsFilter('TEAM_B')" id="filter-TEAM_B" class="shrink-0 px-3 py-1 rounded-full text-xs font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                            ทีม B
-                        </button>
-                        <button onclick="setAnalyticsFilter('A1')" id="filter-A1" class="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-800 text-cyan-300">
-                            A1 (กวิน)
-                        </button>
-                        <button onclick="setAnalyticsFilter('A2')" id="filter-A2" class="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-800 text-teal-300">
-                            A2 (นาวิน)
-                        </button>
-                        <button onclick="setAnalyticsFilter('B1')" id="filter-B1" class="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-800 text-rose-300">
-                            B1 (เตชินท์)
-                        </button>
-                        <button onclick="setAnalyticsFilter('B2')" id="filter-B2" class="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-800 text-orange-300">
-                            B2 (ภาคิน)
-                        </button>
-                    </div>
-
-                    <!-- Top-Down 2D Badminton Court Canvas -->
                     <div class="relative w-full aspect-[16/10] bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
                         <canvas id="analyticsCourtCanvas" class="w-full h-full block"></canvas>
                     </div>
-
-                    <!-- Timeline Replay Slider -->
-                    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-col gap-1.5">
-                        <div class="flex items-center justify-between text-xs">
-                            <span class="text-slate-300 font-medium flex items-center gap-1.5">
-                                <i class="ph-fill ph-clock-counter-clockwise text-emerald-400"></i>
-                                ย้อนดูตามช่วงเวลา (Timeline)
-                            </span>
-                            <span id="replayPercentLabel" class="font-mono text-emerald-400">100% ล่าสุด</span>
-                        </div>
-                        <input type="range" id="timelineSlider" min="5" max="100" value="100" oninput="updateReplayTimeline(this.value)" class="w-full accent-emerald-500 cursor-pointer">
-                    </div>
                 </div>
 
-                <!-- Right 5 Cols: Detailed Player Metrics & Court Zone Distribution -->
                 <div class="lg:col-span-5 flex flex-col gap-4">
-                    
-                    <!-- Team Comparison Card -->
                     <div class="glass-panel rounded-2xl p-4">
-                        <h3 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                            <i class="ph-fill ph-scales text-amber-400 text-lg"></i>
-                            <span>เปรียบเทียบ ทีม A vs ทีม B</span>
-                        </h3>
-
-                        <div class="space-y-3 text-xs">
-                            <div>
-                                <div class="flex justify-between mb-1">
-                                    <span class="text-cyan-300 font-semibold">ทีม A วิ่งรวม: <b id="teamADistText">412 ม.</b></span>
-                                    <span class="text-rose-300 font-semibold">ทีม B: <b id="teamBDistText">389 ม.</b></span>
-                                </div>
-                                <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden flex">
-                                    <div id="barTeamADist" class="bg-cyan-400 h-full" style="width: 52%"></div>
-                                    <div id="barTeamBDist" class="bg-rose-500 h-full" style="width: 48%"></div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <div class="flex justify-between mb-1">
-                                    <span class="text-cyan-300 font-semibold">ตบเฉลี่ย ทีม A: <b id="teamASpeedText">283 km/h</b></span>
-                                    <span class="text-rose-300 font-semibold">ทีม B: <b id="teamBSpeedText">249 km/h</b></span>
-                                </div>
-                                <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden flex">
-                                    <div class="bg-emerald-400 h-full" style="width: 54%"></div>
-                                    <div class="bg-amber-500 h-full" style="width: 46%"></div>
-                                </div>
-                            </div>
-                        </div>
+                        <h3 class="text-sm font-bold text-white mb-3">ระยะทางวิ่งสะสมจริง: ทีม A (<span id="teamADistText">0.0 ม.</span>) vs ทีม B (<span id="teamBDistText">0.0 ม.</span>)</h3>
+                        <div id="analyticsPlayerCards" class="space-y-2.5"></div>
                     </div>
-
-                    <!-- Individual Player Breakdown Cards -->
-                    <div class="glass-panel rounded-2xl p-4 flex-1">
-                        <div class="flex items-center justify-between mb-3">
-                            <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                                <i class="ph-fill ph-user-focus text-emerald-400 text-lg"></i>
-                                <span>สรุปการวิ่งและความเร็วตบรายคน</span>
-                            </h3>
-                        </div>
-
-                        <div id="analyticsPlayerCards" class="space-y-2.5">
-                            <!-- Populated by JS -->
-                        </div>
-                    </div>
-
                 </div>
             </div>
         </section>
 
-        <!-- ==================== PAGE 4: AI ASSISTANT COACH ==================== -->
+        <!-- ==================== PAGE 4: AI COACH ==================== -->
         <section id="tab-coach" class="hidden space-y-4">
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                
-                <!-- Left 5 Cols: Automatic Technical Summary & Tactical Radar -->
-                <div class="lg:col-span-5 flex flex-col gap-4">
-                    <div class="glass-panel rounded-2xl p-5 border-t-4 border-emerald-400">
-                        <div class="flex items-center gap-3 mb-4">
-                            <div class="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300">
-                                <i class="ph-fill ph-strategy text-2xl"></i>
-                            </div>
-                            <div>
-                                <h2 class="text-base font-bold text-white">สรุปเทคนิคอัตโนมัติจากเซนเซอร์ภาพ</h2>
-                                <p class="text-xs text-slate-400">ประเมินจากความเร็วลูก พิกัดการยืน และการหมุนเวียนตำแหน่ง</p>
-                            </div>
-                        </div>
-
-                        <!-- Skill Bars -->
-                        <div class="space-y-3 text-xs">
-                            <div>
-                                <div class="flex justify-between mb-1">
-                                    <span class="text-slate-300">พลังการบุกและลูกตบ (Smash Power & Angle)</span>
-                                    <span id="scoreAttack" class="font-bold text-emerald-400">88/100</span>
-                                </div>
-                                <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                                    <div id="barAttack" class="bg-gradient-to-r from-emerald-500 to-teal-400 h-full" style="width: 88%"></div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <div class="flex justify-between mb-1">
-                                    <span class="text-slate-300">ฟุตเวิร์คและการกลับสู่จุด Center Base</span>
-                                    <span id="scoreFootwork" class="font-bold text-cyan-400">82/100</span>
-                                </div>
-                                <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                                    <div id="barFootwork" class="bg-gradient-to-r from-cyan-500 to-blue-400 h-full" style="width: 82%"></div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <div class="flex justify-between mb-1">
-                                    <span class="text-slate-300">การยืนตำแหน่งคู่และการซ้อนทีม (Team Rotation)</span>
-                                    <span id="scoreRotation" class="font-bold text-amber-400">75/100</span>
-                                </div>
-                                <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                                    <div id="barRotation" class="bg-gradient-to-r from-amber-500 to-yellow-400 h-full" style="width: 75%"></div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <div class="flex justify-between mb-1">
-                                    <span class="text-slate-300">ความเหนียวแน่นเกมรับ (Defense Coverage)</span>
-                                    <span id="scoreDefense" class="font-bold text-rose-400">79/100</span>
-                                </div>
-                                <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                                    <div id="barDefense" class="bg-gradient-to-r from-rose-500 to-pink-400 h-full" style="width: 79%"></div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Instant Bullet Points from Rule Engine -->
-                        <div class="mt-5 pt-4 border-t border-slate-800 space-y-2.5">
-                            <h3 class="text-xs font-bold uppercase tracking-wider text-emerald-400">จุดสังเกตสำคัญที่ตรวจพบทันที:</h3>
-                            <ul id="instantCoachBullets" class="space-y-2 text-xs text-slate-300">
-                                <!-- Populated dynamically -->
-                            </ul>
-                        </div>
-                    </div>
-
-                    <!-- Quick Coaching Action Buttons -->
-                    <div class="glass-panel rounded-2xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">เลือกหัวข้อให้โค้ช AI วิเคราะห์เชิงลึก:</h3>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <button onclick="generateAICoachAdvice('full')" class="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-left text-xs text-emerald-300 transition-all">
-                                <i class="ph-fill ph-sparkle text-lg shrink-0"></i>
-                                <span>สรุปเทคนิคครบทุกด้าน + แผนซ้อม</span>
-                            </button>
-                            <button onclick="generateAICoachAdvice('teamA')" class="flex items-center gap-2 p-2.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-left text-xs text-cyan-300 transition-all">
-                                <i class="ph-fill ph-users text-lg shrink-0"></i>
-                                <span>แก้จุดอ่อนการยืนคู่ ทีม A (A1+A2)</span>
-                            </button>
-                            <button onclick="generateAICoachAdvice('teamB')" class="flex items-center gap-2 p-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-left text-xs text-rose-300 transition-all">
-                                <i class="ph-fill ph-shield-checkered text-lg shrink-0"></i>
-                                <span>วิเคราะห์เกมรับและฟุตเวิร์ค ทีม B</span>
-                            </button>
-                            <button onclick="generateAICoachAdvice('smash')" class="flex items-center gap-2 p-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-left text-xs text-amber-300 transition-all">
-                                <i class="ph-fill ph-lightning text-lg shrink-0"></i>
-                                <span>เทคนิคเพิ่มความเร็วลูกตบ (Smash)</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Right 7 Cols: Interactive Gemini AI Coach Report & Ask Coach -->
-                <div class="lg:col-span-7 glass-panel rounded-2xl p-5 flex flex-col justify-between min-h-[520px]">
+            <div class="glass-panel rounded-2xl p-5 space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
                     <div>
-                        <div class="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-800">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-cyan-400 flex items-center justify-center text-slate-950 font-bold">
-                                    AI
-                                </div>
-                                <div>
-                                    <h3 class="text-sm md:text-base font-bold text-white">รายงานวิเคราะห์จากผู้ช่วยโค้ช (Gemini Badminton Coach)</h3>
-                                    <p class="text-[11px] text-slate-400">เชื่อมโยงข้อมูลความเร็วลูกและพิกัดการวิ่งจริงจากสนาม</p>
-                                </div>
-                            </div>
-                            <button onclick="generateAICoachAdvice('full')" id="btnGenerateAI" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-semibold text-xs shadow-lg shadow-emerald-500/20 transition-all">
-                                <i class="ph-bold ph-magic-wand"></i>
-                                <span>วิเคราะห์ข้อมูลชุดปัจจุบันด้วย AI</span>
-                            </button>
-                        </div>
-
-                        <!-- AI Output Container -->
-                        <div id="aiCoachOutput" class="mt-4 space-y-3 text-xs md:text-sm text-slate-200 leading-relaxed max-h-[380px] overflow-y-auto pr-2">
-                            <!-- Initial rich coaching report populated by JS -->
-                        </div>
+                        <h2 class="text-base font-bold text-white">วิเคราะห์แมตช์จริงด้วย Gemini Badminton Coach</h2>
+                        <p class="text-xs text-slate-400">ประมวลผลจากสกอร์จริง ความเร็วลูกตบ และระยะวิ่งที่ตรวจพบ</p>
                     </div>
-
-                    <!-- Custom Question to Coach -->
-                    <div class="mt-4 pt-3 border-t border-slate-800">
-                        <div class="flex gap-2">
-                            <input type="text" id="customCoachPrompt" placeholder="ถามโค้ช เช่น 'ทำไม A1 ถึงวิ่งเยอะกว่า A2?'..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs md:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400">
-                            <button onclick="askCustomCoachQuestion()" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs md:text-sm flex items-center gap-1.5 shrink-0 transition-all">
-                                <i class="ph-bold ph-paper-plane-tilt"></i>
-                                <span>ถามโค้ช</span>
-                            </button>
-                        </div>
-                    </div>
+                    <button onclick="generateAICoachAdvice('full')" class="px-3.5 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">
+                        วิเคราะห์ข้อมูลปัจจุบัน
+                    </button>
                 </div>
-
+                <div id="aiCoachOutput" class="text-xs md:text-sm text-slate-200 leading-relaxed"></div>
             </div>
         </section>
-
     </main>
 
-    <!-- Fixed Bottom Tab Bar Navigation (iOS Native App Style) -->
+    <!-- Bottom Tab Navigation -->
     <nav class="fixed bottom-0 left-0 right-0 z-40 ios-bottom-nav border-t border-slate-800/90 px-2 pt-1.5">
         <div class="max-w-md mx-auto grid grid-cols-4 gap-1">
-            <button onclick="switchTab('live')" id="tabBtn-live" class="flex flex-col items-center justify-center py-1.5 rounded-2xl text-emerald-400 bg-emerald-500/10 font-semibold transition-all">
+            <button onclick="switchTab('live')" id="tabBtn-live" class="flex flex-col items-center justify-center py-1.5 rounded-2xl text-emerald-400 bg-emerald-500/15 font-semibold transition-all">
                 <i class="ph-fill ph-video-camera text-xl"></i>
-                <span class="text-[10px] mt-0.5">กล้องสด</span>
+                <span class="text-[10px] mt-0.5">สนามจริง & สกอร์</span>
             </button>
             <button onclick="switchTab('stats')" id="tabBtn-stats" class="flex flex-col items-center justify-center py-1.5 rounded-2xl text-slate-400 hover:text-slate-200 font-medium transition-all">
                 <i class="ph-bold ph-lightning text-xl"></i>
-                <span class="text-[10px] mt-0.5">สถิติตบ & ทีม</span>
+                <span class="text-[10px] mt-0.5">สถิติตบ & ผู้เล่น</span>
             </button>
             <button onclick="switchTab('analytics')" id="tabBtn-analytics" class="flex flex-col items-center justify-center py-1.5 rounded-2xl text-slate-400 hover:text-slate-200 font-medium transition-all">
                 <i class="ph-bold ph-map-trifold text-xl"></i>
-                <span class="text-[10px] mt-0.5">กราฟิกวิ่ง</span>
+                <span class="text-[10px] mt-0.5">กราฟิกวิ่ง 2D</span>
             </button>
             <button onclick="switchTab('coach')" id="tabBtn-coach" class="flex flex-col items-center justify-center py-1.5 rounded-2xl text-slate-400 hover:text-slate-200 font-medium transition-all">
                 <i class="ph-bold ph-robot text-xl"></i>
@@ -739,1467 +509,7 @@
         </div>
     </nav>
 
-    <script>
-        /********************************************************************
-         * 1. GLOBAL STATE & CONFIGURATION
-         ********************************************************************/
-        const apiKey = ""; // Provided by runtime environment
-
-        let activeTab = 'live';
-        let isWebcamActive = false;
-        let isUploadedVideoActive = false;
-        let uploadedVideoURL = null;
-        let isTrackingPaused = false;
-        let isLowDataMode = true; // On-device processing by default to save mobile data
-        let orientationSetting = 'auto'; // 'auto' | 'landscape' | 'portrait'
-        let isPortraitViewport = false;
-        let matchSeconds = 0;
-        let graphicMode = 'both'; // 'both' | 'heatmap' | 'trails'
-        let analyticsFilter = 'ALL'; // 'ALL' | 'TEAM_A' | 'TEAM_B' | 'A1' | 'A2' | 'B1' | 'B2'
-        let replayPercentage = 100;
-
-        // Normalized Court Coordinates: x in [0, 1] (Left to Right), y in [0, 1] (Top Team A to Bottom Team B)
-        // Net is at y = 0.5
-        const players = {
-            A1: {
-                id: 'A1',
-                name: 'กวิน (A1)',
-                role: 'มือหน้า / ตัวทำเกม',
-                team: 'A',
-                color: '#22d3ee', // Cyan
-                x: 0.32, y: 0.28,
-                vx: 0, vy: 0,
-                targetX: 0.32, targetY: 0.28,
-                distanceMeters: 215.4,
-                currentSpeedKmh: 12.4,
-                maxSpeedKmh: 24.8,
-                shotsCount: 16,
-                smashHistory: [285, 312, 268, 294],
-                maxSmashKmh: 312,
-                minSmashKmh: 268,
-                avgSmashKmh: 290,
-                positions: [] // Array of {x, y, t}
-            },
-            A2: {
-                id: 'A2',
-                name: 'นาวิน (A2)',
-                role: 'มือหลัง / จอมตบ',
-                team: 'A',
-                color: '#34d399', // Emerald
-                x: 0.68, y: 0.24,
-                vx: 0, vy: 0,
-                targetX: 0.68, targetY: 0.24,
-                distanceMeters: 196.8,
-                currentSpeedKmh: 11.1,
-                maxSpeedKmh: 22.5,
-                shotsCount: 12,
-                smashHistory: [245, 286, 298],
-                maxSmashKmh: 298,
-                minSmashKmh: 245,
-                avgSmashKmh: 276,
-                positions: []
-            },
-            B1: {
-                id: 'B1',
-                name: 'เตชินท์ (B1)',
-                role: 'ตัวรับเหนียวแน่น',
-                team: 'B',
-                color: '#fb7185', // Rose
-                x: 0.34, y: 0.74,
-                vx: 0, vy: 0,
-                targetX: 0.34, targetY: 0.74,
-                distanceMeters: 204.2,
-                currentSpeedKmh: 13.0,
-                maxSpeedKmh: 23.9,
-                shotsCount: 14,
-                smashHistory: [204, 248, 276],
-                maxSmashKmh: 276,
-                minSmashKmh: 204,
-                avgSmashKmh: 243,
-                positions: []
-            },
-            B2: {
-                id: 'B2',
-                name: 'ภาคิน (B2)',
-                role: 'ตัวบุกสวนกลับ',
-                team: 'B',
-                color: '#fb923c', // Orange
-                x: 0.66, y: 0.72,
-                vx: 0, vy: 0,
-                targetX: 0.66, targetY: 0.72,
-                distanceMeters: 185.1,
-                currentSpeedKmh: 10.8,
-                maxSpeedKmh: 21.7,
-                shotsCount: 11,
-                smashHistory: [218, 255, 289],
-                maxSmashKmh: 289,
-                minSmashKmh: 218,
-                avgSmashKmh: 254,
-                positions: []
-            }
-        };
-
-        // Shuttlecock state
-        const shuttle = {
-            x: 0.35,
-            y: 0.30,
-            targetX: 0.65,
-            targetY: 0.75,
-            speedKmh: 218,
-            shotType: 'Jump Smash (ตบกระโดด)',
-            lastHitter: 'A1',
-            trail: [], // Array of {x, y}
-            progress: 0
-        };
-
-        let shotHistory = [
-            { time: '02:14', player: 'A1 (กวิน)', team: 'A', type: 'Jump Smash (ตบกระโดด)', speed: 312 },
-            { time: '02:09', player: 'B2 (ภาคิน)', team: 'B', type: 'Drive (ดาดเร็ว)', speed: 224 },
-            { time: '02:04', player: 'A2 (นาวิน)', team: 'A', type: 'Smash (ลูกตบ)', speed: 286 },
-            { time: '01:58', player: 'B1 (เตชินท์)', team: 'B', type: 'Clear (โยนหลัง)', speed: 168 },
-            { time: '01:51', player: 'A1 (กวิน)', team: 'A', type: 'Drop Shot (หยอด)', speed: 112 }
-        ];
-
-        let maxRecordedSpeed = 312;
-        let maxSpeedHolder = 'A1 (กวิน)';
-        let minRecordedSmashSpeed = 204;
-        let minSmashHolder = 'B1 (เตชินท์)';
-        let allSmashSpeeds = [285, 312, 268, 294, 245, 286, 298, 204, 248, 276, 218, 255, 289];
-
-        function registerSmashStat(player, speed) {
-            allSmashSpeeds.push(speed);
-            player.smashHistory.push(speed);
-            player.maxSmashKmh = Math.max(...player.smashHistory);
-            player.minSmashKmh = Math.min(...player.smashHistory);
-            player.avgSmashKmh = Math.round(player.smashHistory.reduce((a, b) => a + b, 0) / player.smashHistory.length);
-
-            if (speed > maxRecordedSpeed) {
-                maxRecordedSpeed = speed;
-                maxSpeedHolder = player.name;
-            }
-            if (speed < minRecordedSmashSpeed) {
-                minRecordedSmashSpeed = speed;
-                minSmashHolder = player.name;
-            }
-        }
-
-        // Pre-seed realistic movement history so the Post-Match Graphics tab looks rich immediately
-        function seedInitialPositionHistory() {
-            const steps = 160;
-            for (let i = 0; i < steps; i++) {
-                Object.values(players).forEach(p => {
-                    const baseHomeX = (p.id === 'A1' || p.id === 'B1') ? 0.33 : 0.67;
-                    const baseHomeY = p.team === 'A' ? 0.27 : 0.73;
-                    const angle = (i * 0.23) + (p.id.charCodeAt(1) * 1.7);
-                    const rx = Math.max(0.1, Math.min(0.9, baseHomeX + Math.sin(angle) * 0.16 + (Math.random() - 0.5) * 0.05));
-                    const ry = p.team === 'A'
-                        ? Math.max(0.08, Math.min(0.46, baseHomeY + Math.cos(angle * 0.8) * 0.14))
-                        : Math.max(0.54, Math.min(0.92, baseHomeY + Math.cos(angle * 0.8) * 0.14));
-                    p.positions.push({ x: rx, y: ry, t: i });
-                });
-            }
-        }
-
-        /********************************************************************
-         * 2. REAL WEBCAM & SIMULATION CANVAS ENGINE
-         ********************************************************************/
-        const liveCanvas = document.getElementById('liveCanvas');
-        const liveCtx = liveCanvas.getContext('2d');
-        const webcamVideo = document.getElementById('webcamVideo');
-
-        // Auto-detect or apply manual Portrait / Landscape camera orientation
-        function applyOrientationLayout() {
-            const container = document.getElementById('cameraViewportContainer');
-            const badgeText = document.getElementById('orientationBadgeText');
-            const icon = document.getElementById('orientationIcon');
-            const btnLabel = document.getElementById('btnOrientationLabel');
-
-            if (orientationSetting === 'auto') {
-                // Check if uploaded video has vertical dimensions or if device screen is portrait
-                if (isUploadedVideoActive && webcamVideo.videoWidth && webcamVideo.videoHeight) {
-                    isPortraitViewport = webcamVideo.videoHeight > webcamVideo.videoWidth;
-                } else {
-                    isPortraitViewport = window.innerHeight > window.innerWidth;
-                }
-                if (btnLabel) btnLabel.textContent = 'หมุนจอ: Auto';
-            } else if (orientationSetting === 'portrait') {
-                isPortraitViewport = true;
-                if (btnLabel) btnLabel.textContent = 'หมุนจอ: แนวตั้ง';
-            } else {
-                isPortraitViewport = false;
-                if (btnLabel) btnLabel.textContent = 'หมุนจอ: แนวนอน';
-            }
-
-            if (container) {
-                if (isPortraitViewport) {
-                    container.classList.remove('camera-viewport-landscape');
-                    container.classList.add('camera-viewport-portrait', 'max-w-md');
-                    if (badgeText) badgeText.textContent = orientationSetting === 'auto' ? 'แนวตั้ง Auto' : 'แนวตั้ง (Portrait)';
-                    if (icon) icon.className = 'ph-bold ph-device-mobile-camera';
-                } else {
-                    container.classList.remove('camera-viewport-portrait', 'max-w-md');
-                    container.classList.add('camera-viewport-landscape');
-                    if (badgeText) badgeText.textContent = orientationSetting === 'auto' ? 'แนวนอน Auto' : 'แนวนอน (Landscape)';
-                    if (icon) icon.className = 'ph-bold ph-device-mobile-camera rotate-90';
-                }
-            }
-        }
-
-        function cycleCameraOrientation() {
-            if (orientationSetting === 'auto') orientationSetting = 'portrait';
-            else if (orientationSetting === 'portrait') orientationSetting = 'landscape';
-            else orientationSetting = 'auto';
-
-            applyOrientationLayout();
-            resizeCanvases();
-            const modeThai = orientationSetting === 'auto' ? 'หมุนอัตโนมัติ (Auto-Rotate)' : (orientationSetting === 'portrait' ? 'ล็อกภาพแนวตั้ง (Portrait)' : 'ล็อกภาพแนวนอน (Landscape)');
-            showToast(`ปรับมุมมองการตั้งกล้องเป็น: ${modeThai}`);
-        }
-
-        function resizeCanvases() {
-            applyOrientationLayout();
-            const rect = liveCanvas.parentElement.getBoundingClientRect();
-            liveCanvas.width = rect.width || 800;
-            liveCanvas.height = rect.height || 450;
-
-            const anaCanvas = document.getElementById('analyticsCourtCanvas');
-            if (anaCanvas && anaCanvas.parentElement) {
-                const anaRect = anaCanvas.parentElement.getBoundingClientRect();
-                anaCanvas.width = anaRect.width || 720;
-                anaCanvas.height = anaRect.height || 450;
-                drawAnalyticsCourt();
-            }
-        }
-        window.addEventListener('resize', resizeCanvases);
-        window.addEventListener('orientationchange', () => setTimeout(resizeCanvases, 150));
-
-        async function toggleWebcam() {
-            const btnText = document.getElementById('cameraBtnText');
-            const statusText = document.getElementById('modeStatusText');
-
-            if (isUploadedVideoActive) {
-                exitUploadedVideoMode();
-            }
-
-            if (!isWebcamActive) {
-                try {
-                    const isPort = window.innerHeight > window.innerWidth;
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: {
-                            facingMode: 'environment',
-                            width: { ideal: isPort ? 720 : 1280 },
-                            height: { ideal: isPort ? 1280 : 720 }
-                        },
-                        audio: false
-                    });
-                    webcamVideo.srcObject = stream;
-                    webcamVideo.loop = false;
-                    await webcamVideo.play();
-                    isWebcamActive = true;
-                    btnText.textContent = 'ปิดกล้องสด';
-                    statusText.textContent = 'กล้องสด + AI Tracking';
-                    resizeCanvases();
-                    showToast('เปิดกล้องสดสำเร็จ! รองรับการตั้งกล้องทั้งแนวตั้งและแนวนอน');
-                } catch (err) {
-                    showToast('ไม่สามารถเปิดกล้องได้ (ทำงานต่อในโหมดจำลองสนาม AI)');
-                }
-            } else {
-                if (webcamVideo.srcObject) {
-                    webcamVideo.srcObject.getTracks().forEach(t => t.stop());
-                    webcamVideo.srcObject = null;
-                }
-                isWebcamActive = false;
-                btnText.textContent = 'เปิดกล้องสด';
-                statusText.textContent = 'AI Tracking';
-                showToast('สลับเป็นโหมดจำลองการแข่งขันอัจฉริยะ');
-            }
-        }
-
-        // Video Upload Analysis Functions (100% On-Device Processing, Zero Mobile Data Upload)
-        function triggerVideoUploadSelect() {
-            document.getElementById('videoUploadInput').click();
-        }
-
-        function handleVideoUpload(event) {
-            const file = event.target.files?.[0];
-            if (!file) return;
-
-            // Stop webcam if active
-            if (isWebcamActive && webcamVideo.srcObject) {
-                webcamVideo.srcObject.getTracks().forEach(t => t.stop());
-                webcamVideo.srcObject = null;
-                isWebcamActive = false;
-                document.getElementById('cameraBtnText').textContent = 'เปิดกล้องสด';
-            }
-
-            if (uploadedVideoURL) {
-                URL.revokeObjectURL(uploadedVideoURL);
-            }
-            uploadedVideoURL = URL.createObjectURL(file);
-            webcamVideo.srcObject = null;
-            webcamVideo.src = uploadedVideoURL;
-            webcamVideo.loop = true;
-            webcamVideo.muted = true;
-            webcamVideo.playbackRate = 1.0;
-
-            webcamVideo.onloadedmetadata = () => {
-                isUploadedVideoActive = true;
-                isTrackingPaused = false;
-                document.getElementById('videoPlaybackControls').classList.remove('hidden');
-                document.getElementById('uploadedFileName').textContent = file.name;
-                document.getElementById('modeStatusText').textContent = 'วิเคราะห์คลิปวิดีโอ (On-Device)';
-                document.getElementById('videoDurTime').textContent = formatTimeSec(webcamVideo.duration || 0);
-                resetMatchData(true);
-                webcamVideo.play();
-                resizeCanvases();
-                showToast(`โหลดคลิป "${file.name}" สำเร็จ! วิเคราะห์ในเครื่องโดยไม่ใช้เน็ตมือถือ`);
-            };
-        }
-
-        function setVideoSpeed(rate) {
-            webcamVideo.playbackRate = rate;
-            [0.5, 1, 1.5].forEach(r => {
-                const btn = document.getElementById(`spd-${r}`);
-                if (!btn) return;
-                if (r === rate) {
-                    btn.className = 'px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-bold text-[10px]';
-                } else {
-                    btn.className = 'px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] hover:bg-slate-700';
-                }
-            });
-            showToast(`ปรับความเร็วการวิเคราะห์คลิปเป็น ${rate}x`);
-        }
-
-        function seekUploadedVideo(percentVal) {
-            if (!isUploadedVideoActive || !webcamVideo.duration) return;
-            webcamVideo.currentTime = (Number(percentVal) / 100) * webcamVideo.duration;
-        }
-
-        function exitUploadedVideoMode() {
-            webcamVideo.pause();
-            webcamVideo.removeAttribute('src');
-            webcamVideo.load();
-            isUploadedVideoActive = false;
-            document.getElementById('videoPlaybackControls').classList.add('hidden');
-            document.getElementById('modeStatusText').textContent = 'AI Tracking';
-            resizeCanvases();
-            showToast('ปิดโหมดวิเคราะห์คลิปวิดีโอแล้ว');
-        }
-
-        function formatTimeSec(sec) {
-            const m = String(Math.floor(sec / 60)).padStart(2, '0');
-            const s = String(Math.floor(sec % 60)).padStart(2, '0');
-            return `${m}:${s}`;
-        }
-
-        function toggleTrackingPause() {
-            isTrackingPaused = !isTrackingPaused;
-            const pauseBtnText = document.getElementById('pauseBtnText');
-            const pauseIcon = document.getElementById('pauseIcon');
-            const recDot = document.getElementById('recDot');
-
-            if (isTrackingPaused) {
-                if (isUploadedVideoActive) webcamVideo.pause();
-                pauseBtnText.textContent = 'วิเคราะห์ต่อ';
-                pauseIcon.className = 'ph-fill ph-play text-base';
-                recDot.className = 'w-2 h-2 rounded-full bg-amber-400';
-                showToast('หยุดการบันทึกพิกัดชั่วคราว คุณสามารถเปิดดูกราฟิกการวิ่งได้');
-            } else {
-                if (isUploadedVideoActive) webcamVideo.play();
-                pauseBtnText.textContent = 'หยุดชั่วคราว';
-                pauseIcon.className = 'ph-fill ph-pause text-base';
-                recDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
-                showToast('กำลังบันทึกพิกัดการวิ่งและความเร็วลูกแบดต่อ');
-            }
-        }
-
-        // Convert normalized court (x, y) [0..1] into perspective camera screen coordinates (Adapts to Portrait & Landscape)
-        function courtToScreen(nx, ny, width, height) {
-            const topMargin = isPortraitViewport ? height * 0.14 : height * 0.16;
-            const bottomMargin = isPortraitViewport ? height * 0.88 : height * 0.91;
-            const screenY = topMargin + ny * (bottomMargin - topMargin);
-
-            // Perspective trapezoid calibrated for both Portrait (vertical stand) & Landscape setups
-            const topWidth = isPortraitViewport ? width * 0.62 : width * 0.50;
-            const bottomWidth = isPortraitViewport ? width * 0.94 : width * 0.86;
-            const currentWidth = topWidth + ny * (bottomWidth - topWidth);
-            const leftEdge = (width - currentWidth) / 2;
-            const screenX = leftEdge + nx * currentWidth;
-
-            return { x: screenX, y: screenY, scale: (isPortraitViewport ? 0.58 : 0.65) + ny * 0.52 };
-        }
-
-        // Draw Perspective Badminton Court on Live Canvas
-        function drawPerspectiveCourt(ctx, w, h) {
-            if ((isWebcamActive || isUploadedVideoActive) && webcamVideo.readyState >= 2) {
-                ctx.drawImage(webcamVideo, 0, 0, w, h);
-                // Slight dark tint for HUD contrast
-                ctx.fillStyle = 'rgba(9, 13, 22, 0.30)';
-                ctx.fillRect(0, 0, w, h);
-            } else {
-                // Stadium Arena Gradient Background
-                const grad = ctx.createLinearGradient(0, 0, 0, h);
-                grad.addColorStop(0, '#09111e');
-                grad.addColorStop(1, '#042f2e');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, w, h);
-
-                // Fill Green Court Surface
-                const tl = courtToScreen(0, 0, w, h);
-                const tr = courtToScreen(1, 0, w, h);
-                const br = courtToScreen(1, 1, w, h);
-                const bl = courtToScreen(0, 1, w, h);
-
-                ctx.beginPath();
-                ctx.moveTo(tl.x, tl.y);
-                ctx.lineTo(tr.x, tr.y);
-                ctx.lineTo(br.x, br.y);
-                ctx.lineTo(bl.x, bl.y);
-                ctx.closePath();
-                ctx.fillStyle = '#0d7a5f';
-                ctx.fill();
-            }
-
-            // Court Lines (Perspective)
-            ctx.strokeStyle = (isWebcamActive || isUploadedVideoActive) ? 'rgba(52, 211, 153, 0.65)' : 'rgba(255, 255, 255, 0.85)';
-            ctx.lineWidth = 2;
-
-            function drawCourtLine(x1, y1, x2, y2, dashed = false) {
-                const p1 = courtToScreen(x1, y1, w, h);
-                const p2 = courtToScreen(x2, y2, w, h);
-                ctx.beginPath();
-                if (dashed) ctx.setLineDash([6, 6]);
-                else ctx.setLineDash([]);
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.stroke();
-                ctx.setLineDash([]);
-            }
-
-            // Outer boundary
-            drawCourtLine(0, 0, 1, 0);
-            drawCourtLine(1, 0, 1, 1);
-            drawCourtLine(1, 1, 0, 1);
-            drawCourtLine(0, 1, 0, 0);
-
-            // Singles sidelines
-            drawCourtLine(0.08, 0, 0.08, 1);
-            drawCourtLine(0.92, 0, 0.92, 1);
-
-            // Short service lines
-            drawCourtLine(0, 0.35, 1, 0.35);
-            drawCourtLine(0, 0.65, 1, 0.65);
-
-            // Long service lines for doubles
-            drawCourtLine(0, 0.06, 1, 0.06);
-            drawCourtLine(0, 0.94, 1, 0.94);
-
-            // Center line
-            drawCourtLine(0.5, 0.06, 0.5, 0.35);
-            drawCourtLine(0.5, 0.65, 0.5, 0.94);
-
-            // Net at y = 0.5
-            const netL = courtToScreen(0, 0.5, w, h);
-            const netR = courtToScreen(1, 0.5, w, h);
-            const netHeight = h * 0.065;
-
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-            ctx.beginPath();
-            ctx.moveTo(netL.x, netL.y);
-            ctx.lineTo(netR.x, netR.y);
-            ctx.lineTo(netR.x, netR.y - netHeight);
-            ctx.lineTo(netL.x, netL.y - netHeight);
-            ctx.closePath();
-            ctx.fill();
-
-            // Net Top Tape
-            ctx.strokeStyle = '#f8fafc';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(netL.x, netL.y - netHeight);
-            ctx.lineTo(netR.x, netR.y - netHeight);
-            ctx.stroke();
-        }
-
-        // Update Physics & Simulation
-        function updateSimulationStep() {
-            if (isTrackingPaused) return;
-
-            // Advance shuttlecock along trajectory
-            const speedFactor = Math.max(0.018, shuttle.speedKmh / 9500);
-            shuttle.progress += speedFactor;
-
-            const curX = shuttle.x + (shuttle.targetX - shuttle.x) * shuttle.progress;
-            const curY = shuttle.y + (shuttle.targetY - shuttle.y) * shuttle.progress;
-
-            // Add arc height visual offset
-            const arcLift = Math.sin(shuttle.progress * Math.PI) * 0.12;
-            shuttle.trail.push({ x: curX, y: curY - arcLift });
-            if (shuttle.trail.length > 18) shuttle.trail.shift();
-
-            // Move players toward their tactical targets
-            Object.values(players).forEach(p => {
-                const dx = p.targetX - p.x;
-                const dy = p.targetY - p.y;
-                const dist = Math.hypot(dx, dy);
-
-                if (dist > 0.005) {
-                    const step = Math.min(dist, 0.012);
-                    p.x += (dx / dist) * step;
-                    p.y += (dy / dist) * step;
-                    p.currentSpeedKmh = +(11 + Math.random() * 9).toFixed(1);
-                    p.distanceMeters = +(p.distanceMeters + step * 3.2).toFixed(1);
-                } else {
-                    p.currentSpeedKmh = +(2.5 + Math.random() * 3).toFixed(1);
-                }
-
-                // Record position every few frames
-                if (Math.random() < 0.35) {
-                    p.positions.push({ x: p.x, y: p.y, t: matchSeconds });
-                    if (p.positions.length > 450) p.positions.shift();
-                }
-            });
-
-            // When shuttle reaches destination, trigger next shot
-            if (shuttle.progress >= 1) {
-                triggerAutomatedShot(shuttle.targetX, shuttle.targetY);
-            }
-        }
-
-        function triggerAutomatedShot(fromX, fromY) {
-            shuttle.x = fromX;
-            shuttle.y = fromY;
-            shuttle.progress = 0;
-
-            const isCurrentlyAtTop = fromY < 0.5;
-            // Pick hitter closest to shuttle
-            const hitterCandidates = Object.values(players).filter(p => (p.team === 'A') === isCurrentlyAtTop);
-            hitterCandidates.sort((a, b) => Math.hypot(a.x - fromX, a.y - fromY) - Math.hypot(b.x - fromX, b.y - fromY));
-            const hitter = hitterCandidates[0];
-
-            // Target on opposite half
-            shuttle.targetX = 0.14 + Math.random() * 0.72;
-            shuttle.targetY = isCurrentlyAtTop ? (0.58 + Math.random() * 0.34) : (0.08 + Math.random() * 0.34);
-
-            // Pick realistic shot type & speed
-            const shotCatalog = [
-                { name: 'Jump Smash (ตบกระโดด)', min: 255, max: 328, isSmash: true },
-                { name: 'Smash (ลูกตบ)', min: 195, max: 265, isSmash: true },
-                { name: 'Drive (ดาดเร็ว)', min: 175, max: 225, isSmash: false },
-                { name: 'Clear (โยนหลัง)', min: 145, max: 185, isSmash: false },
-                { name: 'Drop Shot (หยอดหน้าเน็ท)', min: 95, max: 135, isSmash: false }
-            ];
-            const chosen = shotCatalog[Math.floor(Math.random() * shotCatalog.length)];
-            const newSpeed = Math.round(chosen.min + Math.random() * (chosen.max - chosen.min));
-
-            shuttle.speedKmh = newSpeed;
-            shuttle.shotType = chosen.name;
-            shuttle.lastHitter = hitter.id;
-            hitter.shotsCount++;
-
-            if (chosen.isSmash) {
-                registerSmashStat(hitter, newSpeed);
-            }
-
-            // Assign receiving team players to intercept shuttle
-            const receivingTeam = isCurrentlyAtTop ? 'B' : 'A';
-            const receivers = Object.values(players).filter(p => p.team === receivingTeam);
-            // Closest receiver moves to target, partner rotates to cover center/other side
-            receivers.sort((a, b) => Math.hypot(a.x - shuttle.targetX, a.y - shuttle.targetY) - Math.hypot(b.x - shuttle.targetX, b.y - shuttle.targetY));
-            receivers[0].targetX = shuttle.targetX;
-            receivers[0].targetY = shuttle.targetY;
-
-            receivers[1].targetX = 1 - shuttle.targetX * 0.85;
-            receivers[1].targetY = receivingTeam === 'A' ? 0.26 : 0.74;
-
-            // Hitting team recovers toward base position
-            const hitters = Object.values(players).filter(p => p.team !== receivingTeam);
-            hitters[0].targetX = 0.33 + (Math.random() - 0.5) * 0.08;
-            hitters[0].targetY = isCurrentlyAtTop ? 0.27 : 0.73;
-            hitters[1].targetX = 0.67 + (Math.random() - 0.5) * 0.08;
-            hitters[1].targetY = isCurrentlyAtTop ? 0.25 : 0.75;
-
-            // Log shot & update UI
-            recordShotLog(hitter, chosen.name, newSpeed);
-            updateLiveHUD();
-        }
-
-        function triggerManualSmash(customTargetX, customTargetY) {
-            const smashSpeed = Math.round(305 + Math.random() * 38);
-            const hitter = players.A1;
-            shuttle.x = hitter.x;
-            shuttle.y = hitter.y;
-            shuttle.targetX = customTargetX || (0.2 + Math.random() * 0.6);
-            shuttle.targetY = customTargetY || 0.78;
-            shuttle.progress = 0;
-            shuttle.speedKmh = smashSpeed;
-            shuttle.shotType = 'Power Jump Smash (ตบหนักพิเศษ)';
-            hitter.shotsCount++;
-
-            registerSmashStat(hitter, smashSpeed);
-
-            players.B1.targetX = shuttle.targetX;
-            players.B1.targetY = shuttle.targetY;
-
-            recordShotLog(hitter, shuttle.shotType, smashSpeed);
-            updateLiveHUD();
-            showToast(`ตรวจพบลูกตบความเร็วสูง! ${smashSpeed} km/h โดย ${hitter.name}`);
-        }
-
-        // Click on Live Canvas to aim a smash at that spot
-        liveCanvas.addEventListener('click', (e) => {
-            const rect = liveCanvas.getBoundingClientRect();
-            const clickX = (e.clientX - rect.left) / rect.width;
-            const clickY = (e.clientY - rect.top) / rect.height;
-            const normX = Math.max(0.1, Math.min(0.9, clickX));
-            const normY = clickY > 0.5 ? Math.min(0.92, clickY) : 0.75;
-            triggerManualSmash(normX, normY);
-        });
-
-        // Draw AI Tracking Overlays (4-Color Glowing Floor Circles & Subtle Pulsing Shuttle Ring)
-        function renderLiveScene() {
-            const w = liveCanvas.width;
-            const h = liveCanvas.height;
-            liveCtx.clearRect(0, 0, w, h);
-
-            drawPerspectiveCourt(liveCtx, w, h);
-
-            const showTrails = document.getElementById('chkShowTrails').checked;
-            const showSkeleton = document.getElementById('chkShowSkeleton').checked;
-            const timeSec = performance.now() * 0.004;
-
-            // 1. Draw Subtle Player Running Footpath Trails on Floor
-            if (showTrails) {
-                Object.values(players).forEach(p => {
-                    const recent = p.positions.slice(-24);
-                    if (recent.length < 2) return;
-                    liveCtx.save();
-                    liveCtx.beginPath();
-                    recent.forEach((pt, idx) => {
-                        const sc = courtToScreen(pt.x, pt.y, w, h);
-                        if (idx === 0) liveCtx.moveTo(sc.x, sc.y);
-                        else liveCtx.lineTo(sc.x, sc.y);
-                    });
-                    liveCtx.strokeStyle = p.color;
-                    liveCtx.lineWidth = 2;
-                    liveCtx.globalAlpha = 0.45;
-                    liveCtx.stroke();
-                    liveCtx.restore();
-                });
-            }
-
-            // 2. Draw 4 Players as Glowing Floor Circles (4 Distinct Colors: Cyan, Emerald, Rose, Orange)
-            const sortedPlayers = Object.values(players).sort((a, b) => a.y - b.y);
-            sortedPlayers.forEach((p, idx) => {
-                const pos = courtToScreen(p.x, p.y, w, h);
-                const centerX = pos.x;
-                const floorY = pos.y;
-                const pulse = 1 + Math.sin(timeSec + idx * 1.4) * 0.08;
-                const rx = 24 * pos.scale * pulse;
-                const ry = 10 * pos.scale * pulse;
-
-                liveCtx.save();
-
-                // Soft Neon Floor Glow Aura
-                const floorGrad = liveCtx.createRadialGradient(centerX, floorY, 2, centerX, floorY, rx * 1.45);
-                floorGrad.addColorStop(0, p.color + '88');
-                floorGrad.addColorStop(0.55, p.color + '33');
-                floorGrad.addColorStop(1, p.color + '00');
-                liveCtx.fillStyle = floorGrad;
-                liveCtx.beginPath();
-                liveCtx.ellipse(centerX, floorY, rx * 1.45, ry * 1.45, 0, 0, Math.PI * 2);
-                liveCtx.fill();
-
-                // Main Glowing Floor Ring (Perspective Ellipse)
-                liveCtx.shadowColor = p.color;
-                liveCtx.shadowBlur = 14;
-                liveCtx.strokeStyle = p.color;
-                liveCtx.lineWidth = 2.5;
-                liveCtx.beginPath();
-                liveCtx.ellipse(centerX, floorY, rx, ry, 0, 0, Math.PI * 2);
-                liveCtx.stroke();
-
-                // Inner Core Ring on Floor
-                liveCtx.shadowBlur = 0;
-                liveCtx.strokeStyle = '#ffffff';
-                liveCtx.globalAlpha = 0.75;
-                liveCtx.lineWidth = 1.2;
-                liveCtx.beginPath();
-                liveCtx.ellipse(centerX, floorY, rx * 0.45, ry * 0.45, 0, 0, Math.PI * 2);
-                liveCtx.stroke();
-                liveCtx.globalAlpha = 1.0;
-
-                // Optional Minimal Pose Skeleton (Only if user toggles checkbox)
-                if (showSkeleton) {
-                    const boxH = 66 * pos.scale;
-                    const topY = floorY - boxH;
-                    const headY = topY + boxH * 0.2;
-                    const shoulderY = topY + boxH * 0.35;
-                    const hipY = topY + boxH * 0.62;
-
-                    liveCtx.strokeStyle = p.color + 'aa';
-                    liveCtx.lineWidth = 1.6;
-                    liveCtx.beginPath();
-                    liveCtx.arc(centerX, headY, 4.5 * pos.scale, 0, Math.PI * 2);
-                    liveCtx.moveTo(centerX, headY + 4.5 * pos.scale);
-                    liveCtx.lineTo(centerX, hipY);
-                    liveCtx.moveTo(centerX - 10 * pos.scale, shoulderY + 5 * pos.scale);
-                    liveCtx.lineTo(centerX, shoulderY);
-                    liveCtx.lineTo(centerX + 12 * pos.scale, shoulderY - 6 * pos.scale);
-                    liveCtx.moveTo(centerX - 8 * pos.scale, floorY);
-                    liveCtx.lineTo(centerX, hipY);
-                    liveCtx.lineTo(centerX + 8 * pos.scale, floorY);
-                    liveCtx.stroke();
-                }
-
-                // Compact Non-Intrusive Pill Badge right next to floor ring
-                const tagText = `${p.id} • ${p.currentSpeedKmh}`;
-                liveCtx.font = '600 10px Prompt, sans-serif';
-                const tagW = liveCtx.measureText(tagText).width + 10;
-                const tagH = 15;
-                const tagX = centerX - tagW / 2;
-                const tagY = floorY + ry + 4;
-
-                liveCtx.fillStyle = 'rgba(9, 13, 22, 0.78)';
-                liveCtx.beginPath();
-                liveCtx.roundRect(tagX, tagY, tagW, tagH, 6);
-                liveCtx.fill();
-
-                liveCtx.strokeStyle = p.color + '88';
-                liveCtx.lineWidth = 1;
-                liveCtx.stroke();
-
-                liveCtx.fillStyle = p.color;
-                liveCtx.textAlign = 'center';
-                liveCtx.fillText(tagText, centerX, tagY + 10.5);
-
-                liveCtx.restore();
-            });
-
-            // 3. Draw Compact Pulsing Circle for Shuttlecock Position (Scales gently without blocking view)
-            if (shuttle.trail.length > 1) {
-                const isHighSpeed = shuttle.speedKmh >= 250;
-                const shuttleColor = isHighSpeed ? '#fbbf24' : '#38bdf8';
-
-                // Subtle thin trajectory line
-                liveCtx.save();
-                liveCtx.beginPath();
-                shuttle.trail.slice(-10).forEach((pt, idx) => {
-                    const sc = courtToScreen(pt.x, pt.y, w, h);
-                    if (idx === 0) liveCtx.moveTo(sc.x, sc.y);
-                    else liveCtx.lineTo(sc.x, sc.y);
-                });
-                liveCtx.strokeStyle = shuttleColor + '66';
-                liveCtx.lineWidth = 1.6;
-                liveCtx.stroke();
-
-                // Small Ground Shadow Ring directly on court floor where shuttle is flying over
-                const curGroundX = shuttle.x + (shuttle.targetX - shuttle.x) * shuttle.progress;
-                const curGroundY = shuttle.y + (shuttle.targetY - shuttle.y) * shuttle.progress;
-                const scGround = courtToScreen(curGroundX, curGroundY, w, h);
-                const shadowScale = 1 - Math.sin(shuttle.progress * Math.PI) * 0.35;
-
-                liveCtx.beginPath();
-                liveCtx.ellipse(scGround.x, scGround.y, 7 * shadowScale, 3 * shadowScale, 0, 0, Math.PI * 2);
-                liveCtx.strokeStyle = shuttleColor + '77';
-                liveCtx.lineWidth = 1.2;
-                liveCtx.stroke();
-
-                // Compact Pulsing Circle at Shuttlecock Position
-                const head = shuttle.trail[shuttle.trail.length - 1];
-                const scHead = courtToScreen(head.x, head.y, w, h);
-
-                // Smooth scale expansion/contraction based on flight arc & high-frequency pulse
-                const arcFactor = Math.sin(shuttle.progress * Math.PI); // 0 at ends, 1 at peak
-                const rapidPulse = Math.sin(performance.now() * 0.018) * 1.4;
-                const outerRadius = Math.max(5.5, Math.min(11, 6.5 + arcFactor * 3 + rapidPulse));
-
-                // Outer expanding/contracting ring
-                liveCtx.shadowColor = shuttleColor;
-                liveCtx.shadowBlur = 8;
-                liveCtx.strokeStyle = shuttleColor;
-                liveCtx.lineWidth = 1.8;
-                liveCtx.beginPath();
-                liveCtx.arc(scHead.x, scHead.y, outerRadius, 0, Math.PI * 2);
-                liveCtx.stroke();
-
-                // Tiny crisp center dot (3px) so it never blocks the live video
-                liveCtx.fillStyle = '#ffffff';
-                liveCtx.beginPath();
-                liveCtx.arc(scHead.x, scHead.y, 2.8, 0, Math.PI * 2);
-                liveCtx.fill();
-
-                // Minimal speed readout next to shuttle
-                liveCtx.shadowBlur = 0;
-                liveCtx.font = 'bold 10px monospace';
-                liveCtx.fillStyle = shuttleColor;
-                liveCtx.textAlign = 'left';
-                liveCtx.fillText(`${shuttle.speedKmh}`, scHead.x + outerRadius + 4, scHead.y + 3);
-
-                liveCtx.restore();
-            }
-        }
-
-        function animateLoop() {
-            updateSimulationStep();
-            if (isUploadedVideoActive && webcamVideo.duration) {
-                const pct = (webcamVideo.currentTime / webcamVideo.duration) * 100;
-                const slider = document.getElementById('videoSeekSlider');
-                const curTimeEl = document.getElementById('videoCurTime');
-                if (slider) slider.value = pct;
-                if (curTimeEl) curTimeEl.textContent = formatTimeSec(webcamVideo.currentTime);
-            }
-            if (activeTab === 'live') {
-                renderLiveScene();
-            }
-            requestAnimationFrame(animateLoop);
-        }
-
-        /********************************************************************
-         * 3. UI UPDATES & SHOT LOGS
-         ********************************************************************/
-        function recordShotLog(player, shotType, speed) {
-            const mins = String(Math.floor(matchSeconds / 60)).padStart(2, '0');
-            const secs = String(matchSeconds % 60).padStart(2, '0');
-            shotHistory.unshift({
-                time: `${mins}:${secs}`,
-                player: player.name,
-                team: player.team,
-                type: shotType,
-                speed: speed
-            });
-            if (shotHistory.length > 25) shotHistory.pop();
-            renderShotHistoryList();
-        }
-
-        function renderShotHistoryList() {
-            const container = document.getElementById('shotHistoryList');
-            container.innerHTML = shotHistory.slice(0, 8).map(item => {
-                const isFast = item.speed >= 260;
-                const teamColor = item.team === 'A' ? 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30' : 'text-rose-300 bg-rose-500/10 border-rose-500/30';
-                return `
-                    <div class="flex items-center justify-between bg-slate-900/80 border border-slate-800/90 px-2.5 py-1.5 rounded-lg text-xs">
-                        <div class="flex items-center gap-2">
-                            <span class="text-[10px] font-mono text-slate-500">${item.time}</span>
-                            <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold border ${teamColor}">ทีม ${item.team}</span>
-                            <span class="font-medium text-slate-200">${item.player}</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <span class="text-[11px] text-slate-400 hidden sm:inline">${item.type.split(' ')[0]}</span>
-                            <span class="font-mono font-bold ${isFast ? 'text-amber-400' : 'text-emerald-400'}">${item.speed} km/h</span>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function updateLiveHUD() {
-            document.getElementById('liveSpeedValue').textContent = shuttle.speedKmh;
-            document.getElementById('liveShotTypeBadge').textContent = shuttle.shotType;
-            document.getElementById('statMaxSpeed').textContent = maxRecordedSpeed;
-            document.getElementById('statMaxHolder').textContent = maxSpeedHolder;
-
-            document.getElementById('statMinSmashSpeed').textContent = minRecordedSmashSpeed;
-            document.getElementById('statMinHolder').textContent = minSmashHolder;
-
-            const avgSmash = allSmashSpeeds.length > 0
-                ? Math.round(allSmashSpeeds.reduce((acc, v) => acc + v, 0) / allSmashSpeeds.length)
-                : 0;
-            document.getElementById('statAvgSmashSpeed').textContent = avgSmash;
-            document.getElementById('statTotalSmashes').textContent = allSmashSpeeds.length;
-
-            // Update Clean Live Video Bottom Strip
-            const quickMax = document.getElementById('hudMaxSmashQuick');
-            const quickAvg = document.getElementById('hudAvgSmashQuick');
-            if (quickMax) quickMax.textContent = maxRecordedSpeed;
-            if (quickAvg) quickAvg.textContent = avgSmash;
-
-            const avgSpeed = shotHistory.length > 0
-                ? Math.round(shotHistory.reduce((acc, s) => acc + s.speed, 0) / shotHistory.length)
-                : 0;
-            document.getElementById('statAvgSpeed').textContent = avgSpeed;
-
-            renderLivePlayersCards();
-        }
-
-        function renderLivePlayersCards() {
-            const container = document.getElementById('livePlayersContainer');
-            container.innerHTML = Object.values(players).map(p => {
-                const teamBadge = p.team === 'A'
-                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
-                    : 'bg-rose-500/20 text-rose-300 border-rose-500/30';
-                return `
-                    <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
-                        <div class="flex items-center gap-2.5">
-                            <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs text-slate-950" style="background-color: ${p.color}">
-                                ${p.id}
-                            </div>
-                            <div>
-                                <div class="flex items-center gap-1.5">
-                                    <span class="text-xs font-bold text-white">${p.name}</span>
-                                    <span class="text-[10px] px-1.5 py-0.2 rounded border ${teamBadge}">ทีม ${p.team}</span>
-                                </div>
-                                <div class="text-[11px] text-slate-400">${p.role} • ตี ${p.shotsCount} ลูก</div>
-                            </div>
-                        </div>
-                        <div class="text-right font-mono">
-                            <div class="text-xs font-bold text-emerald-400">${p.distanceMeters.toFixed(1)} ม.</div>
-                            <div class="text-[10px] text-slate-400">วิ่ง ${p.currentSpeedKmh} km/h</div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        /********************************************************************
-         * 4. POST-MATCH 2D COURT GRAPHICS (HEATMAP & TRAJECTORIES)
-         ********************************************************************/
-        function setGraphicMode(mode) {
-            graphicMode = mode;
-            ['both', 'heatmap', 'trails'].forEach(m => {
-                const btn = document.getElementById(`gMode-${m}`);
-                if (m === mode) {
-                    btn.className = 'px-3 py-1 rounded-lg text-xs font-medium bg-emerald-500 text-slate-950';
-                } else {
-                    btn.className = 'px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white';
-                }
-            });
-            drawAnalyticsCourt();
-        }
-
-        function setAnalyticsFilter(filter) {
-            analyticsFilter = filter;
-            const allFilters = ['ALL', 'TEAM_A', 'TEAM_B', 'A1', 'A2', 'B1', 'B2'];
-            allFilters.forEach(f => {
-                const btn = document.getElementById(`filter-${f}`);
-                if (!btn) return;
-                if (f === filter) {
-                    btn.classList.add('ring-2', 'ring-emerald-400', 'font-bold');
-                } else {
-                    btn.classList.remove('ring-2', 'ring-emerald-400', 'font-bold');
-                }
-            });
-            drawAnalyticsCourt();
-        }
-
-        function updateReplayTimeline(val) {
-            replayPercentage = Number(val);
-            document.getElementById('replayPercentLabel').textContent = `แสดงข้อมูล ${replayPercentage}% ของเวลาทั้งหมด`;
-            drawAnalyticsCourt();
-        }
-
-        function getFilteredPlayers() {
-            return Object.values(players).filter(p => {
-                if (analyticsFilter === 'ALL') return true;
-                if (analyticsFilter === 'TEAM_A') return p.team === 'A';
-                if (analyticsFilter === 'TEAM_B') return p.team === 'B';
-                return p.id === analyticsFilter;
-            });
-        }
-
-        function drawAnalyticsCourt() {
-            const canvas = document.getElementById('analyticsCourtCanvas');
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            const w = canvas.width;
-            const h = canvas.height;
-
-            ctx.clearRect(0, 0, w, h);
-
-            // Outer padding
-            const padX = w * 0.08;
-            const padY = h * 0.08;
-            const cw = w - padX * 2;
-            const ch = h - padY * 2;
-
-            // Horizontal 2D Court Layout: Left Half = Team A, Right Half = Team B
-            // (Mapping normalized player y [0..1] to horizontal X, and player x [0..1] to vertical Y)
-            function normTo2DCourt(nx, ny) {
-                return {
-                    x: padX + ny * cw,
-                    y: padY + nx * ch
-                };
-            }
-
-            // Court Surface
-            ctx.fillStyle = '#064e3b';
-            ctx.fillRect(padX, padY, cw, ch);
-
-            // Draw Court Markings
-            ctx.strokeStyle = 'rgba(255,255,255,0.75)';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(padX, padY, cw, ch);
-
-            // Singles sidelines
-            ctx.strokeRect(padX, padY + ch * 0.08, cw, ch * 0.84);
-
-            // Short service lines
-            ctx.beginPath();
-            ctx.moveTo(padX + cw * 0.35, padY);
-            ctx.lineTo(padX + cw * 0.35, padY + ch);
-            ctx.moveTo(padX + cw * 0.65, padY);
-            ctx.lineTo(padX + cw * 0.65, padY + ch);
-            // Center lines
-            ctx.moveTo(padX, padY + ch * 0.5);
-            ctx.lineTo(padX + cw * 0.35, padY + ch * 0.5);
-            ctx.moveTo(padX + cw * 0.65, padY + ch * 0.5);
-            ctx.lineTo(padX + cw, padY + ch * 0.5);
-            ctx.stroke();
-
-            // Net Line in the Center
-            ctx.save();
-            ctx.strokeStyle = '#34d399';
-            ctx.lineWidth = 3;
-            ctx.setLineDash([6, 4]);
-            ctx.beginPath();
-            ctx.moveTo(padX + cw * 0.5, padY - 10);
-            ctx.lineTo(padX + cw * 0.5, padY + ch + 10);
-            ctx.stroke();
-            ctx.restore();
-
-            // Team Side Watermarks
-            ctx.font = 'bold 14px Prompt, sans-serif';
-            ctx.fillStyle = 'rgba(255,255,255,0.22)';
-            ctx.textAlign = 'center';
-            ctx.fillText('แดนทีม A (A1, A2)', padX + cw * 0.22, padY - 10);
-            ctx.fillText('NET', padX + cw * 0.5, padY - 10);
-            ctx.fillText('แดนทีม B (B1, B2)', padX + cw * 0.78, padY - 10);
-
-            const activePlayers = getFilteredPlayers();
-
-            // 1. Draw Heatmap Layer
-            if (graphicMode === 'both' || graphicMode === 'heatmap') {
-                activePlayers.forEach(p => {
-                    const limit = Math.max(2, Math.floor(p.positions.length * (replayPercentage / 100)));
-                    const pts = p.positions.slice(0, limit);
-                    pts.forEach((pt, idx) => {
-                        if (idx % 2 !== 0) return; // Optimize rendering
-                        const c = normTo2DCourt(pt.x, pt.y);
-                        const rad = 24;
-                        const grad = ctx.createRadialGradient(c.x, c.y, 2, c.x, c.y, rad);
-                        grad.addColorStop(0, p.color + '55');
-                        grad.addColorStop(1, p.color + '00');
-                        ctx.fillStyle = grad;
-                        ctx.beginPath();
-                        ctx.arc(c.x, c.y, rad, 0, Math.PI * 2);
-                        ctx.fill();
-                    });
-                });
-            }
-
-            // 2. Draw Running Trajectory Polylines
-            if (graphicMode === 'both' || graphicMode === 'trails') {
-                activePlayers.forEach(p => {
-                    const limit = Math.max(2, Math.floor(p.positions.length * (replayPercentage / 100)));
-                    const pts = p.positions.slice(0, limit);
-                    if (pts.length < 2) return;
-
-                    ctx.beginPath();
-                    pts.forEach((pt, idx) => {
-                        const c = normTo2DCourt(pt.x, pt.y);
-                        if (idx === 0) ctx.moveTo(c.x, c.y);
-                        else ctx.lineTo(c.x, c.y);
-                    });
-                    ctx.strokeStyle = p.color;
-                    ctx.lineWidth = 2.2;
-                    ctx.globalAlpha = 0.85;
-                    ctx.stroke();
-                    ctx.globalAlpha = 1.0;
-
-                    // Draw Current / End Marker for Player
-                    const lastPt = pts[pts.length - 1];
-                    const endC = normTo2DCourt(lastPt.x, lastPt.y);
-
-                    ctx.beginPath();
-                    ctx.arc(endC.x, endC.y, 11, 0, Math.PI * 2);
-                    ctx.fillStyle = p.color;
-                    ctx.fill();
-                    ctx.lineWidth = 2;
-                    ctx.strokeStyle = '#090d16';
-                    ctx.stroke();
-
-                    ctx.fillStyle = '#090d16';
-                    ctx.font = 'bold 10px Prompt, sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(p.id, endC.x, endC.y + 3.5);
-                });
-            }
-
-            renderAnalyticsSummaryCards();
-        }
-
-        function renderAnalyticsSummaryCards() {
-            const teamADist = (players.A1.distanceMeters + players.A2.distanceMeters).toFixed(0);
-            const teamBDist = (players.B1.distanceMeters + players.B2.distanceMeters).toFixed(0);
-            document.getElementById('teamADistText').textContent = `${teamADist} ม.`;
-            document.getElementById('teamBDistText').textContent = `${teamBDist} ม.`;
-
-            const totalDist = Number(teamADist) + Number(teamBDist);
-            const pctA = Math.round((Number(teamADist) / totalDist) * 100);
-            document.getElementById('barTeamADist').style.width = `${pctA}%`;
-            document.getElementById('barTeamBDist').style.width = `${100 - pctA}%`;
-
-            const teamASmashes = [...players.A1.smashHistory, ...players.A2.smashHistory];
-            const teamBSmashes = [...players.B1.smashHistory, ...players.B2.smashHistory];
-            const avgTeamASmash = teamASmashes.length ? Math.round(teamASmashes.reduce((a, b) => a + b, 0) / teamASmashes.length) : 0;
-            const avgTeamBSmash = teamBSmashes.length ? Math.round(teamBSmashes.reduce((a, b) => a + b, 0) / teamBSmashes.length) : 0;
-            document.getElementById('teamASpeedText').textContent = `${avgTeamASmash} km/h`;
-            document.getElementById('teamBSpeedText').textContent = `${avgTeamBSmash} km/h`;
-
-            const container = document.getElementById('analyticsPlayerCards');
-            container.innerHTML = Object.values(players).map(p => {
-                // Calculate Front vs Back court coverage percentage
-                const frontCount = p.positions.filter(pt => (p.team === 'A' ? pt.y > 0.28 : pt.y < 0.72)).length;
-                const frontPct = Math.round((frontCount / Math.max(1, p.positions.length)) * 100);
-                const backPct = 100 - frontPct;
-
-                return `
-                    <div class="bg-slate-900/85 border border-slate-800 rounded-xl p-3 space-y-2">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                <span class="w-3 h-3 rounded-full" style="background-color: ${p.color}"></span>
-                                <span class="text-xs font-bold text-white">${p.name}</span>
-                                <span class="text-[11px] text-slate-400">(${p.role})</span>
-                            </div>
-                            <span class="text-xs font-mono font-bold text-emerald-400">ระยะวิ่ง ${p.distanceMeters.toFixed(1)} ม.</span>
-                        </div>
-                        <div class="grid grid-cols-4 gap-1.5 text-[11px] bg-slate-950/60 p-2 rounded-lg">
-                            <div>
-                                <span class="text-slate-400 block text-[10px]">ตบเร็วสุด</span>
-                                <span class="font-mono font-bold text-amber-300">${p.maxSmashKmh} km/h</span>
-                            </div>
-                            <div>
-                                <span class="text-slate-400 block text-[10px]">ตบช้าสุด</span>
-                                <span class="font-mono font-bold text-cyan-300">${p.minSmashKmh} km/h</span>
-                            </div>
-                            <div>
-                                <span class="text-slate-400 block text-[10px]">ตบเฉลี่ย</span>
-                                <span class="font-mono font-bold text-emerald-300">${p.avgSmashKmh} km/h</span>
-                            </div>
-                            <div>
-                                <span class="text-slate-400 block text-[10px]">โซนหน้า:หลัง</span>
-                                <span class="font-mono font-bold text-white">${frontPct}%:${backPct}%</span>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        /********************************************************************
-         * 5. AI COACH ENGINE (GEMINI API + AUTOMATIC TACTICAL EVALUATION)
-         ********************************************************************/
-        function populateDefaultCoachSummary() {
-            const bullets = document.getElementById('instantCoachBullets');
-            bullets.innerHTML = `
-                <li class="flex items-start gap-2">
-                    <i class="ph-fill ph-check-circle text-emerald-400 mt-0.5 shrink-0"></i>
-                    <span><b>จุดแข็งเกมรุก (ทีม A):</b> A1 (กวิน) มีความเร็วลูกตบสูงสุดถึง <b>${maxRecordedSpeed} km/h</b> และเข้าทำลูกหน้าเน็ทได้รวดเร็ว</span>
-                </li>
-                <li class="flex items-start gap-2">
-                    <i class="ph-fill ph-warning-circle text-amber-400 mt-0.5 shrink-0"></i>
-                    <span><b>ช่องว่างการยืนคู่ (Rotation Gap):</b> เมื่อ A1 ถอยลงมาตบลูกหลัง พบว่า A2 สลับขึ้นไปคุมหน้าเน็ทช้ากว่าจังหวะมาตรฐาน 0.6 วินาที</span>
-                </li>
-                <li class="flex items-start gap-2">
-                    <i class="ph-fill ph-lightning text-cyan-400 mt-0.5 shrink-0"></i>
-                    <span><b>สมรรถนะการวิ่ง (ทีม B):</b> B1 (เตชินท์) ใช้ระยะทางวิ่งสะสมสูงถึง <b>${players.B1.distanceMeters.toFixed(0)} ม.</b> แนะนำให้บีบมุมรับลูกตบเข้าหาเส้นกลางมากขึ้นเพื่อลดภาระการวิ่ง</span>
-                </li>
-            `;
-
-            const reportHTML = `
-                <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
-                    <div class="flex items-center gap-2 text-emerald-400 font-bold text-sm">
-                        <i class="ph-fill ph-clipboard-text text-lg"></i>
-                        <span>สรุปผลการวิเคราะห์เทคนิคและกลยุทธ์จากระบบผู้ช่วยโค้ช</span>
-                    </div>
-                    <p class="text-slate-300">
-                        จากการตรวจจับความเร็วลูกแบดมินตันและพิกัดการวิ่งของผู้เล่นทั้ง 4 คนบนสนาม ระบบขอสรุปคำแนะนำแยกตามหมวดหมู่ดังนี้:
-                    </p>
-                    <div class="space-y-2">
-                        <div class="p-3 rounded-lg bg-slate-950/70 border-l-4 border-cyan-400">
-                            <h4 class="font-bold text-cyan-300 text-xs mb-1">1. การแยกบทบาทและการหมุนเวียนของ ทีม A (A1 กวิน & A2 นาวิน)</h4>
-                            <p class="text-xs text-slate-300">
-                                ทีม A เน้นระบบบุกแบบ <b>หน้า-หลัง (Front & Back Attack)</b> โดยลูกตบมีความเร็วเฉลี่ยสูงมาก แต่จากกราฟิก Heatmap พบว่าพื้นที่คอร์ทฝั่งซ้ายส่วนกลางเปิดว่างบ่อยครั้งเมื่อเปลี่ยนจากรุกเป็นรับ แนะนำให้ถ่างออกยืนคู่ <b>ซ้าย-ขวา (Side-by-Side)</b> ทันทีที่โยนลูกโด่ง (Clear)
-                            </p>
-                        </div>
-                        <div class="p-3 rounded-lg bg-slate-950/70 border-l-4 border-rose-400">
-                            <h4 class="font-bold text-rose-300 text-xs mb-1">2. ฟุตเวิร์คและการรับลูกตบของ ทีม B (B1 เตชินท์ & B2 ภาคิน)</h4>
-                            <p class="text-xs text-slate-300">
-                                ทีม B รับลูกตบความเร็ว 250+ km/h ได้ดี แต่จังหวะ Split-step (ก้าวกระโดดเตรียมตัว) ของ B2 ยังช้าเล็กน้อย ทำให้ต้องก้าวขาวยาวเกินไป แนะนำให้ย่อจุดศูนย์ถ่วงต่ำลงและคืนตำแหน่งสู่จุด Center Base ทุกครั้งหลังตีเสร็จ
-                            </p>
-                        </div>
-                        <div class="p-3 rounded-lg bg-slate-950/70 border-l-4 border-amber-400">
-                            <h4 class="font-bold text-amber-300 text-xs mb-1">3. เทคนิคการเพิ่มความเร็วลูกตี (Stroke Mechanics)</h4>
-                            <p class="text-xs text-slate-300">
-                                จังหวะ Impact จุดกระทบลูกของลูกตบที่ความเร็วทะลุ 300 km/h เกิดขึ้นเมื่อผู้เล่นตีลูกที่จุดสูงสุดด้านหน้าลำตัวประมาณ 30 ซม. พร้อมตวัดข้อมือ (Pronation) เต็มวงสวิง
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            `;
-            document.getElementById('aiCoachOutput').innerHTML = reportHTML;
-        }
-
-        async function callGeminiWithBackoff(promptText) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
-            const systemInstruction = `คุณคือ "โค้ชแบดมินตันระดับทีมชาติและนักวิทยาศาสตร์การกีฬา (ShuttlePro AI Coach)" 
-หน้าที่ของคุณคือวิเคราะห์ข้อมูลจากกล้องจับความเร็วลูกแบดและกราฟิกการวิ่งของผู้เล่นทั้ง 4 คน (ทีม A: A1, A2 และ ทีม B: B1, B2) 
-ให้คำแนะนำที่เป็นรูปธรรม เข้าใจง่าย แบ่งเป็นหัวข้อชัดเจน ได้แก่:
-1. วิเคราะห์ความเร็วลูกตีและเทคนิคการออกไม้
-2. วิเคราะห์ตำแหน่งการวิ่ง ฟุตเวิร์ค และการยืนตำแหน่งคู่ (Rotation)
-3. แบบฝึกหัด (Drills) ที่แนะนำเพื่อพัฒนาต่อทันที`;
-
-            const payload = {
-                contents: [{ parts: [{ text: promptText }] }],
-                systemInstruction: { parts: [{ text: systemInstruction }] }
-            };
-
-            let delay = 1000;
-            for (let attempt = 0; attempt < 4; attempt++) {
-                try {
-                    const res = await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    if (!res.ok) throw new Error('API Error');
-                    const data = await res.json();
-                    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (text) return text;
-                } catch (e) {
-                    await new Promise(r => setTimeout(r, delay));
-                    delay *= 2;
-                }
-            }
-            return null;
-        }
-
-        async function generateAICoachAdvice(focusTopic = 'full') {
-            const outputBox = document.getElementById('aiCoachOutput');
-            outputBox.innerHTML = `
-                <div class="flex flex-col items-center justify-center py-12 text-center space-y-3">
-                    <div class="w-10 h-10 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
-                    <p class="text-xs text-emerald-300 font-medium">ผู้ช่วยโค้ช AI กำลังประมวลผลความเร็วลูกและพิกัดการวิ่งของทั้ง 2 ทีม...</p>
-                </div>
-            `;
-
-            const statsSnapshot = Object.values(players).map(p =>
-                `${p.name} (ทีม ${p.team}, ${p.role}): วิ่งสะสม ${p.distanceMeters.toFixed(1)} เมตร, ตบเร็วสุด ${p.maxSmashKmh} km/h, ตบช้าสุด ${p.minSmashKmh} km/h, ตบเฉลี่ย ${p.avgSmashKmh} km/h, ตีทั้งหมด ${p.shotsCount} ลูก`
-            ).join('\n');
-
-            const overallAvgSmash = allSmashSpeeds.length ? Math.round(allSmashSpeeds.reduce((a, b) => a + b, 0) / allSmashSpeeds.length) : 0;
-
-            let topicPrompt = 'สรุปเทคนิคภาพรวมทุกด้าน ทั้งความเร็วการตบ (เร็วสุด/ช้าสุด/เฉลี่ย) ฟุตเวิร์ค และการยืนตำแหน่งทีมคู่';
-            if (focusTopic === 'teamA') topicPrompt = 'เจาะลึกการเล่นร่วมกันของทีม A (A1 และ A2) การสลับตำแหน่งหน้า-หลัง และการทำแต้ม';
-            if (focusTopic === 'teamB') topicPrompt = 'เจาะลึกเกมรับของทีม B (B1 และ B2) การลดระยะทางวิ่งที่สูญเปล่า และการสวนกลับลูกตบ';
-            if (focusTopic === 'smash') topicPrompt = 'เจาะลึกเทคนิคการเพิ่มความเร็วลูกตบ (Smash Speed) วิเคราะห์ความต่างระหว่างลูกตบเร็วสุดและช้าสุดของเกม';
-
-            const fullPrompt = `ข้อมูลสถิติจริงจากสนามในขณะนี้:
-- สถิติลูกตบทั้งเกม: ตบเร็วสุด ${maxRecordedSpeed} km/h (${maxSpeedHolder}) | ตบช้าสุด ${minRecordedSmashSpeed} km/h (${minSmashHolder}) | ตบเฉลี่ยทั้งเกม ${overallAvgSmash} km/h (จากลูกตบทั้งหมด ${allSmashSpeeds.length} ลูก)
-- รายละเอียดผู้เล่นทั้ง 4 คน:
-${statsSnapshot}
-
-หัวข้อที่ต้องการให้โค้ชวิเคราะห์: ${topicPrompt}`;
-
-            const aiResponse = await callGeminiWithBackoff(fullPrompt);
-            if (aiResponse) {
-                const formatted = aiResponse
-                    .replace(/\*\*(.*?)\*\*/g, '<b class="text-emerald-300">$1</b>')
-                    .replace(/\n/g, '<br>');
-                outputBox.innerHTML = `
-                    <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 text-xs md:text-sm leading-relaxed space-y-2">
-                        <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
-                            <span class="font-bold text-emerald-400 flex items-center gap-1.5">
-                                <i class="ph-fill ph-sparkle"></i> ผลวิเคราะห์สดจาก Gemini AI Coach
-                            </span>
-                            <span class="text-[10px] text-slate-400">อัปเดตตามสถิติสนามจริง</span>
-                        </div>
-                        <div>${formatted}</div>
-                    </div>
-                `;
-            } else {
-                populateDefaultCoachSummary();
-                showToast('แสดงรายงานการวิเคราะห์มาตรฐานจากระบบผู้ช่วยโค้ช');
-            }
-        }
-
-        async function askCustomCoachQuestion() {
-            const input = document.getElementById('customCoachPrompt');
-            const question = input.value.trim();
-            if (!question) return;
-            input.value = '';
-
-            const outputBox = document.getElementById('aiCoachOutput');
-            outputBox.innerHTML = `
-                <div class="flex flex-col items-center justify-center py-10 text-center space-y-3">
-                    <div class="w-9 h-9 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
-                    <p class="text-xs text-cyan-300">กำลังวิเคราะห์คำถาม: "${question}"...</p>
-                </div>
-            `;
-
-            const statsSnapshot = Object.values(players).map(p =>
-                `${p.name} (ทีม ${p.team}): วิ่ง ${p.distanceMeters.toFixed(1)} ม., ตบสูงสุด ${p.maxSmashKmh} km/h`
-            ).join(' | ');
-
-            const aiResponse = await callGeminiWithBackoff(`สถิติสนาม: ${statsSnapshot}\nคำถามจากผู้เล่น: ${question}`);
-            if (aiResponse) {
-                const formatted = aiResponse
-                    .replace(/\*\*(.*?)\*\*/g, '<b class="text-cyan-300">$1</b>')
-                    .replace(/\n/g, '<br>');
-                outputBox.innerHTML = `
-                    <div class="bg-slate-900/90 border border-cyan-500/30 rounded-xl p-4 text-xs md:text-sm leading-relaxed space-y-2">
-                        <div class="text-xs text-slate-400 border-b border-slate-800 pb-1.5">คำถามของคุณ: <span class="text-white font-medium">"${question}"</span></div>
-                        <div class="pt-1">${formatted}</div>
-                    </div>
-                `;
-            } else {
-                populateDefaultCoachSummary();
-            }
-        }
-
-        /********************************************************************
-         * 6. UTILITIES, TABS & EXPORT
-         ********************************************************************/
-        const pageTitles = {
-            live: 'กล้องจับความเร็วสด',
-            stats: 'สถิติความเร็วตบ & แยกทีม',
-            analytics: 'กราฟิกการวิ่ง 2D',
-            coach: 'ผู้ช่วยโค้ช AI'
-        };
-
-        function switchTab(tabId) {
-            activeTab = tabId;
-            const badge = document.getElementById('headerPageBadge');
-            if (badge && pageTitles[tabId]) {
-                badge.textContent = pageTitles[tabId];
-            }
-
-            ['live', 'stats', 'analytics', 'coach'].forEach(t => {
-                const section = document.getElementById(`tab-${t}`);
-                const btn = document.getElementById(`tabBtn-${t}`);
-                if (!section || !btn) return;
-
-                if (t === tabId) {
-                    section.classList.remove('hidden');
-                    btn.className = 'flex flex-col items-center justify-center py-1.5 rounded-2xl text-emerald-400 bg-emerald-500/15 font-semibold transition-all';
-                } else {
-                    section.classList.add('hidden');
-                    btn.className = 'flex flex-col items-center justify-center py-1.5 rounded-2xl text-slate-400 hover:text-slate-200 font-medium transition-all';
-                }
-            });
-
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-
-            if (tabId === 'live' || tabId === 'analytics') {
-                setTimeout(() => {
-                    resizeCanvases();
-                    if (tabId === 'analytics') drawAnalyticsCourt();
-                }, 40);
-            }
-        }
-
-        function toggleIOSGuideModal() {
-            const modal = document.getElementById('iosGuideModal');
-            modal.classList.toggle('hidden');
-        }
-
-        function toggleDeployModal() {
-            const modal = document.getElementById('deployGuideModal');
-            modal.classList.toggle('hidden');
-        }
-
-        function toggleLowDataMode() {
-            isLowDataMode = !isLowDataMode;
-            const btn = document.getElementById('btnLowDataMode');
-            const txt = document.getElementById('lowDataText');
-            if (isLowDataMode) {
-                btn.className = 'flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[11px] font-medium transition-all';
-                if (txt) txt.textContent = 'ประหยัดเน็ต: เปิด';
-                showToast('เปิดโหมดประหยัดเน็ตมือถือ: ประมวลผลกล้อง/คลิปในเครื่อง 100% และบีบอัดข้อมูล');
-            } else {
-                btn.className = 'flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 text-slate-400 border border-slate-700 text-[11px] font-medium transition-all';
-                if (txt) txt.textContent = 'ประหยัดเน็ต: ปิด';
-                showToast('โหมดออนไลน์ปกติ');
-            }
-        }
-
-        function resetMatchData(silent = false) {
-            matchSeconds = 0;
-            allSmashSpeeds = [250];
-            maxRecordedSpeed = 250;
-            minRecordedSmashSpeed = 250;
-            Object.values(players).forEach(p => {
-                p.distanceMeters = 0;
-                p.shotsCount = 0;
-                p.smashHistory = [250];
-                p.maxSmashKmh = 250;
-                p.minSmashKmh = 250;
-                p.avgSmashKmh = 250;
-                p.positions = [];
-            });
-            seedInitialPositionHistory();
-            updateLiveHUD();
-            drawAnalyticsCourt();
-            if (!silent) {
-                showToast('รีเซ็ตข้อมูลการวิ่งและสถิติความเร็วลูกตบเรียบร้อย เริ่มเซตใหม่');
-            }
-        }
-
-        function exportReportJSON() {
-            const overallAvgSmash = allSmashSpeeds.length ? Math.round(allSmashSpeeds.reduce((a, b) => a + b, 0) / allSmashSpeeds.length) : 0;
-            const reportData = {
-                exportedAt: new Date().toISOString(),
-                smashStats: {
-                    maxSmashSpeedKmh: maxRecordedSpeed,
-                    maxSmashHolder: maxSpeedHolder,
-                    minSmashSpeedKmh: minRecordedSmashSpeed,
-                    minSmashHolder: minSmashHolder,
-                    avgSmashSpeedKmh: overallAvgSmash,
-                    totalSmashes: allSmashSpeeds.length
-                },
-                players: players,
-                recentShots: shotHistory
-            };
-            const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `shuttlepro-match-report.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast('ดาวน์โหลดไฟล์ข้อมูลพิกัดการวิ่งและสถิติสำเร็จ (.JSON)');
-        }
-
-        function showToast(msg) {
-            const banner = document.getElementById('toastBanner');
-            document.getElementById('toastMessage').textContent = msg;
-            banner.classList.remove('hidden');
-            clearTimeout(window._toastTimer);
-            window._toastTimer = setTimeout(() => {
-                banner.classList.add('hidden');
-            }, 3500);
-        }
-
-        // Match Timer Loop
-        setInterval(() => {
-            if (!isTrackingPaused) {
-                matchSeconds++;
-                const mins = String(Math.floor(matchSeconds / 60)).padStart(2, '0');
-                const secs = String(matchSeconds % 60).padStart(2, '0');
-                document.getElementById('matchTimer').textContent = `${mins}:${secs}`;
-                document.getElementById('fpsCounter').textContent = Math.floor(58 + Math.random() * 4);
-            }
-        }, 1000);
-
-        // Initialize on Window Load
-        window.onload = function () {
-            seedInitialPositionHistory();
-            resizeCanvases();
-            renderShotHistoryList();
-            updateLiveHUD();
-            populateDefaultCoachSummary();
-            animateLoop();
-        };
-    </script>
+    <script src="cv-engine.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
