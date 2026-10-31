@@ -27,38 +27,7 @@
             }
         }
     </script>
-    <style>
-        body {
-            font-family: 'Prompt', sans-serif;
-            background-color: #090d16;
-            color: #f8fafc;
-            -webkit-tap-highlight-color: transparent;
-            padding-top: env(safe-area-inset-top);
-            padding-bottom: calc(5rem + env(safe-area-inset-bottom));
-        }
-        .glass-panel {
-            background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-        }
-        .ios-bottom-nav {
-            padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
-            background: rgba(9, 13, 22, 0.92);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-        }
-        .camera-viewport-landscape {
-            aspect-ratio: 16 / 9;
-        }
-        .camera-viewport-portrait {
-            aspect-ratio: 9 / 14;
-            max-height: 68vh;
-        }
-        canvas {
-            touch-action: none;
-        }
-    </style>
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
 
@@ -509,7 +478,11 @@
         </div>
     </nav>
 
-    <script src="cv-engine.js"></script>
-    <script src="app.js"></script>
+    <script src="js/state.js"></script>
+    <script src="js/cv-court.js"></script>
+    <script src="js/pose-tracker.js"></script>
+    <script src="js/scoreboard.js"></script>
+    <script src="js/live-view.js"></script>
+    <script src="js/analytics-coach.js"></script>
 </body>
 </html>
