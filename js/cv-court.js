@@ -42,14 +42,14 @@ window.ShuttleCV = (function () {
     let autoLockEnabled = true;
 
     // Calibrated / Detected Court Keypoints in normalized screen coordinates [0..1]
-    // Default initial template ONLY used when user enters manual calibration or after CV lock
+    // Matches real eye-level / tripod baseline perspective (floor in lower half, net near horizon)
     let courtCorners = {
-        tl: { x: 0.24, y: 0.18 }, // Top-Left (Far baseline left)
-        tr: { x: 0.76, y: 0.18 }, // Top-Right (Far baseline right)
-        br: { x: 0.93, y: 0.89 }, // Bottom-Right (Near baseline right)
-        bl: { x: 0.07, y: 0.89 }, // Bottom-Left (Near baseline left)
-        netL: { x: 0.14, y: 0.46 }, // Net Top Tape Left Post
-        netR: { x: 0.86, y: 0.46 }  // Net Top Tape Right Post
+        tl: { x: 0.22, y: 0.57 }, // Top-Left (Far baseline left on floor)
+        tr: { x: 0.78, y: 0.57 }, // Top-Right (Far baseline right on floor)
+        br: { x: 0.96, y: 0.94 }, // Bottom-Right (Near baseline right)
+        bl: { x: 0.04, y: 0.94 }, // Bottom-Left (Near baseline left)
+        netL: { x: 0.16, y: 0.55 }, // Net Top Tape Left Post
+        netR: { x: 0.84, y: 0.55 }  // Net Top Tape Right Post
     };
 
     // 3x3 Homography Matrices:
@@ -202,50 +202,65 @@ window.ShuttleCV = (function () {
 
         const courtFloorRatio = courtColorPixels / (CV_W * CV_H);
 
-        // Step 2.2: Detect White/Yellow Court Line Ridges
-        // A true court line is a thin bright ridge (width 2..9 px in 320x180) flanked by darker court floor pixels!
-        // This prevents skin/faces/walls/shirts from being falsely detected as court lines.
+        // Step 2.1b: Find the true Court Floor Horizon Row (topmost row of continuous court surface)
+        // Everything above floorHorizonRow is wall/ceiling/roof trusses and MUST be ignored for floor lines.
+        let floorHorizonRow = Math.floor(CV_H * 0.48);
+        for (let y = CV_H - 12; y >= Math.floor(CV_H * 0.32); y--) {
+            let rowFloorCount = 0;
+            for (let x = 16; x < CV_W - 16; x += 4) {
+                if (isCourtColor[y * CV_W + x]) rowFloorCount++;
+            }
+            const rowRatio = rowFloorCount / ((CV_W - 32) / 4);
+            if (rowRatio >= 0.25) {
+                floorHorizonRow = y;
+            }
+        }
+
+        // Step 2.2: Detect White/Yellow Court Line Ridges ONLY on the Court Floor (y >= floorHorizonRow)
         const ridgePoints = [];
         const netTapeRows = new Float32Array(CV_H);
+        const netSearchTop = Math.max(20, floorHorizonRow - Math.floor(CV_H * 0.12));
+        const netSearchBot = Math.min(CV_H - 20, floorHorizonRow + Math.floor(CV_H * 0.14));
 
-        for (let y = Math.floor(CV_H * 0.12); y < Math.floor(CV_H * 0.94); y += 2) {
-            let horizontalRidgeRun = 0;
+        // Scan Net Top Tape band near horizon
+        for (let y = netSearchTop; y <= netSearchBot; y++) {
+            for (let x = Math.floor(CV_W * 0.15); x < Math.floor(CV_W * 0.85); x += 2) {
+                const idx = y * CV_W + x;
+                const cLum = gray[idx];
+                if (cLum < 165) continue;
+                const topLum = gray[(y - 3) * CV_W + x];
+                const botLum = gray[(y + 3) * CV_W + x];
+                if (cLum - topLum > 28 && cLum - botLum > 28) {
+                    netTapeRows[y] += 1;
+                }
+            }
+        }
+
+        // Scan Court Floor Lines strictly below floorHorizonRow
+        for (let y = Math.max(floorHorizonRow, Math.floor(CV_H * 0.42)); y < Math.floor(CV_H * 0.96); y += 2) {
             for (let x = 8; x < CV_W - 8; x += 2) {
                 const idx = y * CV_W + x;
                 const cLum = gray[idx];
-                if (cLum < 155) {
-                    horizontalRidgeRun = 0;
-                    continue;
-                }
+                if (cLum < 160) continue;
 
-                // Check horizontal profile (vertical/slanted sideline): dark - BRIGHT - dark
-                const leftLum = gray[idx - 5];
-                const rightLum = gray[idx + 5];
-                const isVertRidge = (cLum - leftLum > 28 && cLum - rightLum > 28) &&
-                    (isCourtColor[idx - 5] || isCourtColor[idx + 5]);
+                // Must be flanked by actual court floor color on both sides!
+                const leftLum = gray[idx - 4];
+                const rightLum = gray[idx + 4];
+                const isVertRidge = (cLum - leftLum > 26 && cLum - rightLum > 26) &&
+                    (isCourtColor[idx - 4] && isCourtColor[idx + 4]);
 
-                // Check vertical profile (horizontal baseline/service line/net tape): dark - BRIGHT - dark
                 const topLum = gray[(y - 4) * CV_W + x];
                 const botLum = gray[(y + 4) * CV_W + x];
-                const isHorizRidge = (cLum - topLum > 26 && cLum - botLum > 26);
+                const isHorizRidge = (cLum - topLum > 24 && cLum - botLum > 24) &&
+                    (isCourtColor[(y + 4) * CV_W + x] || isCourtColor[(y - 4) * CV_W + x]);
 
-                if (isHorizRidge) {
-                    horizontalRidgeRun++;
-                    if (y > CV_H * 0.25 && y < CV_H * 0.68) {
-                        netTapeRows[y] += 1;
-                    }
-                } else {
-                    horizontalRidgeRun = 0;
-                }
-
-                if (isVertRidge || (isHorizRidge && (isCourtColor[(y + 5) * CV_W + x] || isCourtColor[(y - 5) * CV_W + x]))) {
-                    // Exclude points inside detected human bounding boxes so white shirts/shoes don't pollute court lines
+                if (isVertRidge || isHorizRidge) {
                     const nx = x / CV_W;
                     const ny = y / CV_H;
                     let insideHuman = false;
                     for (let h = 0; h < humanBoxes.length; h++) {
                         const hb = humanBoxes[h];
-                        if (nx >= hb.xMin && nx <= hb.xMax && ny >= hb.yMin && ny <= hb.yMax) {
+                        if (nx >= hb.xMin - 0.03 && nx <= hb.xMax + 0.03 && ny >= hb.yMin - 0.03 && ny <= hb.yMax + 0.03) {
                             insideHuman = true;
                             break;
                         }
@@ -257,7 +272,7 @@ window.ShuttleCV = (function () {
             }
         }
 
-        // Step 2.3: Cluster ridge points into line segments (Mini-Hough / RANSAC segment builder)
+        // Step 2.3: Cluster floor ridge points into clean floor line segments
         const segments = [];
         const used = new Uint8Array(ridgePoints.length);
         for (let i = 0; i < ridgePoints.length; i += 2) {
@@ -271,24 +286,20 @@ window.ShuttleCV = (function () {
                 const dx = p2.x - p1.x;
                 const dy = p2.y - p1.y;
                 const len = Math.hypot(dx, dy);
-                if (len < 0.14 || len > 0.85) continue;
+                if (len < 0.12 || len > 0.75) continue;
 
-                // Check angle: court lines are either near-horizontal (|dy/dx| < 0.22) or perspective sidelines (|dx/dy| < 0.65)
                 const absDx = Math.abs(dx);
                 const absDy = Math.abs(dy);
-                const isHorizontalCandidate = absDy / (absDx + 1e-5) < 0.18;
-                const isSidelineCandidate = absDy > 0.14 && (absDx / absDy) < 0.62;
+                const isHorizontalCandidate = absDy / (absDx + 1e-5) < 0.15;
+                const isSidelineCandidate = absDy > 0.10 && (absDx / absDy) < 0.85;
                 if (!isHorizontalCandidate && !isSidelineCandidate) continue;
 
-                // Count colinear ridge points
                 const inliers = [i, j];
-                for (let k = 0; k < ridgePoints.length; k += 3) {
+                for (let k = 0; k < ridgePoints.length; k += 2) {
                     if (k === i || k === j) continue;
                     const pk = ridgePoints[k];
-                    // Distance from pk to line p1->p2
                     const dist = Math.abs(dy * pk.x - dx * pk.y + p2.x * p1.y - p2.y * p1.x) / len;
-                    if (dist < 0.008) {
-                        // Also check projection lies between p1 and p2
+                    if (dist < 0.007) {
                         const dot = (pk.x - p1.x) * dx + (pk.y - p1.y) * dy;
                         if (dot >= 0 && dot <= len * len) {
                             inliers.push(k);
@@ -296,31 +307,31 @@ window.ShuttleCV = (function () {
                     }
                 }
 
-                if (inliers.length >= 9 && (!bestEnd || inliers.length > bestInliers.length)) {
+                if (inliers.length >= 8 && (!bestEnd || inliers.length > bestInliers.length)) {
                     bestEnd = p2;
                     bestInliers = inliers;
                 }
             }
 
-            if (bestEnd && bestInliers.length >= 9) {
+            if (bestEnd && bestInliers.length >= 8) {
                 bestInliers.forEach(idx => { used[idx] = 1; });
-                const isHoriz = Math.abs(bestEnd.y - p1.y) < Math.abs(bestEnd.x - p1.x) * 0.25;
+                const isHoriz = Math.abs(bestEnd.y - p1.y) < Math.abs(bestEnd.x - p1.x) * 0.22;
                 segments.push({
                     x1: p1.x, y1: p1.y,
                     x2: bestEnd.x, y2: bestEnd.y,
                     type: isHoriz ? 'H' : 'V',
                     strength: bestInliers.length
                 });
-                if (segments.length >= 18) break;
+                if (segments.length >= 12) break;
             }
         }
 
         detectedLineSegments = segments;
 
-        // Step 2.4: Detect White Net Top Tape (Strong horizontal ridge near court middle)
+        // Step 2.4: Detect White Net Top Tape near horizon
         let bestNetY = -1;
         let maxNetScore = 0;
-        for (let y = Math.floor(CV_H * 0.28); y < Math.floor(CV_H * 0.64); y++) {
+        for (let y = netSearchTop + 1; y < netSearchBot - 1; y++) {
             const score = netTapeRows[y - 1] + netTapeRows[y] * 2 + netTapeRows[y + 1];
             if (score > maxNetScore) {
                 maxNetScore = score;
@@ -328,23 +339,20 @@ window.ShuttleCV = (function () {
             }
         }
 
-        // Calculate realistic Court & Net Confidence
         const horizSegs = segments.filter(s => s.type === 'H');
         const vertSegs = segments.filter(s => s.type === 'V');
 
-        // Require BOTH court floor color AND both horizontal + perspective vertical lines
         const rawCourtConf = Math.min(
             100,
             Math.round(
-                (horizSegs.length >= 2 ? 38 : horizSegs.length * 16) +
-                (vertSegs.length >= 2 ? 38 : vertSegs.length * 16) +
-                (courtFloorRatio > 0.22 ? 24 : courtFloorRatio * 90)
+                (horizSegs.length >= 1 ? 35 : 0) +
+                (vertSegs.length >= 1 ? 35 : 0) +
+                (courtFloorRatio > 0.18 ? 30 : courtFloorRatio * 120)
             )
         );
-        // Smooth confidence with EMA
         courtConfidence = Math.round(courtConfidence * 0.7 + rawCourtConf * 0.3);
 
-        const rawNetConf = maxNetScore >= 18 ? Math.min(100, Math.round((maxNetScore / 42) * 100)) : Math.round((maxNetScore / 42) * 50);
+        const rawNetConf = maxNetScore >= 12 ? Math.min(100, Math.round((maxNetScore / 32) * 100)) : Math.round((maxNetScore / 32) * 50);
         netConfidence = Math.round(netConfidence * 0.7 + rawNetConf * 0.3);
 
         if (bestNetY > 0 && netConfidence >= 45) {
@@ -358,13 +366,14 @@ window.ShuttleCV = (function () {
             detectedNetSegment = null;
         }
 
-        // Auto-fit corners when strong outer boundary segments are found and Auto-Lock is enabled
-        if (autoLockEnabled && !isCourtLocked && horizSegs.length >= 2 && vertSegs.length >= 2 && courtConfidence >= 68) {
-            fitCornersFromDetectedSegments(horizSegs, vertSegs, bestNetY);
+        // Auto-fit corners strictly within the detected floor region (never up in the ceiling!)
+        if (autoLockEnabled && !isCourtLocked && courtConfidence >= 65) {
+            const floorTopNorm = Math.max(0.46, Math.min(0.68, floorHorizonRow / CV_H));
+            fitCornersFromDetectedSegments(horizSegs, vertSegs, bestNetY, floorTopNorm);
         }
 
-        // Step 2.5: 3-Frame Shuttlecock Motion Detection
-        const shuttleCandidate = detectShuttleFrom3FrameDiff(gray, humanBoxes);
+        // Step 2.5: High-Precision 3-Frame Shuttlecock Point-Target Detection
+        const shuttleCandidate = detectShuttleFrom3FrameDiff(gray, humanBoxes, floorHorizonRow / CV_H);
         prevGray2 = prevGray1;
         prevGray1 = gray;
 
@@ -376,95 +385,91 @@ window.ShuttleCV = (function () {
         };
     }
 
-    function fitCornersFromDetectedSegments(horizSegs, vertSegs, bestNetY) {
-        // Find top-most and bottom-most strong horizontal lines, and left-most / right-most sidelines
-        const sortedH = [...horizSegs].sort((a, b) => ((a.y1 + a.y2) / 2) - ((b.y1 + b.y2) / 2));
-        const topH = sortedH[0];
-        const botH = sortedH[sortedH.length - 1];
+    function fitCornersFromDetectedSegments(horizSegs, vertSegs, bestNetY, floorTopNorm) {
+        const topY = Math.max(0.48, Math.min(0.66, floorTopNorm + 0.02));
+        const botY = 0.94;
 
-        const sortedV = [...vertSegs].sort((a, b) => ((a.x1 + a.x2) / 2) - ((b.x1 + b.x2) / 2));
-        const leftV = sortedV[0];
-        const rightV = sortedV[sortedV.length - 1];
+        const alpha = 0.2;
+        courtCorners.tl.y = courtCorners.tl.y * (1 - alpha) + topY * alpha;
+        courtCorners.tr.y = courtCorners.tr.y * (1 - alpha) + topY * alpha;
+        courtCorners.br.y = courtCorners.br.y * (1 - alpha) + botY * alpha;
+        courtCorners.bl.y = courtCorners.bl.y * (1 - alpha) + botY * alpha;
 
-        const topY = Math.max(0.12, Math.min(0.42, (topH.y1 + topH.y2) / 2));
-        const botY = Math.max(0.62, Math.min(0.95, (botH.y1 + botH.y2) / 2));
-
-        if (botY - topY > 0.32) {
-            const leftTopX = Math.max(0.08, Math.min(0.42, Math.min(leftV.x1, leftV.x2) + 0.04));
-            const leftBotX = Math.max(0.03, Math.min(0.35, Math.min(leftV.x1, leftV.x2)));
-            const rightTopX = Math.max(0.58, Math.min(0.92, Math.max(rightV.x1, rightV.x2) - 0.04));
-            const rightBotX = Math.max(0.65, Math.min(0.97, Math.max(rightV.x1, rightV.x2)));
-
-            if (rightTopX - leftTopX > 0.25 && rightBotX - leftBotX > 0.40) {
-                // Smoothly blend toward detected court corners
-                const alpha = 0.25;
-                courtCorners.tl.x = courtCorners.tl.x * (1 - alpha) + leftTopX * alpha;
-                courtCorners.tl.y = courtCorners.tl.y * (1 - alpha) + topY * alpha;
-                courtCorners.tr.x = courtCorners.tr.x * (1 - alpha) + rightTopX * alpha;
-                courtCorners.tr.y = courtCorners.tr.y * (1 - alpha) + topY * alpha;
-                courtCorners.br.x = courtCorners.br.x * (1 - alpha) + rightBotX * alpha;
-                courtCorners.br.y = courtCorners.br.y * (1 - alpha) + botY * alpha;
-                courtCorners.bl.x = courtCorners.bl.x * (1 - alpha) + leftBotX * alpha;
-                courtCorners.bl.y = courtCorners.bl.y * (1 - alpha) + botY * alpha;
-
-                updateHomographyFromCorners();
-                if (bestNetY > topY + 0.08 && bestNetY < botY - 0.08 && !courtCorners._customNet) {
-                    courtCorners.netL.y = bestNetY;
-                    courtCorners.netR.y = bestNetY;
-                }
-            }
+        updateHomographyFromCorners();
+        if (bestNetY > 0.38 && bestNetY < 0.68 && !courtCorners._customNet) {
+            courtCorners.netL.y = bestNetY;
+            courtCorners.netR.y = bestNetY;
         }
     }
 
     /****************************************************************
-     * 3. 3-FRAME TEMPORAL DIFFERENCE SHUTTLECOCK TRACKER
-     *    (TrackNet Principle: |I(t)-I(t-1)| AND |I(t)-I(t-2)|)
+     * 3. 3-FRAME TRANSIENT POINT-TARGET SHUTTLECOCK TRACKER
+     *    Eliminates false positives on player shirts, shoes, lines & lights.
      ****************************************************************/
-    function detectShuttleFrom3FrameDiff(currGray, humanBoxes) {
+    function detectShuttleFrom3FrameDiff(currGray, humanBoxes, floorTopNorm = 0.5) {
         if (!prevGray1 || !prevGray2) return null;
 
         let bestX = -1, bestY = -1, bestScore = 0;
+        // Scan airspace from above net down to near floor (avoid top 12% ceiling trusses)
+        const minRow = Math.floor(CV_H * 0.14);
+        const maxRow = Math.floor(CV_H * 0.93);
 
-        for (let y = 6; y < CV_H - 6; y += 2) {
-            for (let x = 6; x < CV_W - 6; x += 2) {
+        for (let y = minRow; y < maxRow; y += 2) {
+            for (let x = 10; x < CV_W - 10; x += 2) {
                 const idx = y * CV_W + x;
                 const lum = currGray[idx];
-                // Shuttlecock is bright white/yellow in flight
-                if (lum < 150) continue;
+                if (lum < 165) continue;
 
-                const d1 = Math.abs(lum - prevGray1[idx]);
-                const d2 = Math.abs(lum - prevGray2[idx]);
-                // Must have moved significantly from BOTH previous frames
-                if (d1 < 28 || d2 < 28) continue;
+                // 1. Must be newly bright in current frame compared to BOTH t-1 and t-2
+                const d1 = lum - prevGray1[idx];
+                const d2 = lum - prevGray2[idx];
+                if (d1 < 32 || d2 < 32) continue;
 
-                // Must be a compact blob (not a large moving wall/arm)
-                const surroundLum = (
-                    currGray[(y - 4) * CV_W + x] +
-                    currGray[(y + 4) * CV_W + x] +
-                    currGray[y * CV_W + (x - 4)] +
-                    currGray[y * CV_W + (x + 4)]
-                ) >> 2;
+                // 2. Background stability check: pixel (x,y) must have been stable between t-2 and t-1!
+                // This rejects oscillating player shirts, shoes, and camera shake on court lines/lights.
+                const bgDiff = Math.abs(prevGray1[idx] - prevGray2[idx]);
+                if (bgDiff > 16) continue;
 
-                const compactness = lum - surroundLum;
-                if (compactness < 18) continue;
+                // 3. 4-Direction Point Isolation Check:
+                // A shuttlecock is a small compact spot (radius ~2-5px), NOT a long line or large body part.
+                // All 4 surrounding points at 5px radius must be significantly darker than the center!
+                const topLum = currGray[(y - 5) * CV_W + x];
+                const botLum = currGray[(y + 5) * CV_W + x];
+                const leftLum = currGray[y * CV_W + (x - 5)];
+                const rightLum = currGray[y * CV_W + (x + 5)];
+
+                if (
+                    lum - topLum < 22 ||
+                    lum - botLum < 22 ||
+                    lum - leftLum < 22 ||
+                    lum - rightLum < 22
+                ) {
+                    continue;
+                }
 
                 const nx = x / CV_W;
                 const ny = y / CV_H;
 
-                // Exclude core torso of detected players (allow near wrists/above head)
-                let insideTorso = false;
+                // 4. Full Human Body + Shoe + Racket Exclusion Mask
+                let insideHuman = false;
                 for (let i = 0; i < humanBoxes.length; i++) {
                     const b = humanBoxes[i];
-                    const torsoYMin = b.yMin + (b.yMax - b.yMin) * 0.22;
-                    const torsoYMax = b.yMax - (b.yMax - b.yMin) * 0.15;
-                    if (nx >= b.xMin + 0.02 && nx <= b.xMax - 0.02 && ny >= torsoYMin && ny <= torsoYMax) {
-                        insideTorso = true;
+                    if (
+                        nx >= b.xMin - 0.04 &&
+                        nx <= b.xMax + 0.04 &&
+                        ny >= b.yMin - 0.04 &&
+                        ny <= b.yMax + 0.04
+                    ) {
+                        insideHuman = true;
                         break;
                     }
                 }
-                if (insideTorso) continue;
+                if (insideHuman) continue;
 
-                const score = (d1 + d2) * 0.5 + compactness * 1.4;
+                const surroundAvg = (topLum + botLum + leftLum + rightLum) >> 2;
+                const compactness = lum - surroundAvg;
+                const score = (d1 + d2) * 0.5 + compactness * 1.5;
+
                 if (score > bestScore) {
                     bestScore = score;
                     bestX = nx;
@@ -473,7 +478,7 @@ window.ShuttleCV = (function () {
             }
         }
 
-        if (bestScore >= 52) {
+        if (bestScore >= 68) {
             return { x: bestX, y: bestY, confidence: Math.min(99, Math.round(bestScore)) };
         }
         return null;

@@ -268,6 +268,15 @@ liveCanvas.addEventListener('pointerup', (e) => {
 });
 
 function renderLiveScene() {
+    // Keep canvas internal resolution strictly synced with rendered container box (prevents aspect ratio squishing)
+    const rect = liveCanvas.parentElement.getBoundingClientRect();
+    const targetW = Math.max(320, Math.round(rect.width));
+    const targetH = Math.max(240, Math.round(rect.height));
+    if (liveCanvas.width !== targetW || liveCanvas.height !== targetH) {
+        liveCanvas.width = targetW;
+        liveCanvas.height = targetH;
+    }
+
     const w = liveCanvas.width;
     const h = liveCanvas.height;
     liveCtx.clearRect(0, 0, w, h);
@@ -314,41 +323,29 @@ function renderLiveScene() {
         updateCVConfidenceBadges();
     }
 
-    const rawSegments = ShuttleCV.getDetectedSegments();
-    if (rawSegments.length > 0) {
-        liveCtx.save();
-        rawSegments.forEach(seg => {
-            liveCtx.strokeStyle = seg.type === 'H' ? 'rgba(56, 189, 248, 0.65)' : 'rgba(250, 204, 21, 0.65)';
-            liveCtx.lineWidth = 2;
-            liveCtx.beginPath();
-            liveCtx.moveTo(seg.x1 * w, seg.y1 * h);
-            liveCtx.lineTo(seg.x2 * w, seg.y2 * h);
-            liveCtx.stroke();
-        });
-        liveCtx.restore();
-    }
+    const chkCourtLines = document.getElementById('chkShowCourtLines')?.checked ?? true;
+    const showCourtOverlay = isCalibratingCourt || (chkCourtLines && ShuttleCV.isCourtValidOrLocked());
 
-    const showCourtOverlay = isCalibratingCourt || ShuttleCV.isCourtValidOrLocked();
     if (showCourtOverlay) {
         drawHomographyCourtAndNet(liveCtx, w, h);
-    } else {
+    } else if (!ShuttleCV.isCourtValidOrLocked()) {
         liveCtx.save();
-        const boxW = Math.min(w - 32, 460);
-        const boxH = 44;
+        const boxW = Math.min(w - 24, 420);
+        const boxH = 36;
         const bx = (w - boxW) / 2;
-        const by = h - 78;
+        const by = h - 68;
         liveCtx.fillStyle = 'rgba(9, 13, 22, 0.85)';
         liveCtx.beginPath();
-        liveCtx.roundRect(bx, by, boxW, boxH, 12);
+        liveCtx.roundRect(bx, by, boxW, boxH, 10);
         liveCtx.fill();
         liveCtx.strokeStyle = 'rgba(251, 191, 36, 0.5)';
         liveCtx.lineWidth = 1.2;
         liveCtx.stroke();
 
         liveCtx.fillStyle = '#fbbf24';
-        liveCtx.font = '600 12px Prompt, sans-serif';
+        liveCtx.font = '600 11px Prompt, sans-serif';
         liveCtx.textAlign = 'center';
-        liveCtx.fillText('กำลังสแกนหาเส้นสนามและเน็ทจริง... (เล็งกล้องไปที่คอร์ท หรือกด "ล็อกพิกัดเส้นสนาม & เน็ท")', w / 2, by + 26);
+        liveCtx.fillText('กดปุ่ม "ล็อกพิกัดเส้นสนาม & เน็ท" เพื่อทาบเส้นคอร์ทให้ตรงกับมุมกล้องของคุณ', w / 2, by + 22);
         liveCtx.restore();
     }
 
@@ -708,7 +705,7 @@ function updateCVConfidenceBadges() {
     const locked = ShuttleCV.getCourtLocked();
 
     if (courtConfEl) {
-        courtConfEl.textContent = locked ? `ล็อกพิกัดคอร์ทแล้ว (100%)` : `เส้นสนาม: ${cConf}%`;
+        courtConfEl.textContent = locked ? `คอร์ท: ล็อกแล้ว` : `คอร์ท: ${cConf}%`;
         courtConfEl.className = (locked || cConf >= 60)
             ? 'text-[10px] font-semibold text-emerald-300'
             : 'text-[10px] font-semibold text-amber-300';

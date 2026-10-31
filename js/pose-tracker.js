@@ -172,56 +172,116 @@ async function runRealPoseEstimation(videoEl) {
 }
 
 let lastShuttleUpdateMs = performance.now();
+let shuttleCandidateBuffer = []; // Stores recent unverified candidates [{ sx, sy, u, v, t }]
+let lastStrokeRecordedMs = 0;
 
 function processRealShuttleAndRally(cvResult) {
     const now = performance.now();
-    const dtSec = Math.max(0.012, (now - lastShuttleUpdateMs) / 1000);
     lastShuttleUpdateMs = now;
 
-    if (!ShuttleCV.isCourtValidOrLocked()) {
-        shuttle.detected = false;
-        return;
-    }
+    // Prune stale candidates older than 220ms
+    shuttleCandidateBuffer = shuttleCandidateBuffer.filter(pt => now - pt.t <= 220);
 
     const cand = cvResult?.shuttleCandidate;
     if (cand) {
         const uv = ShuttleCV.screenToCourtNormalized(cand.x, cand.y);
-        if (uv.x >= -0.25 && uv.x <= 1.25 && uv.y >= -0.25 && uv.y <= 1.25) {
-            if (shuttle.detected) {
-                const dxM = (uv.x - shuttle.u) * ShuttleCV.COURT_WIDTH_M;
-                const dyM = (uv.y - shuttle.v) * ShuttleCV.COURT_LENGTH_M;
-                const distM = Math.hypot(dxM, dyM);
+        // Clamp normalized court coords so airborne arcs above the net don't produce extreme perspective distances
+        const clampedU = Math.max(-0.15, Math.min(1.15, uv.x));
+        const clampedV = Math.max(-0.15, Math.min(1.15, uv.y));
 
-                if (distM > 0.08 && distM < 6.5) {
-                    const rawKmh = (distM / dtSec) * 3.6 * 1.35;
-                    const clampedKmh = Math.min(365, Math.max(45, Math.round(rawKmh)));
-                    shuttle.speedKmh = Math.round(shuttle.speedKmh * 0.45 + clampedKmh * 0.55);
+        const prevPt = shuttleCandidateBuffer[shuttleCandidateBuffer.length - 1];
+        if (!prevPt) {
+            shuttleCandidateBuffer.push({ sx: cand.x, sy: cand.y, u: clampedU, v: clampedV, t: now });
+        } else {
+            const stepScreen = Math.hypot(cand.x - prevPt.sx, cand.y - prevPt.sy);
+            const dtSec = Math.max(0.014, (now - prevPt.t) / 1000);
 
-                    const prevVy = shuttle.vy;
-                    const newVy = uv.y - shuttle.v;
-                    shuttle.vx = uv.x - shuttle.u;
-                    shuttle.vy = newVy;
-
-                    if (Math.sign(prevVy) !== Math.sign(newVy) || shuttle.framesInFlight <= 2) {
-                        classifyRealStroke(uv.x, uv.y, shuttle.speedKmh);
+            // Plausible per-frame screen displacement for a shuttlecock (rejects static spots & huge random jumps)
+            if (stepScreen >= 0.008 && stepScreen <= 0.14) {
+                let isColinear = true;
+                if (shuttleCandidateBuffer.length >= 2) {
+                    const prev2 = shuttleCandidateBuffer[shuttleCandidateBuffer.length - 2];
+                    const vx1 = prevPt.sx - prev2.sx;
+                    const vy1 = prevPt.sy - prev2.sy;
+                    const vx2 = cand.x - prevPt.sx;
+                    const vy2 = cand.y - prevPt.sy;
+                    const mag1 = Math.hypot(vx1, vy1);
+                    const mag2 = Math.hypot(vx2, vy2);
+                    if (mag1 > 1e-4 && mag2 > 1e-4) {
+                        const cosAngle = (vx1 * vx2 + vy1 * vy2) / (mag1 * mag2);
+                        // Trajectory must move in a consistent forward/arc direction (cosAngle >= 0.5)
+                        if (cosAngle < 0.50) {
+                            isColinear = false;
+                        }
                     }
                 }
-            } else {
-                shuttle.speedKmh = 140;
-                classifyRealStroke(uv.x, uv.y, 140);
+
+                if (isColinear) {
+                    shuttleCandidateBuffer.push({
+                        sx: cand.x,
+                        sy: cand.y,
+                        u: clampedU,
+                        v: clampedV,
+                        t: now,
+                        stepScreen,
+                        dtSec
+                    });
+                } else {
+                    // Restart buffer from this new direction
+                    shuttleCandidateBuffer = [{ sx: cand.x, sy: cand.y, u: clampedU, v: clampedV, t: now }];
+                }
+            } else if (stepScreen > 0.14) {
+                shuttleCandidateBuffer = [{ sx: cand.x, sy: cand.y, u: clampedU, v: clampedV, t: now }];
             }
+        }
+
+        // Require at least 3 verified colinear consecutive frames before confirming shuttle flight & speed!
+        if (shuttleCandidateBuffer.length >= 3) {
+            const recent3 = shuttleCandidateBuffer.slice(-3);
+            // Compute median screen angular speed (normalized screen widths per second)
+            const speedsScreenPerSec = [];
+            for (let i = 1; i < recent3.length; i++) {
+                const dScreen = Math.hypot(recent3[i].sx - recent3[i - 1].sx, recent3[i].sy - recent3[i - 1].sy);
+                const dt = Math.max(0.015, (recent3[i].t - recent3[i - 1].t) / 1000);
+                speedsScreenPerSec.push(dScreen / dt);
+            }
+            speedsScreenPerSec.sort((a, b) => a - b);
+            const medScreenSpeed = speedsScreenPerSec[Math.floor(speedsScreenPerSec.length / 2)];
+
+            // Convert screen velocity across the 13.4m court airspace + downward smash trajectory slope
+            const dyScreen = recent3[recent3.length - 1].sy - recent3[0].sy;
+            const dxScreen = recent3[recent3.length - 1].sx - recent3[0].sx;
+            const isDownwardSteep = dyScreen > Math.abs(dxScreen) * 0.45; // Descending steep smash trajectory
+
+            // Calibrated physical speed mapping (1 screen height/width traversal ~ 8.5m effective perspective chord)
+            const effectiveChordMeters = isDownwardSteep ? 9.8 : 7.6;
+            const physicalKmh = Math.round(medScreenSpeed * effectiveChordMeters * 3.6);
+            const realisticKmh = Math.min(308, Math.max(58, physicalKmh));
+
+            shuttle.speedKmh = shuttle.detected
+                ? Math.round(shuttle.speedKmh * 0.5 + realisticKmh * 0.5)
+                : realisticKmh;
 
             shuttle.screenX = cand.x;
             shuttle.screenY = cand.y;
-            shuttle.u = uv.x;
-            shuttle.v = uv.y;
+            shuttle.u = clampedU;
+            shuttle.v = clampedV;
             shuttle.detected = true;
             shuttle.lastSeenMs = now;
             shuttle.framesInFlight++;
             shuttle.stationaryFrames = 0;
 
-            shuttle.trail.push({ sx: cand.x, sy: cand.y, u: uv.x, v: uv.y, t: now });
-            if (shuttle.trail.length > 22) shuttle.trail.shift();
+            shuttle.trail.push({ sx: cand.x, sy: cand.y, u: clampedU, v: clampedV, t: now });
+            if (shuttle.trail.length > 18) shuttle.trail.shift();
+
+            // Record stroke at the start of a verified flight with a 1.1s cooldown
+            if (now - lastStrokeRecordedMs > 1100) {
+                lastStrokeRecordedMs = now;
+                classifyRealStroke(clampedU, clampedV, shuttle.speedKmh);
+            } else {
+                const speedEl = document.getElementById('liveSpeedValue');
+                if (speedEl) speedEl.textContent = shuttle.speedKmh;
+            }
 
             if (scoreboard.rallyState !== 'RALLYING' && shuttle.framesInFlight >= 3) {
                 scoreboard.rallyState = 'RALLYING';
@@ -233,13 +293,15 @@ function processRealShuttleAndRally(cvResult) {
 
     if (shuttle.detected) {
         shuttle.stationaryFrames++;
-        if (scoreboard.rallyState === 'RALLYING' && shuttle.stationaryFrames >= 18 && shuttle.framesInFlight >= 5) {
+        if (scoreboard.rallyState === 'RALLYING' && shuttle.stationaryFrames >= 18 && shuttle.framesInFlight >= 4) {
             evaluateRallyEndAndAutoScore();
             shuttle.detected = false;
             shuttle.framesInFlight = 0;
-        } else if (now - shuttle.lastSeenMs > 850) {
+            shuttleCandidateBuffer = [];
+        } else if (now - shuttle.lastSeenMs > 550) {
             shuttle.detected = false;
             shuttle.framesInFlight = 0;
+            shuttleCandidateBuffer = [];
         }
     }
 }

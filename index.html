@@ -210,53 +210,56 @@
             </div>
 
             <!-- Real Camera / Video Viewport -->
-            <div id="cameraViewportContainer" class="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl camera-viewport-landscape w-full mx-auto transition-all duration-300">
-                <video id="webcamVideo" autoplay playsinline muted class="w-full h-full object-cover hidden"></video>
+            <div id="cameraViewportContainer" class="relative rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl camera-viewport-landscape w-full mx-auto">
+                <video id="webcamVideo" autoplay playsinline muted class="w-full h-full object-contain hidden"></video>
                 <canvas id="liveCanvas" class="w-full h-full block cursor-crosshair"></canvas>
 
-                <!-- Top-Left Real CV & Pose Status Badges -->
-                <div class="absolute top-3 left-3 flex flex-wrap items-center gap-1.5 pointer-events-none">
-                    <div class="flex items-center gap-1.5 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
-                        <span id="recDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                        <span id="modeStatusText" class="text-[11px] font-medium text-slate-200">พร้อมตรวจจับสนามจริง</span>
+                <!-- Unified Non-Overlapping Top HUD Bar -->
+                <div class="absolute top-2.5 inset-x-2.5 flex items-start justify-between gap-2 pointer-events-none z-10">
+                    <!-- Top-Left Real CV & Pose Status Badges (Never collides with right box) -->
+                    <div class="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+                        <div class="flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 max-w-full">
+                            <span id="recDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0"></span>
+                            <span id="modeStatusText" class="text-[10px] sm:text-[11px] font-medium text-slate-200 truncate">AI พร้อมใช้งานจริง</span>
+                        </div>
+                        <div class="bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 flex items-center gap-1.5 shrink-0">
+                            <span id="cvCourtConfText" class="text-[10px] font-semibold text-amber-300">คอร์ท: 0%</span>
+                            <span class="text-slate-600">•</span>
+                            <span id="cvNetConfText" class="text-[10px] font-semibold text-cyan-300">เน็ท: 0%</span>
+                        </div>
+                        <div class="bg-slate-950/85 backdrop-blur-md px-2 py-1 rounded-full border border-white/10 text-[10px] text-cyan-300 font-medium flex items-center gap-1 shrink-0">
+                            <i id="orientationIcon" class="ph-bold ph-device-mobile-camera rotate-90"></i>
+                            <span id="orientationBadgeText">Auto</span>
+                        </div>
+                        <div class="bg-slate-950/85 backdrop-blur-md px-2 py-1 rounded-full border border-white/10 text-[10px] text-emerald-300 font-mono shrink-0">
+                            <span id="fpsCounter">60</span> FPS
+                        </div>
                     </div>
-                    <div class="bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 flex items-center gap-2">
-                        <span id="cvCourtConfText" class="text-[10px] font-semibold text-amber-300">เส้นสนาม: 0%</span>
-                        <span class="text-slate-600">•</span>
-                        <span id="cvNetConfText" class="text-[10px] font-semibold text-cyan-300">เน็ท: 0%</span>
-                    </div>
-                    <div class="bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[10px] text-cyan-300 font-medium flex items-center gap-1">
-                        <i id="orientationIcon" class="ph-bold ph-device-mobile-camera rotate-90"></i>
-                        <span id="orientationBadgeText">แนวนอน Auto</span>
-                    </div>
-                    <div class="hidden sm:flex bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[10px] text-emerald-300 font-mono">
-                        <span id="fpsCounter">60</span> FPS
+
+                    <!-- Top-Right Real Shuttle Speed HUD (Shrink-0, Compact & Clean) -->
+                    <div class="shrink-0 bg-slate-950/90 backdrop-blur-md border border-amber-500/30 rounded-2xl px-3 py-1.5 text-right shadow-xl min-w-[112px]">
+                        <div class="text-[9px] sm:text-[10px] text-amber-400 font-semibold uppercase tracking-wider flex items-center justify-end gap-1">
+                            <i class="ph-fill ph-lightning"></i>
+                            <span>ความเร็วลูก</span>
+                        </div>
+                        <div class="flex items-baseline justify-end gap-1 leading-none my-0.5">
+                            <span id="liveSpeedValue" class="text-xl sm:text-2xl font-extrabold font-mono text-white">0</span>
+                            <span class="text-[9px] text-slate-400">km/h</span>
+                        </div>
+                        <div id="liveShotTypeBadge" class="text-[9px] sm:text-[10px] text-amber-300 font-medium truncate max-w-[120px]">
+                            รอตรวจจับลูกตี
+                        </div>
                     </div>
                 </div>
 
-                <!-- Top-Right Real Shuttle Speed HUD -->
-                <div class="absolute top-3 right-3 bg-slate-950/80 backdrop-blur-md border border-white/10 rounded-2xl px-3.5 py-2 text-right pointer-events-none shadow-lg">
-                    <div class="text-[10px] text-amber-400 font-semibold uppercase tracking-wider flex items-center justify-end gap-1">
-                        <i class="ph-fill ph-lightning"></i>
-                        <span>ความเร็วลูกจริง</span>
+                <!-- Bottom Info Strip (Clean Single-Line Responsive Layout) -->
+                <div class="absolute bottom-2 inset-x-2.5 flex items-center justify-between gap-2 pointer-events-none text-[10px] sm:text-[11px] bg-slate-950/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 z-10">
+                    <div class="flex items-center gap-2.5 shrink-0">
+                        <span class="text-slate-200"><b class="text-amber-400">ตบสูงสุด:</b> <span id="hudMaxSmashQuick">0</span> km/h</span>
+                        <span class="text-slate-600">|</span>
+                        <span class="text-slate-200"><b class="text-emerald-400">ตบเฉลี่ย:</b> <span id="hudAvgSmashQuick">0</span> km/h</span>
                     </div>
-                    <div class="flex items-baseline justify-end gap-1">
-                        <span id="liveSpeedValue" class="text-2xl sm:text-3xl font-extrabold font-mono text-white">0</span>
-                        <span class="text-[10px] text-slate-400">km/h</span>
-                    </div>
-                    <div id="liveShotTypeBadge" class="text-[10px] text-amber-300 font-medium truncate max-w-[140px]">
-                        รอตรวจจับลูกแบด
-                    </div>
-                </div>
-
-                <!-- Bottom Info Strip -->
-                <div class="absolute bottom-2.5 left-3 right-3 flex items-center justify-between pointer-events-none text-[11px] bg-slate-950/80 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10">
-                    <div class="flex items-center gap-3">
-                        <span class="text-slate-300"><b class="text-amber-400">ตบสูงสุด:</b> <span id="hudMaxSmashQuick">0</span> km/h</span>
-                        <span class="text-slate-500">|</span>
-                        <span class="text-slate-300"><b class="text-emerald-400">ตบเฉลี่ย:</b> <span id="hudAvgSmashQuick">0</span> km/h</span>
-                    </div>
-                    <span class="hidden md:inline text-emerald-300 text-[10px]">ตรวจจับเส้นขาว ตาข่าย ผู้เล่น และขานแต้ม IN/OUT อัตโนมัติ (BWF 13.4m × 6.1m)</span>
+                    <span class="hidden sm:inline text-emerald-300/90 text-[10px] truncate">BWF 13.4m × 6.1m Homography</span>
                 </div>
             </div>
 
@@ -317,18 +320,22 @@
                 </div>
 
                 <!-- Overlay & Orientation Toggles -->
-                <div class="flex items-center justify-end gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/80">
-                    <button onclick="cycleCameraOrientation()" class="flex items-center gap-1.5 text-xs text-slate-200 bg-slate-900/90 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-all">
+                <div class="flex flex-wrap items-center justify-end gap-1.5 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/80">
+                    <button onclick="cycleCameraOrientation()" class="flex items-center gap-1 text-xs text-slate-200 bg-slate-900/90 hover:bg-slate-800 px-2.5 py-2 rounded-xl border border-slate-800 transition-all">
                         <i class="ph-bold ph-arrows-clockwise text-cyan-400"></i>
                         <span id="btnOrientationLabel">หมุนจอ: Auto</span>
                     </button>
-                    <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer bg-slate-900/90 px-3 py-2 rounded-xl border border-slate-800">
+                    <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer bg-slate-900/90 px-2.5 py-2 rounded-xl border border-slate-800">
+                        <input type="checkbox" id="chkShowCourtLines" checked class="accent-emerald-500 rounded">
+                        <span>เส้นคอร์ท</span>
+                    </label>
+                    <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer bg-slate-900/90 px-2.5 py-2 rounded-xl border border-slate-800">
                         <input type="checkbox" id="chkShowTrails" checked class="accent-emerald-500 rounded">
                         <span>เส้นวิ่ง</span>
                     </label>
-                    <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer bg-slate-900/90 px-3 py-2 rounded-xl border border-slate-800">
+                    <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer bg-slate-900/90 px-2.5 py-2 rounded-xl border border-slate-800">
                         <input type="checkbox" id="chkShowSkeleton" checked class="accent-emerald-500 rounded">
-                        <span>โครงร่าง Pose</span>
+                        <span>Pose</span>
                     </label>
                     <button onclick="resetMatchData()" class="p-2 rounded-xl bg-slate-900 hover:bg-rose-500/20 hover:text-rose-300 text-slate-400 border border-slate-800 transition-all" title="รีเซ็ตสกอร์และข้อมูลใหม่">
                         <i class="ph-bold ph-arrow-counter-clockwise text-base"></i>
