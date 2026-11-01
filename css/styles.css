@@ -259,65 +259,119 @@ input, textarea {
     color: #6ee7b7;
 }
 
-/* Compact HUD Banner Score Adjustment Buttons (+ / -) */
-.score-adj-banner {
-    width: 22px;
-    height: 22px;
-    min-width: 22px;
-    border-radius: 6px;
-    background: rgba(15, 23, 42, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: #e2e8f0;
-    font-size: 13px;
-    font-weight: 800;
-    line-height: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    cursor: pointer;
-    touch-action: manipulation;
-    user-select: none;
-    -webkit-user-select: none;
-    position: relative;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-    transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+/* Frameless Big Score Numbers (HUD) - Big Font, Zero Border/Box */
+.hud-score-num {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+    width: auto !important;
+    height: auto !important;
+    min-width: 20px !important;
+    padding: 0 2px !important;
+    font-size: 28px !important;
+    line-height: 1 !important;
+    font-weight: 800 !important;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+    color: #ffffff !important;
+    cursor: pointer !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    touch-action: manipulation !important;
+    transition: transform 0.08s ease, color 0.15s ease !important;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6) !important;
 }
-
 @media (min-width: 640px) {
-    .score-adj-banner {
-        width: 26px;
-        height: 26px;
-        min-width: 26px;
-        border-radius: 7px;
-        font-size: 15px;
+    .hud-score-num {
+        font-size: 32px !important;
+        min-width: 24px !important;
     }
 }
+.hud-score-num:active {
+    transform: scale(0.95);
+    color: #34d399 !important;
+}
 
-.score-adj-banner::after {
+/* Frameless Small Minus (-) Button - Zero Border/Box, Subtle Text */
+.hud-score-minus {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+    width: auto !important;
+    min-width: 16px !important;
+    height: 24px !important;
+    padding: 0 4px !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    line-height: 1 !important;
+    color: #64748b !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    touch-action: manipulation !important;
+    position: relative !important;
+    transition: color 0.15s ease, transform 0.08s ease !important;
+}
+.hud-score-minus::after {
     content: '';
     position: absolute;
-    inset: -6px; /* Expands touch hit-box for effortless mobile finger tapping */
+    inset: -6px; /* Expands touch hit-box to 28px for effortless finger taps */
+}
+.hud-score-minus:hover {
+    color: #cbd5e1 !important;
+}
+.hud-score-minus:active {
+    transform: scale(0.85);
+    color: #f43f5e !important;
 }
 
-.score-adj-banner:active {
+/* Compact Plus (+) HUD Button */
+.hud-score-plus {
+    width: 22px !important;
+    height: 22px !important;
+    min-width: 22px !important;
+    border-radius: 6px !important;
+    background: rgba(16, 185, 129, 0.25) !important;
+    border: 1px solid rgba(52, 211, 153, 0.5) !important;
+    color: #a7f3d0 !important;
+    font-size: 14px !important;
+    font-weight: 800 !important;
+    line-height: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    cursor: pointer !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    touch-action: manipulation !important;
+    position: relative !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+    transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease !important;
+}
+@media (min-width: 640px) {
+    .hud-score-plus {
+        width: 24px !important;
+        height: 24px !important;
+        min-width: 24px !important;
+        font-size: 15px !important;
+    }
+}
+.hud-score-plus::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+}
+.hud-score-plus:hover {
+    background: rgba(16, 185, 129, 0.42) !important;
+    color: #ffffff !important;
+}
+.hud-score-plus:active {
     transform: scale(0.9);
-}
-
-.score-adj-banner.score-adj-plus {
-    background: rgba(16, 185, 129, 0.3);
-    border-color: rgba(52, 211, 153, 0.6);
-    color: #a7f3d0;
-}
-
-.score-adj-banner.score-adj-plus:hover {
-    background: rgba(16, 185, 129, 0.48);
-    color: #ffffff;
-}
-
-.score-adj-banner:hover {
-    background: rgba(30, 41, 59, 0.95);
-    border-color: rgba(255, 255, 255, 0.38);
 }
 
 .ios-bottom-nav {

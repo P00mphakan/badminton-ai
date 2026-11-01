@@ -627,6 +627,369 @@ liveCanvas.addEventListener('pointerup', (e) => {
     }
 });
 
+/**
+ * Original 3D Perspective Badminton Court & AI Analysis Hologram Graphic
+ * Blends smoothly into #090d16 background without hard borders.
+ */
+function drawHomeBadmintonGraphic(ctx, w, h) {
+    // 1. Background Fill with subtle digital grid
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, '#090d16');
+    grad.addColorStop(0.5, '#0c1322');
+    grad.addColorStop(1, '#090d16');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = 'rgba(51, 65, 85, 0.18)';
+    ctx.lineWidth = 1;
+    for (let gx = 0; gx < w; gx += 48) {
+        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke();
+    }
+    for (let gy = 0; gy < h; gy += 48) {
+        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
+    }
+
+    const cx = w / 2;
+    // Calculate vertical center so the graphic sits nicely above the text
+    const cy = Math.max(h * 0.42, 160);
+    const s = Math.min(Math.max(w / 440, 0.62), 1.05);
+
+    ctx.save();
+
+    // 2. Soft glowing aura behind court (Blends seamlessly into #090d16)
+    const aura = ctx.createRadialGradient(cx, cy, 10 * s, cx, cy, 185 * s);
+    aura.addColorStop(0, 'rgba(6, 182, 212, 0.14)');
+    aura.addColorStop(0.4, 'rgba(14, 165, 233, 0.07)');
+    aura.addColorStop(0.75, 'rgba(16, 185, 129, 0.02)');
+    aura.addColorStop(1, 'rgba(9, 13, 22, 0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 195 * s, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 3. 3D Perspective Court Geometry
+    const farY = cy - 48 * s;
+    const nearY = cy + 58 * s;
+    const netY = cy + 6 * s;
+    const farW = 90 * s;
+    const nearW = 158 * s;
+
+    // Court Surface Fill
+    ctx.beginPath();
+    ctx.moveTo(cx - farW, farY);
+    ctx.lineTo(cx + farW, farY);
+    ctx.lineTo(cx + nearW, nearY);
+    ctx.lineTo(cx - nearW, nearY);
+    ctx.closePath();
+    const courtGrad = ctx.createLinearGradient(0, farY, 0, nearY);
+    courtGrad.addColorStop(0, 'rgba(6, 182, 212, 0.03)');
+    courtGrad.addColorStop(1, 'rgba(6, 182, 212, 0.08)');
+    ctx.fillStyle = courtGrad;
+    ctx.fill();
+
+    // Court Boundary Lines with Neon Cyan Glow
+    ctx.shadowBlur = 8 * s;
+    ctx.shadowColor = 'rgba(34, 211, 238, 0.85)';
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = Math.max(1.2 * s, 1);
+    ctx.stroke();
+
+    // Center Longitude Line (dividing left/right court)
+    ctx.beginPath();
+    ctx.moveTo(cx, farY);
+    ctx.lineTo(cx, nearY);
+    ctx.stroke();
+
+    // Singles Sidelines (insets)
+    const farSingleW = farW * 0.85;
+    const nearSingleW = nearW * 0.85;
+    ctx.strokeStyle = 'rgba(34, 211, 238, 0.55)';
+    ctx.beginPath();
+    ctx.moveTo(cx - farSingleW, farY);
+    ctx.lineTo(cx - nearSingleW, nearY);
+    ctx.moveTo(cx + farSingleW, farY);
+    ctx.lineTo(cx + nearSingleW, nearY);
+    ctx.stroke();
+
+    // Short Service Lines (Front)
+    const frontNearY = netY + 18 * s;
+    const frontNearW = nearW * 0.58;
+    const frontFarY = netY - 14 * s;
+    const frontFarW = farW * 1.15;
+    ctx.beginPath();
+    ctx.moveTo(cx - frontFarW, frontFarY);
+    ctx.lineTo(cx + frontFarW, frontFarY);
+    ctx.moveTo(cx - frontNearW, frontNearY);
+    ctx.lineTo(cx + frontNearW, frontNearY);
+    ctx.stroke();
+
+    // 4. Badminton Net (3D Perspective Barrier)
+    const netTapeY = netY - 26 * s;
+    const netPostW = (nearW + farW) * 0.52;
+
+    // Semi-transparent Net Mesh
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+    ctx.beginPath();
+    ctx.moveTo(cx - netPostW, netTapeY);
+    ctx.lineTo(cx + netPostW, netTapeY);
+    ctx.lineTo(cx + netPostW, netY);
+    ctx.lineTo(cx - netPostW, netY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Net Vertical Mesh Lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 0.8;
+    for (let x = -netPostW + 10 * s; x < netPostW; x += 12 * s) {
+        ctx.beginPath();
+        ctx.moveTo(cx + x, netTapeY);
+        ctx.lineTo(cx + x, netY);
+        ctx.stroke();
+    }
+
+    // Net Top Tape (White/Cyan Glow)
+    ctx.shadowBlur = 6 * s;
+    ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
+    ctx.strokeStyle = '#f8fafc';
+    ctx.lineWidth = 2 * s;
+    ctx.beginPath();
+    ctx.moveTo(cx - netPostW, netTapeY);
+    ctx.lineTo(cx + netPostW, netTapeY);
+    ctx.stroke();
+
+    // Net Posts
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2.5 * s;
+    ctx.beginPath();
+    ctx.moveTo(cx - netPostW, netY + 4 * s);
+    ctx.lineTo(cx - netPostW, netTapeY - 2 * s);
+    ctx.moveTo(cx + netPostW, netY + 4 * s);
+    ctx.lineTo(cx + netPostW, netTapeY - 2 * s);
+    ctx.stroke();
+
+    // 5. Opponent Silhouette in Far Court
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+    const oppX = cx + 42 * s;
+    const oppY = farY + 12 * s;
+    ctx.beginPath();
+    ctx.arc(oppX, oppY - 18 * s, 4 * s, 0, Math.PI * 2); // Head
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(oppX - 6 * s, oppY - 14 * s); // Shoulders
+    ctx.lineTo(oppX + 6 * s, oppY - 14 * s);
+    ctx.lineTo(oppX + 4 * s, oppY);
+    ctx.lineTo(oppX + 8 * s, oppY + 10 * s); // Legs
+    ctx.lineTo(oppX + 3 * s, oppY + 10 * s);
+    ctx.lineTo(oppX, oppY + 2 * s);
+    ctx.lineTo(oppX - 4 * s, oppY + 10 * s);
+    ctx.lineTo(oppX - 8 * s, oppY + 10 * s);
+    ctx.closePath();
+    ctx.fill();
+
+    // 6. Hawk-Eye Parabolic Flight Trajectory Arc
+    const startX = oppX;
+    const startY = oppY - 12 * s;
+    const apexX = cx + 58 * s;
+    const apexY = cy - 98 * s;
+    const landX = cx + 88 * s;
+    const landY = cy + 44 * s;
+
+    // Glowing Trajectory
+    const trajGrad = ctx.createLinearGradient(startX, startY, landX, landY);
+    trajGrad.addColorStop(0, '#38bdf8');
+    trajGrad.addColorStop(0.4, '#fb923c');
+    trajGrad.addColorStop(1, '#f97316');
+
+    ctx.shadowBlur = 12 * s;
+    ctx.shadowColor = 'rgba(249, 115, 22, 0.9)';
+    ctx.strokeStyle = trajGrad;
+    ctx.lineWidth = 2.5 * s;
+
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.quadraticCurveTo(apexX, apexY, landX, landY);
+    ctx.stroke();
+
+    // 7. Hawk-Eye Landing Target Ring on Court Floor
+    const now = Date.now();
+    const pulsePhase = (now % 1400) / 1400;
+    const ringR = (8 + pulsePhase * 14) * s;
+
+    ctx.shadowBlur = 10 * s;
+    ctx.shadowColor = 'rgba(249, 115, 22, 0.8)';
+    ctx.strokeStyle = `rgba(249, 115, 22, ${1 - pulsePhase * 0.8})`;
+    ctx.lineWidth = 1.5 * s;
+    ctx.beginPath();
+    ctx.ellipse(landX, landY, ringR * 1.5, ringR * 0.7, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner Target Bullseye
+    ctx.fillStyle = '#f97316';
+    ctx.beginPath();
+    ctx.ellipse(landX, landY, 5 * s, 2.5 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Holographic Call Tag ("IN • 186 km/h")
+    ctx.shadowBlur = 6 * s;
+    ctx.shadowColor = 'rgba(16, 185, 129, 0.6)';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.7)';
+    ctx.lineWidth = 1;
+    const tagX = landX + 16 * s;
+    const tagY = landY - 22 * s;
+    const tagW = 74 * s;
+    const tagH = 18 * s;
+    ctx.beginPath();
+    ctx.roundRect(tagX, tagY, tagW, tagH, 5 * s);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#34d399';
+    ctx.font = `bold ${Math.round(9 * s)}px Prompt, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('IN • 186 km/h', tagX + tagW / 2, tagY + tagH / 2 + 3 * s);
+
+    // 8. Shuttlecock (Mid-flight heading down towards target)
+    const shutX = cx + 76 * s;
+    const shutY = cy - 20 * s;
+    ctx.save();
+    ctx.translate(shutX, shutY);
+    ctx.rotate(0.95); // Angled downward along flight path
+    // Skirt
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.beginPath();
+    ctx.moveTo(-4 * s, -8 * s);
+    ctx.lineTo(4 * s, -8 * s);
+    ctx.lineTo(2 * s, 2 * s);
+    ctx.lineTo(-2 * s, 2 * s);
+    ctx.closePath();
+    ctx.fill();
+    // Cork Head
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.arc(0, 4 * s, 2.8 * s, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 9. Near Player (MoveNet AI Pose Tracking Keypoints & Silhouette)
+    const pX = cx - 36 * s;
+    const pY = cy + 42 * s;
+
+    // Athletic Ready Stance Silhouette (Translucent Emerald)
+    ctx.shadowBlur = 10 * s;
+    ctx.shadowColor = 'rgba(52, 211, 153, 0.6)';
+    ctx.fillStyle = 'rgba(16, 185, 129, 0.78)';
+
+    // Head
+    ctx.beginPath();
+    ctx.arc(pX, pY - 32 * s, 6 * s, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Torso & Limbs
+    ctx.beginPath();
+    ctx.moveTo(pX - 9 * s, pY - 24 * s); // Left shoulder
+    ctx.lineTo(pX + 9 * s, pY - 24 * s); // Right shoulder
+    ctx.lineTo(pX + 7 * s, pY - 4 * s);  // Right hip
+    ctx.lineTo(pX + 16 * s, pY + 18 * s); // Right ankle (wide base)
+    ctx.lineTo(pX + 10 * s, pY + 18 * s);
+    ctx.lineTo(pX + 2 * s, pY - 2 * s);
+    ctx.lineTo(pX - 10 * s, pY + 18 * s); // Left ankle (wide base)
+    ctx.lineTo(pX - 16 * s, pY + 18 * s);
+    ctx.lineTo(pX - 7 * s, pY - 4 * s);  // Left hip
+    ctx.closePath();
+    ctx.fill();
+
+    // Arms & Racket (Right arm extended holding racket up towards shuttle)
+    ctx.strokeStyle = '#34d399';
+    ctx.lineWidth = 2.5 * s;
+    ctx.beginPath();
+    // Left arm (balance)
+    ctx.moveTo(pX - 9 * s, pY - 24 * s);
+    ctx.lineTo(pX - 18 * s, pY - 14 * s);
+    ctx.lineTo(pX - 14 * s, pY - 4 * s);
+    // Right arm (holding racket)
+    ctx.moveTo(pX + 9 * s, pY - 24 * s);
+    ctx.lineTo(pX + 20 * s, pY - 28 * s); // Elbow
+    ctx.lineTo(pX + 30 * s, pY - 34 * s); // Hand/grip
+    ctx.stroke();
+
+    // Badminton Racket
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1.2 * s;
+    // Shaft
+    ctx.beginPath();
+    ctx.moveTo(pX + 30 * s, pY - 34 * s);
+    ctx.lineTo(pX + 42 * s, pY - 44 * s);
+    ctx.stroke();
+    // Racket Head (Oval)
+    ctx.save();
+    ctx.translate(pX + 48 * s, pY - 50 * s);
+    ctx.rotate(-0.7);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 9 * s, 6.5 * s, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // Subtle Strings
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 0.6 * s;
+    ctx.beginPath();
+    ctx.moveTo(-9 * s, 0); ctx.lineTo(9 * s, 0);
+    ctx.moveTo(0, -6.5 * s); ctx.lineTo(0, 6.5 * s);
+    ctx.stroke();
+    ctx.restore();
+
+    // AI Pose Skeleton Keypoints (MoveNet Joint Circles)
+    const joints = [
+        [pX, pY - 32 * s],          // Nose/Head
+        [pX - 9 * s, pY - 24 * s],  // L Shoulder
+        [pX + 9 * s, pY - 24 * s],  // R Shoulder
+        [pX + 20 * s, pY - 28 * s], // R Elbow
+        [pX + 30 * s, pY - 34 * s], // R Wrist
+        [pX - 18 * s, pY - 14 * s], // L Elbow
+        [pX - 14 * s, pY - 4 * s],  // L Wrist
+        [pX - 6 * s, pY - 4 * s],   // L Hip
+        [pX + 6 * s, pY - 4 * s],   // R Hip
+        [pX - 12 * s, pY + 8 * s],  // L Knee
+        [pX + 12 * s, pY + 8 * s],  // R Knee
+        [pX - 14 * s, pY + 18 * s], // L Ankle
+        [pX + 14 * s, pY + 18 * s]  // R Ankle
+    ];
+    ctx.shadowBlur = 6 * s;
+    ctx.shadowColor = '#06b6d4';
+    ctx.fillStyle = '#22d3ee';
+    joints.forEach(([jx, jy]) => {
+        ctx.beginPath();
+        ctx.arc(jx, jy, 2.2 * s, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    ctx.restore();
+
+    // 10. Text Below Graphic (Positioned comfortably below the court)
+    const textBaseY = cy + 96 * s;
+    ctx.save();
+    ctx.textAlign = 'center';
+
+    ctx.fillStyle = '#34d399';
+    ctx.font = `bold ${Math.round(16 * s)}px Prompt, sans-serif`;
+    ctx.shadowBlur = 8 * s;
+    ctx.shadowColor = 'rgba(52, 211, 153, 0.4)';
+    ctx.fillText('Badminton AI Analysis', cx, textBaseY);
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = `${Math.round(12.5 * s)}px Prompt, sans-serif`;
+    ctx.fillText('กดปุ่ม "เปิดกล้องสด" หรือ "อัปโหลดคลิปสนามจริง" ด้านล่าง', cx, textBaseY + 24 * s);
+
+    ctx.fillStyle = '#64748b';
+    ctx.font = `${Math.round(10.5 * s)}px Prompt, sans-serif`;
+    ctx.fillText('AI จะตรวจจับเส้นคอร์ทจริง ตาข่าย (Net) ผู้เล่น ความเร็วลูกตบ และนับแต้มอัตโนมัติ', cx, textBaseY + 44 * s);
+
+    ctx.restore();
+}
+
 function renderLiveScene() {
     // Keep canvas internal resolution strictly synced with rendered container box (prevents aspect ratio squishing)
     const rect = liveCanvas.parentElement.getBoundingClientRect();
@@ -644,33 +1007,7 @@ function renderLiveScene() {
     const hasVideoFeed = (isWebcamActive || isUploadedVideoActive) && webcamVideo.readyState >= 2;
 
     if (!hasVideoFeed) {
-        const grad = liveCtx.createLinearGradient(0, 0, 0, h);
-        grad.addColorStop(0, '#090d16');
-        grad.addColorStop(1, '#0f172a');
-        liveCtx.fillStyle = grad;
-        liveCtx.fillRect(0, 0, w, h);
-
-        liveCtx.strokeStyle = 'rgba(51, 65, 85, 0.25)';
-        liveCtx.lineWidth = 1;
-        for (let gx = 0; gx < w; gx += 48) {
-            liveCtx.beginPath(); liveCtx.moveTo(gx, 0); liveCtx.lineTo(gx, h); liveCtx.stroke();
-        }
-        for (let gy = 0; gy < h; gy += 48) {
-            liveCtx.beginPath(); liveCtx.moveTo(0, gy); liveCtx.lineTo(w, gy); liveCtx.stroke();
-        }
-
-        liveCtx.fillStyle = '#34d399';
-        liveCtx.font = 'bold 16px Prompt, sans-serif';
-        liveCtx.textAlign = 'center';
-        liveCtx.fillText('Badminton AI Analysis', w / 2, h / 2 - 22);
-
-        liveCtx.fillStyle = '#cbd5e1';
-        liveCtx.font = '13px Prompt, sans-serif';
-        liveCtx.fillText('กดปุ่ม "เปิดกล้องสด" หรือ "อัปโหลดคลิปสนามจริง" ด้านล่าง', w / 2, h / 2 + 6);
-
-        liveCtx.fillStyle = '#64748b';
-        liveCtx.font = '11px Prompt, sans-serif';
-        liveCtx.fillText('AI จะตรวจจับเส้นคอร์ทจริง ตาข่าย (Net) ผู้เล่น ความเร็วลูกตบ และนับแต้มอัตโนมัติ', w / 2, h / 2 + 30);
+        drawHomeBadmintonGraphic(liveCtx, w, h);
         return;
     }
 

@@ -29,7 +29,7 @@
             }
         }
     </script>
-    <link rel="stylesheet" href="css/styles.css?v=20261101n">
+    <link rel="stylesheet" href="css/styles.css?v=20261101o">
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
 
@@ -251,9 +251,9 @@
                                         <span id="serveBadgeA" class="serve-chip">S</span>
                                     </div>
                                     <div class="ml-auto flex items-center gap-0.5 sm:gap-1 shrink-0">
-                                        <button onclick="manualAdjustScore('A', -1)" class="score-adj score-adj-banner" title="ลดแต้มทีม A (−1)" aria-label="Decrease Team A score">−</button>
-                                        <span id="boardScoreA" onclick="manualAdjustScore('A', 1)" class="score-adj cursor-pointer text-[24px] sm:text-[28px] leading-none font-extrabold font-mono text-white min-w-[18px] sm:min-w-[22px] text-center select-none active:scale-95 transition-transform" title="แตะเพื่อเพิ่มคะแนนทีม A (+1)">0</span>
-                                        <button onclick="manualAdjustScore('A', 1)" class="score-adj score-adj-plus score-adj-banner" title="เพิ่มแต้มทีม A (+1)" aria-label="Increase Team A score">+</button>
+                                        <button onclick="manualAdjustScore('A', -1)" class="score-adj hud-score-minus" title="ลดแต้มทีม A (−1)" aria-label="Decrease Team A score">−</button>
+                                        <span id="boardScoreA" onclick="manualAdjustScore('A', 1)" class="score-adj hud-score-num text-center" title="แตะเพื่อเพิ่มคะแนนทีม A (+1)">0</span>
+                                        <button onclick="manualAdjustScore('A', 1)" class="score-adj hud-score-plus" title="เพิ่มแต้มทีม A (+1)" aria-label="Increase Team A score">+</button>
                                     </div>
                                 </div>
 
@@ -269,9 +269,9 @@
                                 <!-- Team B Score with +/- -->
                                 <div class="flex items-center gap-1 min-w-0">
                                     <div class="mr-auto flex items-center gap-0.5 sm:gap-1 shrink-0">
-                                        <button onclick="manualAdjustScore('B', -1)" class="score-adj score-adj-banner" title="ลดแต้มทีม B (−1)" aria-label="Decrease Team B score">−</button>
-                                        <span id="boardScoreB" onclick="manualAdjustScore('B', 1)" class="score-adj cursor-pointer text-[24px] sm:text-[28px] leading-none font-extrabold font-mono text-white min-w-[18px] sm:min-w-[22px] text-center select-none active:scale-95 transition-transform" title="แตะเพื่อเพิ่มคะแนนทีม B (+1)">0</span>
-                                        <button onclick="manualAdjustScore('B', 1)" class="score-adj score-adj-plus score-adj-banner" title="เพิ่มแต้มทีม B (+1)" aria-label="Increase Team B score">+</button>
+                                        <button onclick="manualAdjustScore('B', -1)" class="score-adj hud-score-minus" title="ลดแต้มทีม B (−1)" aria-label="Decrease Team B score">−</button>
+                                        <span id="boardScoreB" onclick="manualAdjustScore('B', 1)" class="score-adj hud-score-num text-center" title="แตะเพื่อเพิ่มคะแนนทีม B (+1)">0</span>
+                                        <button onclick="manualAdjustScore('B', 1)" class="score-adj hud-score-plus" title="เพิ่มแต้มทีม B (+1)" aria-label="Increase Team B score">+</button>
                                     </div>
                                     <div class="flex items-center gap-1 shrink-0">
                                         <span id="serveBadgeB" class="serve-chip hidden">S</span>
@@ -946,12 +946,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261101n" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261101n"></script>
-    <script src="js/cv-court.js?v=20261101n"></script>
-    <script src="js/pose-tracker.js?v=20261101n"></script>
-    <script src="js/scoreboard.js?v=20261101n"></script>
-    <script src="js/live-view.js?v=20261101n"></script>
-    <script src="js/analytics-coach.js?v=20261101n"></script>
+    <script src="js/env.local.js?v=20261101o" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261101o"></script>
+    <script src="js/cv-court.js?v=20261101o"></script>
+    <script src="js/pose-tracker.js?v=20261101o"></script>
+    <script src="js/scoreboard.js?v=20261101o"></script>
+    <script src="js/live-view.js?v=20261101o"></script>
+    <script src="js/analytics-coach.js?v=20261101o"></script>
 </body>
 </html>
