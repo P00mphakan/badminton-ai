@@ -214,12 +214,16 @@ let latestAICoachReportText = "";
         e.stopPropagation();
     }, { passive: false, capture: true });
 
-    // 3. Block iOS Safari pinch/double-tap gesture zoom
-    ['gesturestart', 'gesturechange', 'gestureend'].forEach(evtName => {
-        document.addEventListener(evtName, (e) => {
-            if (e.cancelable) e.preventDefault();
-        }, { passive: false });
-    });
+    // 3. Block iOS Safari pinch-to-zoom gesture on mobile touch screens only (never blocks desktop trackpads/touchpads)
+    if ('ontouchstart' in window && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) {
+        ['gesturestart', 'gesturechange'].forEach(evtName => {
+            document.addEventListener(evtName, (e) => {
+                if (e.scale !== undefined && e.scale !== 1 && e.cancelable) {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+        });
+    }
 
     // 4. Debounce rapid accidental double-taps on action buttons (except manual +/- score buttons)
     document.addEventListener('click', (e) => {

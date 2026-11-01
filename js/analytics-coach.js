@@ -1603,30 +1603,55 @@ async function submitCommunityReview() {
     updateReviewCharCount(commentEl);
     setReviewRating(5);
 
-    // Sync to Supabase `app_reviews` table if available
+    // Sync to Supabase: save directly to `matches` table (with club_code='APP_REVIEW'), which has full read/write permissions for anon role
     try {
-        const res = await ShuttleSecurity.fetchSupabaseRest('app_reviews', {
+        const payload = {
+            club_code: 'APP_REVIEW',
+            title: newReview.display_name,
+            saved_at_text: newReview.comment,
+            score_a: newReview.rating,
+            score_b: 0,
+            format: newReview.category || 'EXPERIENCE',
+            user_id: newReview.user_id || null,
+            players_summary: {
+                category: newReview.category || 'EXPERIENCE',
+                is_anonymous: Boolean(newReview.is_anonymous),
+                display_name: newReview.display_name,
+                rating: newReview.rating,
+                helpful_count: 0
+            }
+        };
+
+        const res = await ShuttleSecurity.fetchSupabaseRest('matches', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Prefer': 'return=representation'
             },
-            body: JSON.stringify({
-                user_id: newReview.user_id,
-                display_name: newReview.display_name,
-                is_anonymous: newReview.is_anonymous,
-                rating: newReview.rating,
-                category: newReview.category,
-                comment: newReview.comment,
-                helpful_count: 0
-            })
+            body: JSON.stringify(payload)
         });
+
         if (res.ok) {
             const savedRows = await res.json().catch(() => []);
             if (savedRows && savedRows[0] && savedRows[0].id) {
                 newReview.id = savedRows[0].id;
                 saveLocalCommunityReviews();
             }
+        } else {
+            // Secondary attempt to app_reviews if configured
+            await ShuttleSecurity.fetchSupabaseRest('app_reviews', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: newReview.user_id,
+                    display_name: newReview.display_name,
+                    is_anonymous: newReview.is_anonymous,
+                    rating: newReview.rating,
+                    category: newReview.category,
+                    comment: newReview.comment,
+                    helpful_count: 0
+                })
+            }).catch(() => {});
         }
     } catch (e) {
         // Safe local persistence fallback
@@ -1775,7 +1800,7 @@ function renderCommunityReviews() {
 
                 <div class="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[10px] text-slate-400">
                     <span class="text-slate-500">ShuttlePro AI Experience Review</span>
-                    <button onclick="upvoteReviewHelpful(${item.id})" class="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 transition-colors ${isUpvoted ? 'text-amber-300 font-bold border border-amber-500/30' : 'text-slate-400'}">
+                    <button onclick="upvoteReviewHelpful('${item.id}')" class="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 transition-colors ${isUpvoted ? 'text-amber-300 font-bold border border-amber-500/30' : 'text-slate-400'}">
                         <i class="ph-fill ph-thumbs-up text-xs"></i>
                         <span>มีประโยชน์ (${item.helpful_count || 0})</span>
                     </button>
@@ -1786,16 +1811,17 @@ function renderCommunityReviews() {
 }
 
 async function upvoteReviewHelpful(reviewId) {
-    if (userHelpfulUpvotes.has(reviewId)) {
+    const idStr = String(reviewId);
+    if (userHelpfulUpvotes.has(idStr)) {
         showToast('คุณได้กดให้คะแนนประโยชน์กับรีวิวนี้แล้ว');
         return;
     }
-    userHelpfulUpvotes.add(reviewId);
+    userHelpfulUpvotes.add(idStr);
     try {
         localStorage.setItem('shuttlepro_helpful_upvotes', JSON.stringify([...userHelpfulUpvotes]));
     } catch (e) {}
 
-    const item = communityReviews.find(r => r.id === reviewId);
+    const item = communityReviews.find(r => String(r.id) === idStr);
     if (item) {
         item.helpful_count = (item.helpful_count || 0) + 1;
         saveLocalCommunityReviews();
@@ -1803,10 +1829,11 @@ async function upvoteReviewHelpful(reviewId) {
     }
 
     try {
-        await ShuttleSecurity.fetchSupabaseRest(`app_reviews?id=eq.${reviewId}`, {
+        // Sync helpful count to Supabase matches table (stored in score_b)
+        await ShuttleSecurity.fetchSupabaseRest(`matches?id=eq.${encodeURIComponent(idStr)}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ helpful_count: (item?.helpful_count || 1) })
+            body: JSON.stringify({ score_b: (item?.helpful_count || 1) })
         });
     } catch (e) {}
     showToast('ขอบคุณสำหรับคะแนนความมีประโยชน์');
@@ -1814,12 +1841,51 @@ async function upvoteReviewHelpful(reviewId) {
 
 async function fetchCommunityReviewsFromSupabase() {
     try {
-        const res = await ShuttleSecurity.fetchSupabaseRest('app_reviews?order=created_at.desc&limit=40');
-        if (!res.ok) return;
-        const remoteReviews = await res.json();
-        if (Array.isArray(remoteReviews) && remoteReviews.length > 0) {
-            const remoteMap = new Map(remoteReviews.map(r => [r.id, r]));
-            const localOnly = communityReviews.filter(r => !remoteMap.has(r.id));
+        // 1. Fetch from Supabase matches table where club_code='APP_REVIEW' (instant cross-device sync)
+        const res = await ShuttleSecurity.fetchSupabaseRest('matches?club_code=eq.APP_REVIEW&order=created_at.desc&limit=50');
+        let remoteReviews = [];
+        if (res.ok) {
+            const rows = await res.json().catch(() => []);
+            if (Array.isArray(rows)) {
+                remoteReviews = rows.map(r => ({
+                    id: String(r.id),
+                    display_name: r.title || r.players_summary?.display_name || 'ผู้ใช้งานนิรนาม',
+                    comment: r.saved_at_text || '',
+                    rating: Number(r.score_a) || Number(r.players_summary?.rating) || 5,
+                    category: r.format || r.players_summary?.category || 'EXPERIENCE',
+                    helpful_count: Number(r.score_b) || Number(r.players_summary?.helpful_count) || 0,
+                    is_anonymous: r.players_summary?.is_anonymous !== false,
+                    user_id: r.user_id || null,
+                    created_at: r.created_at || new Date().toISOString()
+                }));
+            }
+        }
+
+        // 2. Also merge from app_reviews table if any exists
+        try {
+            const res2 = await ShuttleSecurity.fetchSupabaseRest('app_reviews?order=created_at.desc&limit=30');
+            if (res2.ok) {
+                const rows2 = await res2.json().catch(() => []);
+                if (Array.isArray(rows2) && rows2.length > 0) {
+                    const extra = rows2.map(r => ({
+                        id: String(r.id),
+                        display_name: r.display_name || 'ผู้ใช้งานนิรนาม',
+                        comment: r.comment || '',
+                        rating: Number(r.rating) || 5,
+                        category: r.category || 'EXPERIENCE',
+                        helpful_count: Number(r.helpful_count) || 0,
+                        is_anonymous: Boolean(r.is_anonymous),
+                        user_id: r.user_id || null,
+                        created_at: r.created_at || new Date().toISOString()
+                    }));
+                    remoteReviews = [...remoteReviews, ...extra];
+                }
+            }
+        } catch (e) {}
+
+        if (remoteReviews.length > 0) {
+            const remoteMap = new Map(remoteReviews.map(r => [String(r.id), r]));
+            const localOnly = communityReviews.filter(r => !remoteMap.has(String(r.id)));
             communityReviews = [...remoteReviews, ...localOnly];
             saveLocalCommunityReviews();
             updateReviewScorecardUI();
@@ -1832,6 +1898,7 @@ async function fetchCommunityReviewsFromSupabase() {
 
 window.addEventListener('DOMContentLoaded', () => {
     communityReviews = loadLocalCommunityReviews();
+    fetchCommunityReviewsFromSupabase(); // Automatically sync reviews across all mobile & desktop devices immediately on boot!
     ensureKnowledgeBaseLoaded();
     initSupabaseAuth();
     renderMatchTitleUI();

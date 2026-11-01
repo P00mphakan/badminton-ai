@@ -29,7 +29,7 @@
             }
         }
     </script>
-    <link rel="stylesheet" href="css/styles.css?v=20261101o">
+    <link rel="stylesheet" href="css/styles.css?v=20261101p">
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
 
@@ -223,7 +223,7 @@
     </div>
 
     <!-- Main Content -->
-    <main class="flex-1 max-w-6xl w-full mx-auto p-3 sm:p-4">
+    <main class="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-5 pb-36">
         <!-- ==================== PAGE 1: FULLSCREEN CAMERA • CLEAN HUD (iPhone Home-Screen Optimized) ==================== -->
         <section id="tab-live" class="live-fullscreen-stage">
             <input type="file" id="videoUploadInput" accept="video/*" class="hidden" onchange="handleVideoUpload(event)">
@@ -720,9 +720,10 @@
 
         <!-- ==================== PAGE 5: COMMUNITY REVIEWS & FEEDBACK ==================== -->
         <section id="tab-reviews" class="hidden space-y-4">
-            <div class="glass-panel rounded-3xl p-4 sm:p-5 border border-amber-500/30 space-y-5">
+            <!-- Card 1: Scorecard & Overview -->
+            <div class="glass-panel rounded-3xl p-4 sm:p-5 border border-amber-500/30 space-y-4">
                 <!-- Header -->
-                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-md shadow-amber-500/20 text-slate-950 shrink-0">
                             <i class="ph-fill ph-star text-xl"></i>
@@ -732,18 +733,18 @@
                                 <h2 class="text-sm sm:text-base font-bold text-white">คะแนนรีวิว &amp; ความคิดเห็นผู้ใช้งาน</h2>
                                 <span class="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-bold">Community</span>
                             </div>
-                            <p class="text-[11px] text-slate-400">Respond for Best Experience • รีวิวและข้อเสนอแนะจริงจากผู้ใช้งาน (ไร้ข้อมูลจำลอง)</p>
+                            <p class="text-[11px] text-slate-400">Respond for Best Experience • รีวิวและข้อเสนอแนะจริงจากผู้ใช้งาน</p>
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
-                        <button onclick="fetchCommunityReviewsFromSupabase()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5" title="รีเฟรชข้อมูลรีวิวล่าสุด">
+                        <button onclick="fetchCommunityReviewsFromSupabase()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors" title="รีเฟรชข้อมูลรีวิวล่าสุด">
                             <i class="ph-bold ph-arrows-clockwise"></i>
                             <span>รีเฟรช</span>
                         </button>
                     </div>
                 </div>
 
-                <!-- Rating Summary Scorecard (Real Data Only - Zero Mock Simulation) -->
+                <!-- Rating Summary Scorecard -->
                 <div class="bg-gradient-to-br from-slate-900/95 to-slate-950/95 border border-slate-800 rounded-2xl p-4 sm:p-5">
                     <div class="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 sm:gap-6 items-center">
                         <div class="text-center sm:text-left sm:pr-4 sm:border-r sm:border-slate-800 shrink-0">
@@ -807,114 +808,114 @@
                         </span>
                     </div>
                 </div>
+            </div>
 
-                <!-- Review Submission Card -->
-                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3.5">
-                    <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-                        <span class="font-bold text-white text-xs flex items-center gap-1.5">
-                            <i class="ph-bold ph-pencil-simple text-amber-400"></i>
-                            <span>เขียนรีวิว / ส่งข้อเสนอแนะของคุณ</span>
-                        </span>
-                        <span class="text-[10px] text-slate-400">ทุกคนจะเห็นรีวิวนี้ในฟีดสาธารณะ</span>
+            <!-- Card 2: Review Submission Form -->
+            <div class="glass-panel rounded-3xl p-4 sm:p-5 border border-slate-800/80 space-y-3.5">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span class="font-bold text-white text-xs flex items-center gap-1.5">
+                        <i class="ph-bold ph-pencil-simple text-amber-400"></i>
+                        <span>เขียนรีวิว / ส่งข้อเสนอแนะของคุณ</span>
+                    </span>
+                    <span class="text-[10px] text-slate-400">ทุกคนจะเห็นรีวิวนี้ในฟีดสาธารณะ</span>
+                </div>
+
+                <!-- 1. Star Rating Picker -->
+                <div>
+                    <label class="text-[11px] text-slate-300 block mb-1.5 font-medium">ให้คะแนนความพึงพอใจ:</label>
+                    <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-1 text-2xl" id="starInputContainer">
+                            <button type="button" onclick="setReviewRating(1)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
+                            <button type="button" onclick="setReviewRating(2)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
+                            <button type="button" onclick="setReviewRating(3)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
+                            <button type="button" onclick="setReviewRating(4)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
+                            <button type="button" onclick="setReviewRating(5)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
+                        </div>
+                        <span id="starRatingLabel" class="text-xs font-bold text-amber-300 ml-1">5 ดาว - ยอดเยี่ยม ประทับใจมาก</span>
                     </div>
+                </div>
 
-                    <!-- 1. Star Rating Picker -->
-                    <div>
-                        <label class="text-[11px] text-slate-300 block mb-1.5 font-medium">ให้คะแนนความพึงพอใจ:</label>
-                        <div class="flex items-center gap-2">
-                            <div class="flex items-center gap-1 text-2xl" id="starInputContainer">
-                                <button type="button" onclick="setReviewRating(1)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
-                                <button type="button" onclick="setReviewRating(2)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
-                                <button type="button" onclick="setReviewRating(3)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
-                                <button type="button" onclick="setReviewRating(4)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
-                                <button type="button" onclick="setReviewRating(5)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
+                <!-- 2. Identity Selector: Identified vs Anonymous -->
+                <div>
+                    <label class="text-[11px] text-slate-300 block mb-1.5 font-medium">รูปแบบการแสดงตัวตน:</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" id="btnIdentityIdentified" onclick="setReviewAnonymous(false)" class="p-2.5 rounded-xl border border-emerald-500/50 bg-emerald-500/15 text-white flex items-center gap-2 text-left transition-all">
+                            <div class="w-7 h-7 rounded-lg bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0">
+                                <i class="ph-bold ph-user text-sm"></i>
                             </div>
-                            <span id="starRatingLabel" class="text-xs font-bold text-amber-300 ml-1">5 ดาว - ยอดเยี่ยม ประทับใจมาก</span>
-                        </div>
-                    </div>
+                            <div class="min-w-0 flex-1">
+                                <div class="text-[11px] font-bold text-emerald-300">ระบุตัวตน (Identified)</div>
+                                <div class="text-[9.5px] text-slate-300 truncate" id="identityUserPreview">แสดงชื่อ / บัญชีผู้ใช้</div>
+                            </div>
+                        </button>
 
-                    <!-- 2. Identity Selector: Identified vs Anonymous -->
-                    <div>
-                        <label class="text-[11px] text-slate-300 block mb-1.5 font-medium">รูปแบบการแสดงตัวตน:</label>
-                        <div class="grid grid-cols-2 gap-2">
-                            <button type="button" id="btnIdentityIdentified" onclick="setReviewAnonymous(false)" class="p-2.5 rounded-xl border border-emerald-500/50 bg-emerald-500/15 text-white flex items-center gap-2 text-left transition-all">
-                                <div class="w-7 h-7 rounded-lg bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0">
-                                    <i class="ph-bold ph-user text-sm"></i>
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <div class="text-[11px] font-bold text-emerald-300">ระบุตัวตน (Identified)</div>
-                                    <div class="text-[9.5px] text-slate-300 truncate" id="identityUserPreview">แสดงชื่อ / บัญชีผู้ใช้</div>
-                                </div>
-                            </button>
-
-                            <button type="button" id="btnIdentityAnonymous" onclick="setReviewAnonymous(true)" class="p-2.5 rounded-xl border border-slate-700 bg-slate-950/70 text-slate-400 flex items-center gap-2 text-left transition-all hover:text-white">
-                                <div class="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center shrink-0">
-                                    <i class="ph-bold ph-mask-happy text-sm"></i>
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <div class="text-[11px] font-bold">ไม่ระบุตัวตน (Anonymous)</div>
-                                    <div class="text-[9.5px] text-slate-400 truncate">ปิดบังชื่อผู้ส่งรีวิว</div>
-                                </div>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Custom Nickname Input (Shown when not logged in & Identified) -->
-                    <div id="nicknameInputRow" class="hidden">
-                        <label class="text-[11px] text-slate-300 block mb-1">ชื่อเล่นหรือนามแฝง (Nickname):</label>
-                        <input type="text" id="reviewNicknameInput" maxlength="30" placeholder="เช่น โค้ชบอล คอร์ท 2, ปอนด์ BWF" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400">
-                    </div>
-
-                    <!-- 3. Category Selector -->
-                    <div>
-                        <label class="text-[11px] text-slate-300 block mb-1.5 font-medium">หมวดหมู่ความคิดเห็น:</label>
-                        <div class="flex flex-wrap gap-1.5" id="reviewCategoryChips">
-                            <button type="button" onclick="setReviewCategory('EXPERIENCE')" class="review-category-chip active" data-cat="EXPERIENCE">🌟 ประสบการณ์ใช้งาน</button>
-                            <button type="button" onclick="setReviewCategory('FEATURE')" class="review-category-chip" data-cat="FEATURE">💡 ขอเพิ่มฟีเจอร์</button>
-                            <button type="button" onclick="setReviewCategory('ACCURACY')" class="review-category-chip" data-cat="ACCURACY">⚡ ความแม่นยำ AI/กล้อง</button>
-                            <button type="button" onclick="setReviewCategory('BUG')" class="review-category-chip" data-cat="BUG">🐞 แจ้งปัญหา/บั๊ก</button>
-                        </div>
-                    </div>
-
-                    <!-- 4. Comment Textarea -->
-                    <div>
-                        <div class="flex items-center justify-between mb-1">
-                            <label class="text-[11px] text-slate-300 font-medium">ข้อความรีวิว / ความคิดเห็น:</label>
-                            <span class="text-[10px] text-slate-500 font-mono" id="reviewCharCount">0 / 400</span>
-                        </div>
-                        <textarea id="reviewCommentInput" maxlength="400" rows="3" oninput="updateReviewCharCount(this)" placeholder="แชร์ความรู้สึกจากการใช้งาน เช่น ระบบสายตาเหยี่ยวแม่นยำมาก, อยากให้เพิ่มโหมดสตรีมสด..." class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-400 leading-relaxed resize-none"></textarea>
-                    </div>
-
-                    <div class="flex items-center justify-between gap-2 pt-1">
-                        <span id="reviewFormStatusMsg" class="text-[11px] text-amber-300 truncate"></span>
-                        <button type="button" id="btnSubmitReview" onclick="submitCommunityReview()" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shrink-0 transition-transform active:scale-95 shadow-md shadow-amber-500/20">
-                            <i class="ph-bold ph-paper-plane-right"></i>
-                            <span>ส่งรีวิวสาธารณะ</span>
+                        <button type="button" id="btnIdentityAnonymous" onclick="setReviewAnonymous(true)" class="p-2.5 rounded-xl border border-slate-700 bg-slate-950/70 text-slate-400 flex items-center gap-2 text-left transition-all hover:text-white">
+                            <div class="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center shrink-0">
+                                <i class="ph-bold ph-mask-happy text-sm"></i>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <div class="text-[11px] font-bold">ไม่ระบุตัวตน (Anonymous)</div>
+                                <div class="text-[9.5px] text-slate-400 truncate">ปิดบังชื่อผู้ส่งรีวิว</div>
+                            </div>
                         </button>
                     </div>
                 </div>
 
-                <!-- Community Reviews Public Feed -->
-                <div class="space-y-3">
-                    <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
-                            <i class="ph-fill ph-chat-circle-dots text-amber-400"></i>
-                            <span>รีวิวจากผู้ใช้งานจริง (Public Community Feed)</span>
-                        </h4>
-                        <!-- Category Filter Pills -->
-                        <div class="flex items-center gap-1 overflow-x-auto pb-1 max-w-full text-[10px]" id="reviewFilterBar">
-                            <button onclick="filterCommunityReviews('ALL')" class="px-2.5 py-1 rounded-lg bg-amber-500/25 text-amber-300 font-bold border border-amber-500/40 shrink-0" data-filter="ALL">ทั้งหมด</button>
-                            <button onclick="filterCommunityReviews('5STAR')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="5STAR">⭐ 5 ดาว</button>
-                            <button onclick="filterCommunityReviews('FEATURE')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="FEATURE">💡 ขอฟีเจอร์</button>
-                            <button onclick="filterCommunityReviews('EXPERIENCE')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="EXPERIENCE">🌟 ประสบการณ์</button>
-                            <button onclick="filterCommunityReviews('ACCURACY')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="ACCURACY">⚡ AI/กล้อง</button>
-                            <button onclick="filterCommunityReviews('BUG')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="BUG">🐞 แจ้งบั๊ก</button>
-                        </div>
-                    </div>
+                <!-- Custom Nickname Input (Shown when not logged in & Identified) -->
+                <div id="nicknameInputRow" class="hidden">
+                    <label class="text-[11px] text-slate-300 block mb-1">ชื่อเล่นหรือนามแฝง (Nickname):</label>
+                    <input type="text" id="reviewNicknameInput" maxlength="30" placeholder="เช่น โค้ชบอล คอร์ท 2, ปอนด์ BWF" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400">
+                </div>
 
-                    <div id="communityReviewsList" class="space-y-2.5">
-                        <!-- Rendered Review Cards -->
+                <!-- 3. Category Selector -->
+                <div>
+                    <label class="text-[11px] text-slate-300 block mb-1.5 font-medium">หมวดหมู่ความคิดเห็น:</label>
+                    <div class="flex flex-wrap gap-1.5" id="reviewCategoryChips">
+                        <button type="button" onclick="setReviewCategory('EXPERIENCE')" class="review-category-chip active" data-cat="EXPERIENCE">🌟 ประสบการณ์ใช้งาน</button>
+                        <button type="button" onclick="setReviewCategory('FEATURE')" class="review-category-chip" data-cat="FEATURE">💡 ขอเพิ่มฟีเจอร์</button>
+                        <button type="button" onclick="setReviewCategory('ACCURACY')" class="review-category-chip" data-cat="ACCURACY">⚡ ความแม่นยำ AI/กล้อง</button>
+                        <button type="button" onclick="setReviewCategory('BUG')" class="review-category-chip" data-cat="BUG">🐞 แจ้งปัญหา/บั๊ก</button>
                     </div>
+                </div>
+
+                <!-- 4. Comment Textarea -->
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="text-[11px] text-slate-300 font-medium">ข้อความรีวิว / ความคิดเห็น:</label>
+                        <span class="text-[10px] text-slate-500 font-mono" id="reviewCharCount">0 / 400</span>
+                    </div>
+                    <textarea id="reviewCommentInput" maxlength="400" rows="3" oninput="updateReviewCharCount(this)" placeholder="แชร์ความรู้สึกจากการใช้งาน เช่น ระบบสายตาเหยี่ยวแม่นยำมาก, อยากให้เพิ่มโหมดสตรีมสด..." class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-400 leading-relaxed resize-none"></textarea>
+                </div>
+
+                <div class="flex items-center justify-between gap-2 pt-1">
+                    <span id="reviewFormStatusMsg" class="text-[11px] text-amber-300 truncate"></span>
+                    <button type="button" id="btnSubmitReview" onclick="submitCommunityReview()" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shrink-0 transition-transform active:scale-95 shadow-md shadow-amber-500/20">
+                        <i class="ph-bold ph-paper-plane-right"></i>
+                        <span>ส่งรีวิวสาธารณะ</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Card 3: Community Reviews Public Feed -->
+            <div class="glass-panel rounded-3xl p-4 sm:p-5 border border-slate-800/80 space-y-3.5">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                    <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
+                        <i class="ph-fill ph-chat-circle-dots text-amber-400"></i>
+                        <span>รีวิวจากผู้ใช้งานจริง (Public Community Feed)</span>
+                    </h4>
+                    <!-- Category Filter Pills -->
+                    <div class="flex items-center gap-1 overflow-x-auto pb-1 max-w-full text-[10px]" id="reviewFilterBar">
+                        <button onclick="filterCommunityReviews('ALL')" class="px-2.5 py-1 rounded-lg bg-amber-500/25 text-amber-300 font-bold border border-amber-500/40 shrink-0" data-filter="ALL">ทั้งหมด</button>
+                        <button onclick="filterCommunityReviews('5STAR')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="5STAR">⭐ 5 ดาว</button>
+                        <button onclick="filterCommunityReviews('FEATURE')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="FEATURE">💡 ขอฟีเจอร์</button>
+                        <button onclick="filterCommunityReviews('EXPERIENCE')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="EXPERIENCE">🌟 ประสบการณ์</button>
+                        <button onclick="filterCommunityReviews('ACCURACY')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="ACCURACY">⚡ AI/กล้อง</button>
+                        <button onclick="filterCommunityReviews('BUG')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="BUG">🐞 แจ้งบั๊ก</button>
+                    </div>
+                </div>
+
+                <div id="communityReviewsList" class="space-y-2.5">
+                    <!-- Rendered Review Cards -->
                 </div>
             </div>
         </section>
@@ -946,12 +947,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261101o" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261101o"></script>
-    <script src="js/cv-court.js?v=20261101o"></script>
-    <script src="js/pose-tracker.js?v=20261101o"></script>
-    <script src="js/scoreboard.js?v=20261101o"></script>
-    <script src="js/live-view.js?v=20261101o"></script>
-    <script src="js/analytics-coach.js?v=20261101o"></script>
+    <script src="js/env.local.js?v=20261101p" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261101p"></script>
+    <script src="js/cv-court.js?v=20261101p"></script>
+    <script src="js/pose-tracker.js?v=20261101p"></script>
+    <script src="js/scoreboard.js?v=20261101p"></script>
+    <script src="js/live-view.js?v=20261101p"></script>
+    <script src="js/analytics-coach.js?v=20261101p"></script>
 </body>
 </html>

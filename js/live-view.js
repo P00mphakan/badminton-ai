@@ -1060,13 +1060,16 @@ function renderLiveScene() {
         drawHomographyCourtAndNet(liveCtx, rw, rh);
     } else if (!ShuttleCV.isCourtValidOrLocked()) {
         liveCtx.save();
-        const boxW = Math.min(rw - 28, 360);
-        const boxH = 32;
-        const bx = (rw - boxW) / 2;
-        const by = rh - 82;
-        liveCtx.fillStyle = 'rgba(9, 13, 22, 0.72)';
+        const isDockShowing = typeof isBottomDockHidden !== 'undefined' ? !isBottomDockHidden : true;
+        const leftOffset = isDockShowing ? 74 : 16;
+        const rightOffset = 16;
+        const availW = Math.max(160, rw - leftOffset - rightOffset);
+        const boxW = Math.min(availW, 340);
+        const bx = leftOffset + (availW - boxW) / 2;
+        const by = Math.max(110, rh - 96);
+        liveCtx.fillStyle = 'rgba(9, 13, 22, 0.78)';
         liveCtx.beginPath();
-        liveCtx.roundRect(bx, by, boxW, boxH, 10);
+        liveCtx.roundRect(bx, by, boxW, 30, 10);
         liveCtx.fill();
         liveCtx.strokeStyle = 'rgba(251, 191, 36, 0.45)';
         liveCtx.lineWidth = 1;
@@ -1075,7 +1078,7 @@ function renderLiveScene() {
         liveCtx.fillStyle = '#fbbf24';
         liveCtx.font = '600 10.5px Prompt, sans-serif';
         liveCtx.textAlign = 'center';
-        liveCtx.fillText('เปิดเมนู ☰ > กด "ตั้งเส้นสนาม" เพื่อทาบเส้นคอร์ทให้ตรงมุมกล้อง', rw / 2, by + 20);
+        liveCtx.fillText('เปิดเมนู ☰ > กด "ตั้งเส้นสนาม" เพื่อทาบเส้นคอร์ท', bx + boxW / 2, by + 19);
         liveCtx.restore();
     }
 
