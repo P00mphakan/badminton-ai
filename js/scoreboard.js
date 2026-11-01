@@ -115,9 +115,26 @@ function manualAdjustScore(team, delta) {
         const nextScore = team === 'A' ? scoreboard.scoreA + 1 : scoreboard.scoreB + 1;
         awardPointBWF(team, 'MANUAL', `ปรับแต้มทีม ${team} (+1) • เสิร์ฟฝั่ง${(nextScore % 2 === 0) ? 'ขวา' : 'ซ้าย'}`);
     } else {
+        if ((team === 'A' && scoreboard.scoreA <= 0) || (team === 'B' && scoreboard.scoreB <= 0)) return;
+        scoreboard.historyStack.push({
+            scoreA: scoreboard.scoreA,
+            scoreB: scoreboard.scoreB,
+            setsA: scoreboard.setsA,
+            setsB: scoreboard.setsB,
+            currentSet: scoreboard.currentSet,
+            servingTeam: scoreboard.servingTeam,
+            serviceCourt: scoreboard.serviceCourt,
+            lastCallText: scoreboard.lastCallText,
+            lastCallType: scoreboard.lastCallType
+        });
+        if (scoreboard.historyStack.length > 30) scoreboard.historyStack.shift();
+
         if (team === 'A' && scoreboard.scoreA > 0) scoreboard.scoreA--;
         if (team === 'B' && scoreboard.scoreB > 0) scoreboard.scoreB--;
+        scoreboard.lastCallType = 'MANUAL';
+        scoreboard.lastCallText = `ปรับลดแต้มทีม ${team} (-1)`;
         updateScoreboardUI();
+        showToast(`ปรับลดแต้มทีม ${team} (-1)`);
     }
 }
 

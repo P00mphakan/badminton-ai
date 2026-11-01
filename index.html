@@ -29,7 +29,7 @@
             }
         }
     </script>
-    <link rel="stylesheet" href="css/styles.css?v=20261101l">
+    <link rel="stylesheet" href="css/styles.css?v=20261101m">
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
 
@@ -436,29 +436,49 @@
                 <!-- ===== TOP HUD: Scoreboard + Speed (compact, on top of camera) ===== -->
                 <div class="hud-top absolute inset-x-0 top-0 z-20 px-3 pointer-events-none">
                     <div class="flex items-stretch gap-2">
-                        <!-- Scoreboard -->
+                        <!-- Scoreboard (with direct touch +/- score adjustment) -->
                         <div class="hud-glass rounded-2xl flex-1 min-w-0 pointer-events-auto">
-                            <button onclick="openMatchTitleModal()" class="w-full flex items-center gap-1.5 px-3 pt-2 text-left">
+                            <button onclick="openMatchTitleModal()" class="w-full flex items-center gap-1.5 px-3 pt-1.5 pb-0.5 text-left group">
                                 <span id="boardSetNumber" class="shrink-0 px-1.5 py-[1px] rounded-md bg-emerald-500 text-slate-950 font-extrabold text-[9px] tracking-wide">SET 1</span>
-                                <span class="js-match-title flex-1 min-w-0 truncate text-[12px] font-semibold text-white">แมตช์</span>
-                                <i class="ph-bold ph-pencil-simple text-slate-400 text-[11px] shrink-0"></i>
+                                <span class="js-match-title flex-1 min-w-0 truncate text-[11px] sm:text-[12px] font-semibold text-white group-hover:text-cyan-300 transition-colors">แมตช์</span>
+                                <i class="ph-bold ph-pencil-simple text-slate-400 text-[10px] sm:text-[11px] shrink-0"></i>
                             </button>
-                            <div class="grid grid-cols-[1fr_auto_1fr] items-center px-3 pb-2 pt-0.5">
-                                <div class="flex items-center gap-1.5 min-w-0">
-                                    <span class="w-2 h-2 rounded-full bg-cyan-400 shrink-0"></span>
-                                    <span class="text-[11px] font-bold text-cyan-300">A</span>
-                                    <span id="serveBadgeA" class="serve-chip">S</span>
-                                    <span id="boardScoreA" class="ml-auto text-[28px] leading-none font-extrabold font-mono text-white">0</span>
+                            <div class="grid grid-cols-[1fr_auto_1fr] items-center px-2 sm:px-3 pb-2 pt-0.5 gap-0.5 sm:gap-1">
+                                <!-- Team A Score with +/- -->
+                                <div class="flex items-center gap-1 min-w-0">
+                                    <div class="flex items-center gap-1 shrink-0">
+                                        <span class="w-2 h-2 rounded-full bg-cyan-400 shrink-0"></span>
+                                        <span class="text-[11px] font-bold text-cyan-300">A</span>
+                                        <span id="serveBadgeA" class="serve-chip">S</span>
+                                    </div>
+                                    <div class="ml-auto flex items-center gap-0.5 sm:gap-1 shrink-0">
+                                        <button onclick="manualAdjustScore('A', -1)" class="score-adj score-adj-banner" title="ลดแต้มทีม A (−1)" aria-label="Decrease Team A score">−</button>
+                                        <span id="boardScoreA" onclick="manualAdjustScore('A', 1)" class="score-adj cursor-pointer text-[24px] sm:text-[28px] leading-none font-extrabold font-mono text-white min-w-[18px] sm:min-w-[22px] text-center select-none active:scale-95 transition-transform" title="แตะเพื่อเพิ่มคะแนนทีม A (+1)">0</span>
+                                        <button onclick="manualAdjustScore('A', 1)" class="score-adj score-adj-plus score-adj-banner" title="เพิ่มแต้มทีม A (+1)" aria-label="Increase Team A score">+</button>
+                                    </div>
                                 </div>
-                                <div class="px-2.5 text-center leading-tight">
+
+                                <!-- Set Score, Timer & Undo -->
+                                <div class="px-1 text-center leading-tight flex flex-col items-center justify-center shrink-0">
                                     <div class="text-[10px] font-bold text-slate-200"><b id="boardSetsA" class="text-cyan-300">0</b><span class="text-slate-500">-</span><b id="boardSetsB" class="text-rose-400">0</b></div>
                                     <div id="liveMatchTimer" class="text-[9px] font-mono text-emerald-300">00:00</div>
+                                    <button onclick="undoLastPoint()" class="score-adj text-[9px] text-amber-300/80 hover:text-amber-200 mt-0.5 flex items-center justify-center px-1.5 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 active:scale-90 transition-transform" title="ย้อนแต้ม (Undo)">
+                                        <i class="ph-bold ph-arrow-u-up-left text-[10px]"></i>
+                                    </button>
                                 </div>
-                                <div class="flex items-center gap-1.5 min-w-0">
-                                    <span id="boardScoreB" class="mr-auto text-[28px] leading-none font-extrabold font-mono text-white">0</span>
-                                    <span id="serveBadgeB" class="serve-chip hidden">S</span>
-                                    <span class="text-[11px] font-bold text-rose-300">B</span>
-                                    <span class="w-2 h-2 rounded-full bg-rose-500 shrink-0"></span>
+
+                                <!-- Team B Score with +/- -->
+                                <div class="flex items-center gap-1 min-w-0">
+                                    <div class="mr-auto flex items-center gap-0.5 sm:gap-1 shrink-0">
+                                        <button onclick="manualAdjustScore('B', -1)" class="score-adj score-adj-banner" title="ลดแต้มทีม B (−1)" aria-label="Decrease Team B score">−</button>
+                                        <span id="boardScoreB" onclick="manualAdjustScore('B', 1)" class="score-adj cursor-pointer text-[24px] sm:text-[28px] leading-none font-extrabold font-mono text-white min-w-[18px] sm:min-w-[22px] text-center select-none active:scale-95 transition-transform" title="แตะเพื่อเพิ่มคะแนนทีม B (+1)">0</span>
+                                        <button onclick="manualAdjustScore('B', 1)" class="score-adj score-adj-plus score-adj-banner" title="เพิ่มแต้มทีม B (+1)" aria-label="Increase Team B score">+</button>
+                                    </div>
+                                    <div class="flex items-center gap-1 shrink-0">
+                                        <span id="serveBadgeB" class="serve-chip hidden">S</span>
+                                        <span class="text-[11px] font-bold text-rose-300">B</span>
+                                        <span class="w-2 h-2 rounded-full bg-rose-500 shrink-0"></span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -922,12 +942,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261101l" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261101l"></script>
-    <script src="js/cv-court.js?v=20261101l"></script>
-    <script src="js/pose-tracker.js?v=20261101l"></script>
-    <script src="js/scoreboard.js?v=20261101l"></script>
-    <script src="js/live-view.js?v=20261101l"></script>
-    <script src="js/analytics-coach.js?v=20261101l"></script>
+    <script src="js/env.local.js?v=20261101m" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261101m"></script>
+    <script src="js/cv-court.js?v=20261101m"></script>
+    <script src="js/pose-tracker.js?v=20261101m"></script>
+    <script src="js/scoreboard.js?v=20261101m"></script>
+    <script src="js/live-view.js?v=20261101m"></script>
+    <script src="js/analytics-coach.js?v=20261101m"></script>
 </body>
 </html>

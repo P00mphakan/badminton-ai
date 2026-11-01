@@ -259,6 +259,67 @@ input, textarea {
     color: #6ee7b7;
 }
 
+/* Compact HUD Banner Score Adjustment Buttons (+ / -) */
+.score-adj-banner {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #e2e8f0;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    position: relative;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+@media (min-width: 640px) {
+    .score-adj-banner {
+        width: 26px;
+        height: 26px;
+        min-width: 26px;
+        border-radius: 7px;
+        font-size: 15px;
+    }
+}
+
+.score-adj-banner::after {
+    content: '';
+    position: absolute;
+    inset: -6px; /* Expands touch hit-box for effortless mobile finger tapping */
+}
+
+.score-adj-banner:active {
+    transform: scale(0.9);
+}
+
+.score-adj-banner.score-adj-plus {
+    background: rgba(16, 185, 129, 0.3);
+    border-color: rgba(52, 211, 153, 0.6);
+    color: #a7f3d0;
+}
+
+.score-adj-banner.score-adj-plus:hover {
+    background: rgba(16, 185, 129, 0.48);
+    color: #ffffff;
+}
+
+.score-adj-banner:hover {
+    background: rgba(30, 41, 59, 0.95);
+    border-color: rgba(255, 255, 255, 0.38);
+}
+
 .ios-bottom-nav {
     padding-bottom: max(0.4rem, env(safe-area-inset-bottom));
     background: rgba(9, 13, 22, 0.78);
