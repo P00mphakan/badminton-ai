@@ -145,7 +145,7 @@ function toggleMatchTypeSinglesDoubles() {
     isDoublesMatch = !isDoublesMatch;
     const btn = document.getElementById('btnMatchFormat');
     if (btn) {
-        btn.textContent = isDoublesMatch ? 'ประเภทคู่ (Doubles 6.10m)' : 'ประเภทเดี่ยว (Singles 5.18m)';
+        btn.textContent = isDoublesMatch ? 'คู่ 6.10m' : 'เดี่ยว 5.18m';
     }
     showToast(`เปลี่ยนเส้นเขตสนามตัดสิน IN/OUT เป็น: ${isDoublesMatch ? 'แบดมินตันคู่ (6.10 ม.)' : 'แบดมินตันเดี่ยว (5.18 ม.)'}`);
 }
@@ -155,8 +155,8 @@ function toggleVoiceReferee() {
     const btn = document.getElementById('btnVoiceReferee');
     if (btn) {
         btn.className = isVoiceRefereeOn
-            ? 'px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-medium flex items-center gap-1'
-            : 'px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-400 border border-slate-700 text-[11px] font-medium flex items-center gap-1';
+            ? 'sheet-btn !border-emerald-500/40 !text-emerald-300'
+            : 'sheet-btn !text-slate-400 opacity-60';
     }
     showToast(isVoiceRefereeOn ? 'เปิดเสียงกรรมการ AI ขานแต้มอัตโนมัติ' : 'ปิดเสียงกรรมการขานแต้ม');
 }
@@ -212,13 +212,13 @@ function updateScoreboardUI() {
     if (callBadge) {
         callBadge.textContent = scoreboard.lastCallText;
         if (scoreboard.lastCallType === 'IN') {
-            callBadge.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+            callBadge.className = 'call-chip !bg-emerald-500/25 !text-emerald-300 !border-emerald-500/50';
         } else if (scoreboard.lastCallType === 'OUT') {
-            callBadge.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40';
+            callBadge.className = 'call-chip !bg-rose-500/25 !text-rose-300 !border-rose-500/50';
         } else if (scoreboard.lastCallType === 'NET') {
-            callBadge.className = 'px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40';
+            callBadge.className = 'call-chip !bg-amber-500/25 !text-amber-300 !border-amber-500/50';
         } else {
-            callBadge.className = 'px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700';
+            callBadge.className = 'call-chip';
         }
     }
 }

@@ -459,9 +459,155 @@ function toggleIOSGuideModal() {
     document.getElementById('iosGuideModal')?.classList.toggle('hidden');
 }
 
+function openMatchTitleModal() {
+    const modal = document.getElementById('matchTitleModal');
+    const input = document.getElementById('matchTitleInput');
+    if (modal) modal.classList.remove('hidden');
+    if (input) {
+        input.value = matchTitle;
+        setTimeout(() => input.focus(), 50);
+    }
+}
+
+function closeMatchTitleModal() {
+    document.getElementById('matchTitleModal')?.classList.add('hidden');
+}
+
+function renderMatchTitleUI() {
+    document.querySelectorAll('.js-match-title').forEach(el => {
+        el.textContent = matchTitle;
+    });
+}
+
+function saveMatchTitleFromModal(alsoSaveRecord = false) {
+    const input = document.getElementById('matchTitleInput');
+    if (input && input.value.trim()) {
+        matchTitle = input.value.trim();
+    } else if (!matchTitle) {
+        matchTitle = buildDefaultMatchTitle();
+    }
+    localStorage.setItem('shuttlepro_match_title', matchTitle);
+    renderMatchTitleUI();
+    closeMatchTitleModal();
+    if (alsoSaveRecord) {
+        saveCurrentMatchRecord();
+    } else {
+        showToast(`ตั้งชื่อแมตช์เป็น "${matchTitle}" เรียบร้อย`);
+    }
+}
+
+function saveCurrentMatchRecord() {
+    const avgSmash = allSmashSpeeds.length > 0
+        ? Math.round(allSmashSpeeds.reduce((a, b) => a + b, 0) / allSmashSpeeds.length)
+        : 0;
+    const record = {
+        id: Date.now(),
+        title: matchTitle || buildDefaultMatchTitle(),
+        savedAt: new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }),
+        isoDate: new Date().toISOString(),
+        durationSec: matchSeconds,
+        format: isDoublesMatch ? 'Doubles (6.10m)' : 'Singles (5.18m)',
+        scoreA: scoreboard.scoreA,
+        scoreB: scoreboard.scoreB,
+        setsA: scoreboard.setsA,
+        setsB: scoreboard.setsB,
+        maxSmashKmh: maxRecordedSpeed,
+        avgSmashKmh: avgSmash,
+        totalSmashes: allSmashSpeeds.length,
+        playersSummary: Object.values(players).map(p => ({
+            id: p.id,
+            name: p.name,
+            team: p.team,
+            distanceMeters: p.distanceMeters,
+            maxSpeedKmh: p.maxSpeedKmh,
+            maxSmashKmh: p.maxSmashKmh,
+            shotsCount: p.shotsCount
+        })),
+        recentShots: shotHistory.slice(0, 20)
+    };
+    matchHistory.unshift(record);
+    if (matchHistory.length > 25) matchHistory.pop();
+    try {
+        localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
+    } catch (e) {}
+    renderSavedMatchesList();
+    document.getElementById('moreSheet')?.classList.add('hidden');
+    showToast(`บันทึกแมตช์ "${record.title}" ลงประวัติเรียบร้อย!`);
+}
+
+function renderSavedMatchesList() {
+    const container = document.getElementById('savedMatchesList');
+    if (!container) return;
+    if (!matchHistory || matchHistory.length === 0) {
+        container.innerHTML = `<div class="text-center text-xs text-slate-500 py-5">ยังไม่มีแมตช์ที่บันทึกไว้ • กดปุ่ม "ตั้งชื่อ &amp; บันทึก" เพื่อเก็บสถิติแต่ละแมตช์</div>`;
+        return;
+    }
+    container.innerHTML = matchHistory.map((m, idx) => `
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2">
+            <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 min-w-0">
+                    <span class="text-xs font-bold text-white truncate">${m.title}</span>
+                    <span class="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold shrink-0">
+                        A ${m.scoreA} - ${m.scoreB} B
+                    </span>
+                </div>
+                <div class="text-[10px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
+                    <span>${m.savedAt}</span>
+                    <span>•</span>
+                    <span>เวลา ${formatTimeSec(m.durationSec || 0)}</span>
+                    <span>•</span>
+                    <span class="text-amber-300">ตบสูงสุด ${m.maxSmashKmh || 0} km/h</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+                <button onclick="exportSavedMatchById(${idx})" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center justify-center" title="Export JSON">
+                    <i class="ph-bold ph-download-simple text-xs"></i>
+                </button>
+                <button onclick="deleteSavedMatchById(${idx})" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-rose-300 flex items-center justify-center" title="ลบรายการ">
+                    <i class="ph-bold ph-trash text-xs"></i>
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function exportSavedMatchById(idx) {
+    const rec = matchHistory[idx];
+    if (!rec) return;
+    const safeName = (rec.title || 'match').replace(/[^a-zA-Z0-9ก-๙_-]/g, '_');
+    const blob = new Blob([JSON.stringify(rec, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `shuttlepro-${safeName}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`ส่งออกไฟล์ "${rec.title}" สำเร็จ`);
+}
+
+function deleteSavedMatchById(idx) {
+    matchHistory.splice(idx, 1);
+    try {
+        localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
+    } catch (e) {}
+    renderSavedMatchesList();
+    showToast('ลบประวัติแมตช์แล้ว');
+}
+
+function startNewMatch() {
+    document.getElementById('moreSheet')?.classList.add('hidden');
+    matchTitle = buildDefaultMatchTitle();
+    localStorage.setItem('shuttlepro_match_title', matchTitle);
+    renderMatchTitleUI();
+    resetMatchData(true);
+    openMatchTitleModal();
+}
+
 function exportReportJSON() {
     const reportData = {
+        matchTitle,
         exportedAt: new Date().toISOString(),
+        durationSec: matchSeconds,
         scoreboard,
         smashStats: {
             maxSmashSpeedKmh: maxRecordedSpeed,
@@ -473,17 +619,20 @@ function exportReportJSON() {
         players,
         recentShots: shotHistory
     };
+    const safeName = (matchTitle || 'match').replace(/[^a-zA-Z0-9ก-๙_-]/g, '_');
     const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `shuttlepro-real-match.json`;
+    a.download = `shuttlepro-${safeName}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('ส่งออกข้อมูลแมตช์จริง (.JSON) สำเร็จ');
+    showToast(`ส่งออกข้อมูลแมตช์ "${matchTitle}" (.JSON) สำเร็จ`);
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+    renderMatchTitleUI();
+    renderSavedMatchesList();
     resizeCanvases();
     updateScoreboardUI();
     updateLiveHUD();

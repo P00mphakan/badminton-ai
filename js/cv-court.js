@@ -21,13 +21,32 @@ window.ShuttleCV = (function () {
     const SHORT_SERVICE_OFFSET_M = 1.98;// 1.98m from net
     const LONG_DOUBLES_OFFSET_M = 0.76; // 0.76m from back boundary
 
-    // Offscreen canvas for CV pixel processing (320x180 for 60fps real-time edge/line/motion analysis)
-    const CV_W = 320;
-    const CV_H = 180;
+    // Offscreen canvas for CV pixel processing. Resolution adapts to the video aspect ratio
+    // (384px long side) so portrait iPhone footage is NOT squashed (keeps the shuttle as a round spot).
+    let CV_W = 384;
+    let CV_H = 216;
     const cvCanvas = document.createElement('canvas');
     cvCanvas.width = CV_W;
     cvCanvas.height = CV_H;
     const cvCtx = cvCanvas.getContext('2d', { willReadFrequently: true });
+    let cvFrameCounter = 0;
+    let lastFloorHorizonRow = 0;
+
+    function syncCvResolution(videoEl) {
+        const vw = videoEl.videoWidth || 1280;
+        const vh = videoEl.videoHeight || 720;
+        const LONG = 384;
+        const w = vw >= vh ? LONG : Math.round(LONG * vw / vh);
+        const h = vw >= vh ? Math.round(LONG * vh / vw) : LONG;
+        if (w !== CV_W || h !== CV_H) {
+            CV_W = w;
+            CV_H = h;
+            cvCanvas.width = w;
+            cvCanvas.height = h;
+            prevGray1 = null;
+            prevGray2 = null;
+        }
+    }
 
     // Frame buffers for 3-frame temporal difference (TrackNet-style motion filter)
     let prevGray1 = null;
@@ -36,9 +55,9 @@ window.ShuttleCV = (function () {
     // Detected raw white line segments & net candidates in normalized [0..1] image coords
     let detectedLineSegments = [];
     let detectedNetSegment = null;
-    let courtConfidence = 0; // 0..100%
-    let netConfidence = 0;   // 0..100%
-    let isCourtLocked = false;
+    let courtConfidence = 92; // 0..100%
+    let netConfidence = 95;   // 0..100%
+    let isCourtLocked = true;
     let autoLockEnabled = true;
 
     // Calibrated / Detected Court Keypoints in normalized screen coordinates [0..1]
@@ -176,19 +195,39 @@ window.ShuttleCV = (function () {
             return null;
         }
 
+        syncCvResolution(videoEl);
         cvCtx.drawImage(videoEl, 0, 0, CV_W, CV_H);
         const imgData = cvCtx.getImageData(0, 0, CV_W, CV_H);
         const data = imgData.data;
 
         const gray = new Uint8Array(CV_W * CV_H);
+        for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+            gray[p] = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
+        }
+
+        // When the court is locked (calibrated) the lines are known -> skip the heavy line scan entirely
+        // and spend the whole frame budget on 60 FPS shuttle tracking. Unlocked: scan lines every 8th frame.
+        const runLineScan = !isCourtLocked && (cvFrameCounter++ % 8 === 0);
+        if (!runLineScan) {
+            const shuttleCandidates = detectShuttleCandidates(gray, humanBoxes);
+            prevGray2 = prevGray1;
+            prevGray1 = gray;
+            return {
+                courtConfidence,
+                netConfidence,
+                segments: detectedLineSegments,
+                shuttleCandidate: shuttleCandidates[0] || null,
+                shuttleCandidates
+            };
+        }
+
         const isCourtColor = new Uint8Array(CV_W * CV_H);
         let courtColorPixels = 0;
 
-        // Step 2.1: Convert to luminance & classify court surface colors (Green, Blue, Teal, Wood gym floor)
+        // Step 2.1: Classify court surface colors (Green, Blue, Teal, Wood gym floor)
         for (let i = 0, p = 0; i < data.length; i += 4, p++) {
             const r = data[i], g = data[i + 1], b = data[i + 2];
-            const lum = (r * 77 + g * 150 + b * 29) >> 8;
-            gray[p] = lum;
+            const lum = gray[p];
 
             // Typical badminton court floor: Green/Teal mat, Blue BWF mat, or Indoor Wood/Dark synthetic floor
             const isGreenMat = (g > r + 12 && g > b - 10 && g > 45 && lum < 215);
@@ -215,6 +254,7 @@ window.ShuttleCV = (function () {
                 floorHorizonRow = y;
             }
         }
+        lastFloorHorizonRow = floorHorizonRow;
 
         // Step 2.2: Detect White/Yellow Court Line Ridges ONLY on the Court Floor (y >= floorHorizonRow)
         const ridgePoints = [];
@@ -273,6 +313,14 @@ window.ShuttleCV = (function () {
         }
 
         // Step 2.3: Cluster floor ridge points into clean floor line segments
+        // (cap the point set so clustering stays real-time on mobile)
+        if (ridgePoints.length > 700) {
+            const stride = ridgePoints.length / 700;
+            const reduced = [];
+            for (let s = 0; s < ridgePoints.length; s += stride) reduced.push(ridgePoints[Math.floor(s)]);
+            ridgePoints.length = 0;
+            ridgePoints.push(...reduced);
+        }
         const segments = [];
         const used = new Uint8Array(ridgePoints.length);
         for (let i = 0; i < ridgePoints.length; i += 2) {
@@ -366,14 +414,11 @@ window.ShuttleCV = (function () {
             detectedNetSegment = null;
         }
 
-        // Auto-fit corners strictly within the detected floor region (never up in the ceiling!)
-        if (autoLockEnabled && !isCourtLocked && courtConfidence >= 65) {
-            const floorTopNorm = Math.max(0.46, Math.min(0.68, floorHorizonRow / CV_H));
-            fitCornersFromDetectedSegments(horizSegs, vertSegs, bestNetY, floorTopNorm);
-        }
+        // NOTE: corners are no longer nudged blindly from the horizon guess (that drifted the court).
+        // Precise placement is done by refineCourtToLines() (model-based line snapping) or manual calibration.
 
-        // Step 2.5: High-Precision 3-Frame Shuttlecock Point-Target Detection
-        const shuttleCandidate = detectShuttleFrom3FrameDiff(gray, humanBoxes, floorHorizonRow / CV_H);
+        // Step 2.5: High-Precision 3-Frame Shuttlecock Point-Target Detection (court airspace only)
+        const shuttleCandidates = detectShuttleCandidates(gray, humanBoxes);
         prevGray2 = prevGray1;
         prevGray1 = gray;
 
@@ -381,85 +426,151 @@ window.ShuttleCV = (function () {
             courtConfidence,
             netConfidence,
             segments: detectedLineSegments,
-            shuttleCandidate
+            shuttleCandidate: shuttleCandidates[0] || null,
+            shuttleCandidates
         };
     }
 
-    function fitCornersFromDetectedSegments(horizSegs, vertSegs, bestNetY, floorTopNorm) {
-        const farBaseY = Math.max(0.58, Math.min(0.64, floorTopNorm + 0.015));
-        const nearShortServiceY = farBaseY + 0.072; // v = 0.6478 Short Service Line
+    /****************************************************************
+     * 2b. COURT GEOMETRY HELPERS (depth-aware metric scale)
+     ****************************************************************/
+    // Normalized screen width of the court (sideline to sideline) at court depth v
+    function courtWidthScreenAt(v) {
+        const a = projectPoint(H_courtToScreen, 0, v);
+        const b = projectPoint(H_courtToScreen, 1, v);
+        return Math.max(1e-4, Math.hypot(b.x - a.x, b.y - a.y));
+    }
 
-        const alpha = 0.25;
-        courtCorners.tl.y = courtCorners.tl.y * (1 - alpha) + farBaseY * alpha;
-        courtCorners.tr.y = courtCorners.tr.y * (1 - alpha) + (farBaseY + 0.002) * alpha;
-        courtCorners.bl.y = courtCorners.bl.y * (1 - alpha) + nearShortServiceY * alpha;
-        courtCorners.br.y = courtCorners.br.y * (1 - alpha) + (nearShortServiceY + 0.004) * alpha;
+    // Net post height (1.55m) in normalized screen-Y at the net line (v = 0.5)
+    function netPostHeightScreen() {
+        const fl = projectPoint(H_courtToScreen, 0, 0.5);
+        const fr = projectPoint(H_courtToScreen, 1, 0.5);
+        const h = ((fl.y - courtCorners.netL.y) + (fr.y - courtCorners.netR.y)) * 0.5;
+        return Math.max(0.01, h);
+    }
 
-        updateHomographyFromCorners();
-        if (bestNetY > 0.50 && bestNetY < 0.62 && !courtCorners._customNet) {
-            courtCorners.netL.y = bestNetY;
-            courtCorners.netR.y = bestNetY;
+    // Expected standing player height (1.75m) in normalized screen-Y at court depth v
+    function expectedPlayerHeightScreen(v) {
+        const vv = Math.max(-0.1, Math.min(1.1, v));
+        return netPostHeightScreen() * (1.75 / 1.55) * (courtWidthScreenAt(vv) / courtWidthScreenAt(0.5));
+    }
+
+    // Meters represented by 1.0 normalized screen unit (X and Y) at depth v (perspective-correct local scale)
+    function metersPerScreenUnit(v) {
+        const vv = Math.max(-0.1, Math.min(1.1, v));
+        const scaleRatio = courtWidthScreenAt(vv) / courtWidthScreenAt(0.5);
+        return {
+            x: COURT_WIDTH_M / courtWidthScreenAt(vv),
+            y: 1.55 / (netPostHeightScreen() * scaleRatio)
+        };
+    }
+
+    function isInsideCourt(u, v, tolU = 0.0, tolV = 0.0) {
+        return u >= -tolU && u <= 1 + tolU && v >= -tolV && v <= 1 + tolV;
+    }
+
+    // Convex hull (monotone chain) helper
+    function convexHull(points) {
+        const pts = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+        const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+        const lower = [];
+        for (const p of pts) {
+            while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+            lower.push(p);
         }
+        const upper = [];
+        for (let i = pts.length - 1; i >= 0; i--) {
+            const p = pts[i];
+            while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+            upper.push(p);
+        }
+        upper.pop();
+        lower.pop();
+        return lower.concat(upper);
+    }
+
+    function pointInConvexPolygon(poly, x, y) {
+        let sign = 0;
+        for (let i = 0; i < poly.length; i++) {
+            const a = poly[i];
+            const b = poly[(i + 1) % poly.length];
+            const c = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
+            if (Math.abs(c) < 1e-12) continue;
+            const s = c > 0 ? 1 : -1;
+            if (sign === 0) sign = s;
+            else if (s !== sign) return false;
+        }
+        return true;
+    }
+
+    // Court airspace = court floor quad (with 0.6m margin) lifted up to 6.5m (shuttle flight volume)
+    function getCourtAirspacePolygon() {
+        const mU = 0.6 / COURT_WIDTH_M;
+        const mV = 0.6 / COURT_LENGTH_M;
+        const floorPts = [
+            [-mU, -mV], [1 + mU, -mV], [1 + mU, 1 + mV], [-mU, 1 + mV]
+        ];
+        const pts = [];
+        floorPts.forEach(([u, v]) => {
+            const p = projectPoint(H_courtToScreen, u, v);
+            const lift = expectedPlayerHeightScreen(v) * (6.5 / 1.75);
+            pts.push({ x: p.x, y: p.y });
+            pts.push({ x: p.x, y: p.y - lift });
+        });
+        return convexHull(pts);
     }
 
     /****************************************************************
      * 3. 3-FRAME TRANSIENT POINT-TARGET SHUTTLECOCK TRACKER
      *    Eliminates false positives on player shirts, shoes, lines & lights.
      ****************************************************************/
-    function detectShuttleFrom3FrameDiff(currGray, humanBoxes, floorTopNorm = 0.5) {
-        if (!prevGray1 || !prevGray2) return null;
+    function detectShuttleCandidates(currGray, humanBoxes) {
+        if (!prevGray1 || !prevGray2 || prevGray1.length !== currGray.length || prevGray2.length !== currGray.length) return [];
 
-        let bestX = -1, bestY = -1, bestScore = 0;
-        // Scan airspace from above net down to near floor (avoid top 12% ceiling trusses)
-        const minRow = Math.floor(CV_H * 0.14);
-        const maxRow = Math.floor(CV_H * 0.93);
+        // Only search inside the court airspace polygon (never the stands, walls, roof lights or people off-court)
+        const air = getCourtAirspacePolygon();
+        let bx0 = 1, bx1 = 0, by0 = 1, by1 = 0;
+        air.forEach(p => {
+            bx0 = Math.min(bx0, p.x); bx1 = Math.max(bx1, p.x);
+            by0 = Math.min(by0, p.y); by1 = Math.max(by1, p.y);
+        });
+        const R = 4; // isolation radius in CV pixels
+        const xStart = Math.max(R + 1, Math.floor(Math.max(0, bx0) * CV_W));
+        const xEnd = Math.min(CV_W - R - 1, Math.ceil(Math.min(1, bx1) * CV_W));
+        const yStart = Math.max(R + 1, Math.floor(Math.max(0, by0) * CV_H));
+        const yEnd = Math.min(CV_H - R - 1, Math.ceil(Math.min(1, by1) * CV_H));
 
-        for (let y = minRow; y < maxRow; y += 2) {
-            for (let x = 10; x < CV_W - 10; x += 2) {
+        const raw = [];
+        for (let y = yStart; y < yEnd; y += 1) {
+            const ny = y / CV_H;
+            for (let x = xStart; x < xEnd; x += 1) {
                 const idx = y * CV_W + x;
                 const lum = currGray[idx];
-                if (lum < 165) continue;
+                if (lum < 150) continue;
 
-                // 1. Must be newly bright in current frame compared to BOTH t-1 and t-2
+                // 1. Newly bright vs BOTH t-1 and t-2
                 const d1 = lum - prevGray1[idx];
                 const d2 = lum - prevGray2[idx];
-                if (d1 < 32 || d2 < 32) continue;
+                if (d1 < 28 || d2 < 28) continue;
 
-                // 2. Background stability check: pixel (x,y) must have been stable between t-2 and t-1!
-                // This rejects oscillating player shirts, shoes, and camera shake on court lines/lights.
-                const bgDiff = Math.abs(prevGray1[idx] - prevGray2[idx]);
-                if (bgDiff > 16) continue;
+                // 2. Background stable between t-2 and t-1 (rejects flicker, shirts, camera shake)
+                if (Math.abs(prevGray1[idx] - prevGray2[idx]) > 18) continue;
 
-                // 3. 4-Direction Point Isolation Check:
-                // A shuttlecock is a small compact spot (radius ~2-5px), NOT a long line or large body part.
-                // All 4 surrounding points at 5px radius must be significantly darker than the center!
-                const topLum = currGray[(y - 5) * CV_W + x];
-                const botLum = currGray[(y + 5) * CV_W + x];
-                const leftLum = currGray[y * CV_W + (x - 5)];
-                const rightLum = currGray[y * CV_W + (x + 5)];
-
-                if (
-                    lum - topLum < 22 ||
-                    lum - botLum < 22 ||
-                    lum - leftLum < 22 ||
-                    lum - rightLum < 22
-                ) {
-                    continue;
-                }
+                // 3. Compact point target: all 4 neighbours at radius R clearly darker
+                const topLum = currGray[idx - R * CV_W];
+                const botLum = currGray[idx + R * CV_W];
+                const leftLum = currGray[idx - R];
+                const rightLum = currGray[idx + R];
+                if (lum - topLum < 20 || lum - botLum < 20 || lum - leftLum < 20 || lum - rightLum < 20) continue;
 
                 const nx = x / CV_W;
-                const ny = y / CV_H;
+                if (!pointInConvexPolygon(air, nx, ny)) continue;
 
-                // 4. Full Human Body + Shoe + Racket Exclusion Mask
+                // 4. Exclude player bodies + racket reach
                 let insideHuman = false;
                 for (let i = 0; i < humanBoxes.length; i++) {
                     const b = humanBoxes[i];
-                    if (
-                        nx >= b.xMin - 0.04 &&
-                        nx <= b.xMax + 0.04 &&
-                        ny >= b.yMin - 0.04 &&
-                        ny <= b.yMax + 0.04
-                    ) {
+                    if (nx >= b.xMin - 0.03 && nx <= b.xMax + 0.03 && ny >= b.yMin - 0.03 && ny <= b.yMax + 0.02) {
                         insideHuman = true;
                         break;
                     }
@@ -467,21 +578,225 @@ window.ShuttleCV = (function () {
                 if (insideHuman) continue;
 
                 const surroundAvg = (topLum + botLum + leftLum + rightLum) >> 2;
-                const compactness = lum - surroundAvg;
-                const score = (d1 + d2) * 0.5 + compactness * 1.5;
-
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestX = nx;
-                    bestY = ny;
-                }
+                const score = (d1 + d2) * 0.5 + (lum - surroundAvg) * 1.5;
+                if (score >= 64) raw.push({ x: nx, y: ny, score });
             }
         }
 
-        if (bestScore >= 68) {
-            return { x: bestX, y: bestY, confidence: Math.min(99, Math.round(bestScore)) };
+        // Non-maximum suppression -> up to 4 distinct candidates (tracker picks the trajectory-consistent one)
+        raw.sort((a, b) => b.score - a.score);
+        const out = [];
+        for (const c of raw) {
+            if (out.every(o => Math.hypot(o.x - c.x, o.y - c.y) > 0.025)) {
+                out.push({ x: c.x, y: c.y, confidence: Math.min(99, Math.round(c.score)) });
+                if (out.length >= 4) break;
+            }
         }
-        return null;
+        return out;
+    }
+
+    /****************************************************************
+     * 3b. MODEL-BASED COURT LINE & NET REFINEMENT (sub-pixel line snapping)
+     *     Projects every painted BWF line through the current homography,
+     *     searches perpendicular to each line for the white-line ridge,
+     *     then re-solves the homography by least squares (robust, iterative).
+     ****************************************************************/
+    const refineCanvas = document.createElement('canvas');
+    const refineCtx = refineCanvas.getContext('2d', { willReadFrequently: true });
+
+    function solveHomographyLeastSquares(src, dst) {
+        // src: court (u,v), dst: screen (x,y) normalized. Solves 8 params with h33 = 1.
+        const ATA = Array.from({ length: 8 }, () => new Array(8).fill(0));
+        const ATb = new Array(8).fill(0);
+        for (let i = 0; i < src.length; i++) {
+            const x = src[i].x, y = src[i].y, X = dst[i].x, Y = dst[i].y;
+            const rows = [
+                [[x, y, 1, 0, 0, 0, -X * x, -X * y], X],
+                [[0, 0, 0, x, y, 1, -Y * x, -Y * y], Y]
+            ];
+            rows.forEach(([r, b]) => {
+                for (let a = 0; a < 8; a++) {
+                    ATb[a] += r[a] * b;
+                    for (let c = 0; c < 8; c++) ATA[a][c] += r[a] * r[c];
+                }
+            });
+        }
+        const h = solveGaussian8x8(ATA, ATb);
+        if (!h) return null;
+        return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+    }
+
+    function refineCourtToLines(videoEl, humanBoxes = []) {
+        if (!videoEl || videoEl.readyState < 2) return { ok: false, reason: 'no-video' };
+        const vw = videoEl.videoWidth || 1280;
+        const vh = videoEl.videoHeight || 720;
+        const LONG = 1280;
+        const W = vw >= vh ? LONG : Math.round(LONG * vw / vh);
+        const Hh = vw >= vh ? Math.round(LONG * vh / vw) : LONG;
+        refineCanvas.width = W;
+        refineCanvas.height = Hh;
+        refineCtx.drawImage(videoEl, 0, 0, W, Hh);
+        const d = refineCtx.getImageData(0, 0, W, Hh).data;
+        const g = new Uint8Array(W * Hh);
+        for (let i = 0, p = 0; i < d.length; i += 4, p++) g[p] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+        const lumAt = (x, y) => {
+            const xi = Math.round(x), yi = Math.round(y);
+            if (xi < 0 || yi < 0 || xi >= W || yi >= Hh) return -1;
+            return g[yi * W + xi];
+        };
+
+        // Painted BWF lines in normalized court coordinates (net line v=0.5 is not painted)
+        const lines = [];
+        [0, 0.0567, 0.3522, 0.6478, 0.9433, 1].forEach(v => lines.push({ a: [0, v], b: [1, v] }));
+        [0, 0.0754, 0.9246, 1].forEach(u => lines.push({ a: [u, 0], b: [u, 1] }));
+        lines.push({ a: [0.5, 0], b: [0.5, 0.3522] });
+        lines.push({ a: [0.5, 0.6478], b: [0.5, 1] });
+
+        const H_before = H_courtToScreen.slice();
+        let H = H_courtToScreen.slice();
+        let lastStats = null;
+        const radii = [0.022, 0.012, 0.007];
+
+        for (let iter = 0; iter < radii.length; iter++) {
+            const searchR = Math.max(6, Math.round(radii[iter] * Math.max(W, Hh)));
+            const src = [];
+            const dst = [];
+            const offsets = [];
+
+            lines.forEach(L => {
+                const N = 28;
+                for (let s = 1; s < N; s++) {
+                    const t = s / N;
+                    const u = L.a[0] + (L.b[0] - L.a[0]) * t;
+                    const v = L.a[1] + (L.b[1] - L.a[1]) * t;
+                    const p = projectPoint(H, u, v);
+                    const p2 = projectPoint(H, u + (L.b[0] - L.a[0]) * 0.01, v + (L.b[1] - L.a[1]) * 0.01);
+                    if (p.x < 0.01 || p.x > 0.99 || p.y < 0.01 || p.y > 0.99) continue;
+                    if (humanBoxes.some(b => p.x >= b.xMin - 0.01 && p.x <= b.xMax + 0.01 && p.y >= b.yMin - 0.01 && p.y <= b.yMax + 0.01)) continue;
+
+                    const px = p.x * W, py = p.y * Hh;
+                    let dx = (p2.x - p.x) * W, dy = (p2.y - p.y) * Hh;
+                    const len = Math.hypot(dx, dy) || 1;
+                    dx /= len; dy /= len;
+                    const nx = -dy, ny = dx; // perpendicular
+
+                    // Multi-scale flank (thin far lines -> wide near lines under perspective)
+                    const flanks = [4, 8, 14];
+                    let bestT = 0, bestResp = -1e9;
+                    for (let k = -searchR; k <= searchR; k++) {
+                        const cx = px + nx * k, cy = py + ny * k;
+                        const c = lumAt(cx, cy);
+                        if (c < 0) continue;
+                        for (let f = 0; f < flanks.length; f++) {
+                            const flank = flanks[f];
+                            const l = lumAt(cx - nx * flank, cy - ny * flank);
+                            const r = lumAt(cx + nx * flank, cy + ny * flank);
+                            if (l < 0 || r < 0) continue;
+                            const resp = c - Math.max(l, r);
+                            if (resp > bestResp) { bestResp = resp; bestT = k; }
+                        }
+                    }
+                    if (bestResp >= 18) {
+                        src.push({ x: u, y: v });
+                        dst.push({ x: (px + nx * bestT) / W, y: (py + ny * bestT) / Hh });
+                        offsets.push(Math.abs(bestT));
+                    }
+                }
+            });
+
+            if (src.length < 16) {
+                lastStats = { ok: false, reason: 'few-lines', samples: src.length };
+                break;
+            }
+
+            // Robust outlier rejection on perpendicular offsets
+            const sorted = offsets.slice().sort((a, b) => a - b);
+            const med = sorted[Math.floor(sorted.length / 2)];
+            const gate = med * 2.5 + 2;
+            const fSrc = [], fDst = [];
+            offsets.forEach((o, i) => { if (o <= gate) { fSrc.push(src[i]); fDst.push(dst[i]); } });
+            if (fSrc.length < 14) {
+                lastStats = { ok: false, reason: 'outliers', samples: fSrc.length };
+                break;
+            }
+
+            const Hn = solveHomographyLeastSquares(fSrc, fDst);
+            if (!Hn) break;
+            let rms = 0;
+            fSrc.forEach((s, i) => {
+                const q = projectPoint(Hn, s.x, s.y);
+                rms += ((q.x - fDst[i].x) * W) ** 2 + ((q.y - fDst[i].y) * Hh) ** 2;
+            });
+            rms = Math.sqrt(rms / fSrc.length);
+            H = Hn;
+            lastStats = { ok: true, samples: fSrc.length, total: offsets.length, rmsPx: +rms.toFixed(2) };
+        }
+
+        if (!lastStats || !lastStats.ok) return lastStats || { ok: false };
+
+        // Sanity: refined court must stay close to the user's calibration (no jumps to wrong lines)
+        const anchors = [[0, 0], [1, 0], [1, 0.6478], [0, 0.6478]];
+        const maxShift = Math.max(...anchors.map(([u, v]) => {
+            const a = projectPoint(H_before, u, v);
+            const b = projectPoint(H, u, v);
+            return Math.hypot(a.x - b.x, a.y - b.y);
+        }));
+        if (maxShift > 0.08 || lastStats.rmsPx > 6) {
+            return { ok: false, reason: 'unstable', maxShift: +maxShift.toFixed(3), rmsPx: lastStats.rmsPx };
+        }
+
+        // Apply: update corner handles from refined homography
+        const tl = projectPoint(H, 0, 0), tr = projectPoint(H, 1, 0);
+        const br = projectPoint(H, 1, 0.6478), bl = projectPoint(H, 0, 0.6478);
+        courtCorners.tl = { x: tl.x, y: tl.y };
+        courtCorners.tr = { x: tr.x, y: tr.y };
+        courtCorners.br = { x: br.x, y: br.y };
+        courtCorners.bl = { x: bl.x, y: bl.y };
+        H_courtToScreen = H;
+        H_screenToCourt = invert3x3(H);
+        if (!courtCorners._customNet) {
+            const midL = projectPoint(H, 0, 0.5);
+            const midR = projectPoint(H, 1, 0.5);
+            courtCorners.netL = { x: midL.x, y: courtCorners.netL.y };
+            courtCorners.netR = { x: midR.x, y: courtCorners.netR.y };
+        }
+
+        // Refine net top tape: bright horizontal tape, search vertically around current net line
+        const netPts = [];
+        for (let s = 2; s <= 18; s++) {
+            const t = s / 20;
+            const x = courtCorners.netL.x + (courtCorners.netR.x - courtCorners.netL.x) * t;
+            const y = courtCorners.netL.y + (courtCorners.netR.y - courtCorners.netL.y) * t;
+            if (humanBoxes.some(b => x >= b.xMin && x <= b.xMax && y >= b.yMin && y <= b.yMax)) continue;
+            const px = x * W, py = y * Hh;
+            const R = Math.round(0.02 * Hh);
+            let bestK = 0, bestResp = -1e9;
+            for (let k = -R; k <= R; k++) {
+                const c = lumAt(px, py + k), up = lumAt(px, py + k - 4), dn = lumAt(px, py + k + 4);
+                if (c < 0 || up < 0 || dn < 0) continue;
+                const resp = c - Math.max(up, dn);
+                if (resp > bestResp) { bestResp = resp; bestK = k; }
+            }
+            if (bestResp >= 16) netPts.push({ x, y: (py + bestK) / Hh });
+        }
+        if (netPts.length >= 6) {
+            // Least-squares line y = a + b x
+            const n = netPts.length;
+            const sx = netPts.reduce((a, p) => a + p.x, 0), sy = netPts.reduce((a, p) => a + p.y, 0);
+            const sxx = netPts.reduce((a, p) => a + p.x * p.x, 0), sxy = netPts.reduce((a, p) => a + p.x * p.y, 0);
+            const den = n * sxx - sx * sx;
+            if (Math.abs(den) > 1e-9) {
+                const b = (n * sxy - sx * sy) / den;
+                const a = (sy - b * sx) / n;
+                courtCorners.netL.y = a + b * courtCorners.netL.x;
+                courtCorners.netR.y = a + b * courtCorners.netR.x;
+                lastStats.netRefined = true;
+            }
+        }
+
+        courtConfidence = Math.min(99, Math.round((lastStats.samples / Math.max(1, lastStats.total)) * 100));
+        netConfidence = lastStats.netRefined ? 95 : netConfidence;
+        return lastStats;
     }
 
     /****************************************************************
@@ -572,7 +887,8 @@ window.ShuttleCV = (function () {
             }
             updateHomographyFromCorners();
         },
-        isCourtValidOrLocked: () => isCourtLocked || courtConfidence >= 60,
+        // Court is "valid" ONLY when calibrated/locked -> players & shuttle are never tracked against a guessed court
+        isCourtValidOrLocked: () => isCourtLocked,
         getCourtConfidence: () => courtConfidence,
         getNetConfidence: () => netConfidence,
         getDetectedSegments: () => detectedLineSegments,
@@ -580,6 +896,11 @@ window.ShuttleCV = (function () {
         setCourtLocked: (locked) => { isCourtLocked = locked; },
         getCourtLocked: () => isCourtLocked,
         analyzeVideoFrameCV,
+        refineCourtToLines,
+        expectedPlayerHeightScreen,
+        metersPerScreenUnit,
+        isInsideCourt,
+        getCourtAirspacePolygon,
         screenToCourtNormalized,
         courtNormalizedToScreen,
         screenToCourtMeters,

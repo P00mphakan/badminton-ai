@@ -6,6 +6,23 @@
 
 let geminiApiKey = localStorage.getItem('shuttlepro_gemini_key') || (window.SHUTTLEPRO_ENV && window.SHUTTLEPRO_ENV.GEMINI_API_KEY) || "";
 
+// Match Title (user-named recording) & saved match history
+function buildDefaultMatchTitle() {
+    const d = new Date();
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    return `แมตช์ ${dd}/${mm} ${hh}:${mi}`;
+}
+let matchTitle = localStorage.getItem('shuttlepro_match_title') || buildDefaultMatchTitle();
+let matchHistory = [];
+try {
+    matchHistory = JSON.parse(localStorage.getItem('shuttlepro_match_history') || '[]');
+} catch (e) {
+    matchHistory = [];
+}
+
 let activeTab = 'live';
 let isWebcamActive = false;
 let isUploadedVideoActive = false;

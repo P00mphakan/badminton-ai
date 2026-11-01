@@ -1,14 +1,16 @@
 /********************************************************************
  * MODULE: js/pose-tracker.js
- * PURPOSE: TensorFlow.js MoveNet MultiPose player detection,
- *          ankle-to-court metric mapping, distance/speed tracking,
- *          and 3-frame shuttlecock flight + stroke classification.
+ * PURPOSE: Player detection (A1, A2, B1, B2) with MoveNet MultiPose on
+ *          homography-derived half-court crops, STRICT in-court gating
+ *          (people outside the court lines are never tracked), and a
+ *          gated shuttle tracker with physics-based (aerodynamic drag)
+ *          time-of-flight speed measurement.
  ********************************************************************/
 
 async function initPoseDetectionModel() {
     if (poseDetector || isPoseModelLoading) return;
     isPoseModelLoading = true;
-    updateAIModelBadge('กำลังโหลดโมเดล AI (MoveNet + CV)...');
+    updateAIModelBadge('กำลังโหลด AI...');
 
     try {
         if (window.tf && window.poseDetection) {
@@ -17,18 +19,19 @@ async function initPoseDetectionModel() {
                 poseDetection.SupportedModels.MoveNet,
                 {
                     modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
-                    enableSmoothing: true,
-                    minPoseScore: 0.25
+                    // Smoothing is disabled because each inference runs on a different half-court crop
+                    enableSmoothing: false,
+                    minPoseScore: 0.2
                 }
             );
             poseModelReady = true;
-            updateAIModelBadge('AI พร้อมใช้งานจริง (MoveNet + Line CV)');
+            updateAIModelBadge('AI พร้อม');
         } else {
-            updateAIModelBadge('Line & Net CV พร้อมใช้งาน');
+            updateAIModelBadge('CV พร้อม');
         }
     } catch (err) {
         console.warn('Pose model init warning:', err);
-        updateAIModelBadge('Line & Net CV โหมดความเร็วสูง');
+        updateAIModelBadge('CV โหมดเร็ว');
     } finally {
         isPoseModelLoading = false;
     }
@@ -39,391 +42,469 @@ function updateAIModelBadge(text) {
     if (statusText) statusText.textContent = text;
 }
 
+/* ================================================================
+ * 1. PLAYER TRACKING (A1, A2 far half • B1, B2 near half)
+ * ================================================================ */
 const poseCropCanvas = document.createElement('canvas');
-poseCropCanvas.width = 512;
-poseCropCanvas.height = 384;
-const poseCropCtx = poseCropCanvas.getContext('2d', { willReadFrequently: true });
+const poseCropCtx = poseCropCanvas.getContext('2d');
+let posePassTeam = 'A';
+let poseInferenceBusy = false;
+const maskBoxesByTeam = { A: { boxes: [], t: 0 }, B: { boxes: [], t: 0 } };
 
-function updatePlayerSlotMetrics(targetSlot, courtU, courtV, footSx, footSy, kpsNorm, wristVel, dtSec, now) {
-    const clampedU = Math.max(0, Math.min(1, courtU));
-    const clampedV = Math.max(0, Math.min(1, courtV));
+// Tolerance outside the painted lines for foot-position noise (15 cm sideways, 25 cm lengthwise)
+const IN_COURT_TOL_U = 0.15 / 6.10;
+const IN_COURT_TOL_V = 0.25 / 13.40;
 
-    if (targetSlot.detected) {
-        const dxMeters = (clampedU - targetSlot.u) * ShuttleCV.COURT_WIDTH_M;
-        const dyMeters = (clampedV - targetSlot.v) * ShuttleCV.COURT_LENGTH_M;
-        const stepMeters = Math.hypot(dxMeters, dyMeters);
+function computeHalfCourtCrop(team) {
+    const v0 = team === 'A' ? -IN_COURT_TOL_V : 0.5;
+    const v1 = team === 'A' ? 0.5 : 1 + IN_COURT_TOL_V;
+    const pts = [[0, v0], [1, v0], [0, v1], [1, v1]].map(([u, v]) => ShuttleCV.courtNormalizedToScreen(u, v));
+    let x0 = Math.min(...pts.map(p => p.x));
+    let x1 = Math.max(...pts.map(p => p.x));
+    let y0 = Math.min(...pts.map(p => p.y));
+    let y1 = Math.max(...pts.map(p => p.y));
 
-        if (stepMeters >= 0.035 && stepMeters < 2.2) {
-            targetSlot.distanceMeters = +(targetSlot.distanceMeters + stepMeters).toFixed(2);
-            const instSpeedKmh = Math.min(32, (stepMeters / dtSec) * 3.6);
-            targetSlot.currentSpeedKmh = +(targetSlot.currentSpeedKmh * 0.62 + instSpeedKmh * 0.38).toFixed(1);
-            if (targetSlot.currentSpeedKmh > targetSlot.maxSpeedKmh) {
-                targetSlot.maxSpeedKmh = targetSlot.currentSpeedKmh;
-            }
-            targetSlot.positions.push({ x: clampedU, y: clampedV, t: matchSeconds });
-            if (targetSlot.positions.length > 500) targetSlot.positions.shift();
-        } else {
-            targetSlot.currentSpeedKmh = +(targetSlot.currentSpeedKmh * 0.78).toFixed(1);
-        }
+    const hFar = ShuttleCV.expectedPlayerHeightScreen(v0);
+    const hNear = ShuttleCV.expectedPlayerHeightScreen(v1);
+    y0 -= hFar * 1.3;          // head room for a player standing on the far edge (incl. jump)
+    y1 += hNear * 0.08;
+    x0 -= hNear * 0.35;
+    x1 += hNear * 0.35;
+
+    x0 = Math.max(0, x0); y0 = Math.max(0, y0);
+    x1 = Math.min(1, x1); y1 = Math.min(1, y1);
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+function evaluatePoseCandidate(pose, crop, team) {
+    const kps = pose.keypoints.map(k => ({
+        name: k.name,
+        x: crop.x + (k.x / poseCropCanvas.width) * crop.w,
+        y: crop.y + (k.y / poseCropCanvas.height) * crop.h,
+        score: k.score ?? 0
+    }));
+    const get = n => kps.find(k => k.name === n);
+    const conf = kps.filter(k => k.score > 0.25);
+    if (conf.length < 5) return { mask: null, player: null };
+
+    const xs = conf.map(k => k.x), ys = conf.map(k => k.y);
+    const box = {
+        xMin: Math.max(0, Math.min(...xs) - 0.02),
+        xMax: Math.min(1, Math.max(...xs) + 0.02),
+        yMin: Math.max(0, Math.min(...ys) - 0.03),
+        yMax: Math.min(1, Math.max(...ys) + 0.015)
+    };
+
+    // Foot contact point: ankles first, then knee extrapolation. No guessing from bounding boxes.
+    const ankles = ['left_ankle', 'right_ankle'].map(get).filter(k => k && k.score >= 0.3);
+    let footX, footY;
+    if (ankles.length) {
+        footX = ankles.reduce((a, k) => a + k.x, 0) / ankles.length;
+        footY = Math.max(...ankles.map(k => k.y));
     } else {
-        targetSlot.positions.push({ x: clampedU, y: clampedV, t: matchSeconds });
+        const knees = ['left_knee', 'right_knee'].map(get).filter(k => k && k.score >= 0.35);
+        const hips = ['left_hip', 'right_hip'].map(get).filter(k => k && k.score >= 0.3);
+        if (!knees.length || !hips.length) return { mask: box, player: null };
+        const kneeY = knees.reduce((a, k) => a + k.y, 0) / knees.length;
+        const hipY = hips.reduce((a, k) => a + k.y, 0) / hips.length;
+        footX = knees.reduce((a, k) => a + k.x, 0) / knees.length;
+        footY = kneeY + (kneeY - hipY) * 0.9;
     }
 
-    targetSlot.wristSpeedPx = wristVel;
-    targetSlot.u = targetSlot.detected ? (targetSlot.u * 0.35 + clampedU * 0.65) : clampedU;
-    targetSlot.v = targetSlot.detected ? (targetSlot.v * 0.35 + clampedV * 0.65) : clampedV;
-    targetSlot.screenX = targetSlot.detected ? (targetSlot.screenX * 0.35 + footSx * 0.65) : footSx;
-    targetSlot.screenY = targetSlot.detected ? (targetSlot.screenY * 0.35 + footSy * 0.65) : footSy;
-    if (kpsNorm) targetSlot.keypoints = kpsNorm;
-    targetSlot.detected = true;
-    targetSlot.lastSeenMs = now;
+    const uv = ShuttleCV.screenToCourtNormalized(footX, footY);
+
+    // STRICT: the feet must be inside the court lines -> spectators, coaches, umpires, players on other courts are rejected
+    if (!ShuttleCV.isInsideCourt(uv.x, uv.y, IN_COURT_TOL_U, IN_COURT_TOL_V)) return { mask: box, player: null };
+    if (team === 'A' && uv.y > 0.52) return { mask: box, player: null };
+    if (team === 'B' && uv.y < 0.48) return { mask: box, player: null };
+
+    // Depth-consistent body size check (rejects people standing behind the court whose feet are hidden)
+    const head = ['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'].map(get).filter(k => k && k.score >= 0.3);
+    const shoulders = ['left_shoulder', 'right_shoulder'].map(get).filter(k => k && k.score >= 0.3);
+    let topY;
+    if (head.length) topY = Math.min(...head.map(k => k.y));
+    else if (shoulders.length) topY = Math.min(...shoulders.map(k => k.y)) - 0.16 * ShuttleCV.expectedPlayerHeightScreen(uv.y);
+    else return { mask: box, player: null };
+
+    const ratio = (footY - topY) / ShuttleCV.expectedPlayerHeightScreen(uv.y);
+    if (ratio < 0.4 || ratio > 1.75) return { mask: box, player: null };
+
+    const ankleConf = ankles.length ? Math.max(...ankles.map(k => k.score)) : 0.3;
+    return {
+        mask: box,
+        player: {
+            u: uv.x, v: uv.y, footX, footY, box, kps,
+            score: pose.score * (0.6 + 0.4 * ankleConf) * (1 - Math.min(0.5, Math.abs(1 - ratio) * 0.5))
+        }
+    };
+}
+
+function assignCandidatesToSlots(team, cands, now) {
+    const slotIds = team === 'A'
+        ? (isDoublesMatch ? ['A1', 'A2'] : ['A1'])
+        : (isDoublesMatch ? ['B1', 'B2'] : ['B1']);
+    if (!isDoublesMatch) {
+        const unused = players[team === 'A' ? 'A2' : 'B2'];
+        unused.detected = false;
+        unused.currentSpeedKmh = 0;
+    }
+
+    const slotCost = (slot, idx, c) => {
+        const recent = now - slot.lastSeenMs < 2000;
+        if (recent) {
+            return Math.hypot((slot.u - c.u) * ShuttleCV.COURT_WIDTH_M, (slot.v - c.v) * ShuttleCV.COURT_LENGTH_M);
+        }
+        // Not tracked yet: slot 1 = left side of screen, slot 2 = right side
+        const priorU = slotIds.length === 1 ? 0.5 : (idx === 0 ? 0.25 : 0.75);
+        return Math.abs(c.u - priorU) * ShuttleCV.COURT_WIDTH_M + 1.5;
+    };
+
+    let best = null;
+    const slots = slotIds.map(id => players[id]);
+    const perms = [];
+    if (cands.length === 1) {
+        slots.forEach((s, i) => perms.push([[i, 0]]));
+    } else if (cands.length >= 2 && slots.length === 2) {
+        perms.push([[0, 0], [1, 1]], [[0, 1], [1, 0]]);
+    } else if (cands.length >= 2 && slots.length === 1) {
+        perms.push([[0, 0]]);
+    }
+    perms.forEach(p => {
+        const cost = p.reduce((a, [si, ci]) => a + slotCost(slots[si], si, cands[ci]), 0);
+        if (!best || cost < best.cost) best = { cost, p };
+    });
+    if (!best) return;
+    best.p.forEach(([si, ci]) => updatePlayerSlot(slots[si], cands[ci], now));
+}
+
+function updatePlayerSlot(slot, c, now) {
+    const wasTracked = slot.detected && now - slot.lastSeenMs < 600;
+    const dt = wasTracked ? (now - slot.lastSeenMs) / 1000 : 0;
+    const alpha = 0.6;
+    const newU = wasTracked ? slot.u * (1 - alpha) + c.u * alpha : c.u;
+    const newV = wasTracked ? slot.v * (1 - alpha) + c.v * alpha : c.v;
+
+    if (wasTracked && dt > 0) {
+        const stepM = Math.hypot((newU - slot.u) * ShuttleCV.COURT_WIDTH_M, (newV - slot.v) * ShuttleCV.COURT_LENGTH_M);
+        if (stepM >= 0.03 && stepM < 2.0) {
+            slot.distanceMeters = +(slot.distanceMeters + stepM).toFixed(2);
+            const inst = Math.min(32, (stepM / dt) * 3.6);
+            slot.currentSpeedKmh = +(slot.currentSpeedKmh * 0.6 + inst * 0.4).toFixed(1);
+            slot.maxSpeedKmh = Math.max(slot.maxSpeedKmh, slot.currentSpeedKmh);
+            slot.positions.push({ x: newU, y: newV, t: matchSeconds });
+            if (slot.positions.length > 600) slot.positions.shift();
+        } else {
+            slot.currentSpeedKmh = +(slot.currentSpeedKmh * 0.8).toFixed(1);
+        }
+    } else {
+        slot.positions.push({ x: newU, y: newV, t: matchSeconds });
+    }
+
+    // Wrist speed (normalized screen units / s) used for hit attribution
+    const wrists = c.kps.filter(k => (k.name === 'left_wrist' || k.name === 'right_wrist') && k.score > 0.3);
+    if (wrists.length && slot._lastWrist && dt > 0) {
+        const w = wrists.reduce((a, k) => (k.y < a.y ? k : a), wrists[0]);
+        slot.wristSpeedPx = Math.hypot(w.x - slot._lastWrist.x, w.y - slot._lastWrist.y) / dt;
+    }
+    if (wrists.length) slot._lastWrist = wrists.reduce((a, k) => (k.y < a.y ? k : a), wrists[0]);
+
+    const ring = ShuttleCV.courtNormalizedToScreen(newU, newV);
+    slot.u = newU;
+    slot.v = newV;
+    slot.screenX = ring.x;
+    slot.screenY = ring.y;
+    slot.box = c.box;
+    slot.keypoints = c.kps;
+    slot.detected = true;
+    slot.lastSeenMs = now;
 }
 
 async function runRealPoseEstimation(videoEl) {
     if (!videoEl || videoEl.readyState < 2) return;
     const now = performance.now();
-    if (now - lastPoseTimestamp < 45) return; // ~22 Hz pose inference
-    const dtSec = Math.max(0.016, (now - lastPoseTimestamp) / 1000);
+
+    Object.values(players).forEach(p => {
+        if (p.detected && now - p.lastSeenMs > 700) {
+            p.detected = false;
+            p.currentSpeedKmh = 0;
+        }
+    });
+
+    // Without a locked court we cannot verify "inside the lines" -> track nobody (no guessing)
+    if (!ShuttleCV.getCourtLocked()) {
+        Object.values(players).forEach(p => { p.detected = false; p.currentSpeedKmh = 0; });
+        detectedHumanBoxes = [];
+        return;
+    }
+    if (!poseModelReady || !poseDetector || poseInferenceBusy) return;
+    if (now - lastPoseTimestamp < 40) return;
     lastPoseTimestamp = now;
 
+    const team = posePassTeam;
+    posePassTeam = team === 'A' ? 'B' : 'A';
+
+    const crop = computeHalfCourtCrop(team);
+    if (crop.w < 0.03 || crop.h < 0.03) return;
+
+    const vW = videoEl.videoWidth || 1280;
+    const vH = videoEl.videoHeight || 720;
+    const aspect = (crop.w * vW) / (crop.h * vH);
+    const LONG = 512;
+    const cw = aspect >= 1 ? LONG : Math.max(96, Math.round(LONG * aspect));
+    const ch = aspect >= 1 ? Math.max(96, Math.round(LONG / aspect)) : LONG;
+    if (poseCropCanvas.width !== cw) poseCropCanvas.width = cw;
+    if (poseCropCanvas.height !== ch) poseCropCanvas.height = ch;
+
+    poseInferenceBusy = true;
     try {
-        const vW = videoEl.videoWidth || 1280;
-        const vH = videoEl.videoHeight || 720;
-        const isPortraitVid = vH > vW;
+        poseCropCtx.drawImage(videoEl, crop.x * vW, crop.y * vH, crop.w * vW, crop.h * vH, 0, 0, cw, ch);
+        const poses = await poseDetector.estimatePoses(poseCropCanvas, { maxPoses: 6, flipHorizontal: false });
 
-        // Crop active court zone so far-court players (A1/A2) have 2.2x higher pixel resolution
-        const cropX0 = isPortraitVid ? 0.12 : 0.05;
-        const cropY0 = isPortraitVid ? 0.44 : 0.15;
-        const cropW = isPortraitVid ? 0.80 : 0.90;
-        const cropH = isPortraitVid ? 0.48 : 0.80;
-
-        poseCropCtx.drawImage(
-            videoEl,
-            cropX0 * vW, cropY0 * vH, cropW * vW, cropH * vH,
-            0, 0, poseCropCanvas.width, poseCropCanvas.height
-        );
-
-        let poses = [];
-        if (poseModelReady && poseDetector) {
-            poses = await poseDetector.estimatePoses(poseCropCanvas, {
-                maxPoses: 4,
-                flipHorizontal: false
-            });
-        }
-
-        const newHumanBoxes = [];
-        const assignedSlots = new Set();
-
-        Object.values(players).forEach(p => {
-            if (now - p.lastSeenMs > 900) {
-                p.detected = false;
-                p.currentSpeedKmh = 0;
-            }
-        });
-
-        const courtValid = ShuttleCV.isCourtValidOrLocked();
-
+        const masks = [];
+        let cands = [];
         poses.forEach(pose => {
-            if (pose.score < 0.20) return;
-            const kps = pose.keypoints.map(k => ({
-                name: k.name,
-                x: cropX0 + (k.x / poseCropCanvas.width) * cropW,
-                y: cropY0 + (k.y / poseCropCanvas.height) * cropH,
-                score: k.score
-            }));
-
-            const lAnkle = kps.find(k => k.name === 'left_ankle');
-            const rAnkle = kps.find(k => k.name === 'right_ankle');
-            const lHip = kps.find(k => k.name === 'left_hip');
-            const rHip = kps.find(k => k.name === 'right_hip');
-            const lWrist = kps.find(k => k.name === 'left_wrist');
-            const rWrist = kps.find(k => k.name === 'right_wrist');
-
-            const validKps = kps.filter(k => k.score > 0.18);
-            if (validKps.length < 4) return;
-
-            const xs = validKps.map(k => k.x);
-            const ys = validKps.map(k => k.y);
-            const xMin = Math.max(0, Math.min(...xs) - 0.025);
-            const xMax = Math.min(1, Math.max(...xs) + 0.025);
-            const yMin = Math.max(0, Math.min(...ys) - 0.025);
-            const yMax = Math.min(1, Math.max(...ys) + 0.025);
-            newHumanBoxes.push({ xMin, xMax, yMin, yMax });
-
-            let footSx = (xMin + xMax) / 2;
-            let footSy = yMax;
-            if (lAnkle && rAnkle && lAnkle.score > 0.22 && rAnkle.score > 0.22) {
-                footSx = (lAnkle.x + rAnkle.x) * 0.5;
-                footSy = Math.max(lAnkle.y, rAnkle.y);
-            } else if (lHip && rHip && lHip.score > 0.22 && rHip.score > 0.22) {
-                footSx = (lHip.x + rHip.x) * 0.5;
-                footSy = Math.min(0.96, (lHip.y + rHip.y) * 0.5 + 0.11);
-            }
-
-            const courtUV = ShuttleCV.screenToCourtNormalized(footSx, footSy);
-            if (courtValid && (courtUV.x < -0.22 || courtUV.x > 1.22 || courtUV.y < -0.22 || courtUV.y > 1.22)) {
-                return;
-            }
-
-            const isTeamA = courtUV.y < 0.5;
-            const slotIds = isTeamA ? ['A1', 'A2'] : ['B1', 'B2'];
-            let targetSlot = null;
-            let bestDist = Infinity;
-            slotIds.forEach(id => {
-                if (assignedSlots.has(id)) return;
-                const d = Math.hypot(players[id].u - courtUV.x, players[id].v - courtUV.y);
-                if (d < bestDist) {
-                    bestDist = d;
-                    targetSlot = players[id];
-                }
-            });
-            if (!targetSlot) return;
-            assignedSlots.add(targetSlot.id);
-
-            let maxWristVel = 0;
-            [lWrist, rWrist].forEach(w => {
-                if (w && w.score > 0.25) {
-                    if (targetSlot._lastWx !== undefined) {
-                        const wDist = Math.hypot(w.x - targetSlot._lastWx, w.y - targetSlot._lastWy);
-                        maxWristVel = Math.max(maxWristVel, wDist / dtSec);
-                    }
-                    targetSlot._lastWx = w.x;
-                    targetSlot._lastWy = w.y;
-                }
-            });
-
-            updatePlayerSlotMetrics(targetSlot, courtUV.x, courtUV.y, footSx, footSy, kps, maxWristVel, dtSec, now);
+            if ((pose.score ?? 0) < 0.2) return;
+            const r = evaluatePoseCandidate(pose, crop, team);
+            if (r.mask) masks.push(r.mask);
+            if (r.player) cands.push(r.player);
         });
 
-        // Supplement MoveNet with Court-Zone Player Silhouette/Shoe detector for small far-court players (A1/A2) or occluded doubles partner
-        if (courtValid && assignedSlots.size < 4) {
-            const imgData = poseCropCtx.getImageData(0, 0, poseCropCanvas.width, poseCropCanvas.height).data;
-            const cw = poseCropCanvas.width;
-            const ch = poseCropCanvas.height;
+        // Non-maximum suppression in court meters (one player per 0.6 m)
+        cands.sort((a, b) => b.score - a.score);
+        const kept = [];
+        cands.forEach(c => {
+            const dup = kept.some(k => Math.hypot((k.u - c.u) * ShuttleCV.COURT_WIDTH_M, (k.v - c.v) * ShuttleCV.COURT_LENGTH_M) < 0.6);
+            if (!dup) kept.push(c);
+        });
+        cands = kept.slice(0, isDoublesMatch ? 2 : 1);
 
-            const searchZones = [
-                { id: 'A1', uMin: 0.06, uMax: 0.49, vMin: 0.04, vMax: 0.46, bodyH: 0.085, bodyW: 0.045 },
-                { id: 'A2', uMin: 0.51, uMax: 0.94, vMin: 0.04, vMax: 0.46, bodyH: 0.085, bodyW: 0.045 },
-                { id: 'B1', uMin: 0.06, uMax: 0.54, vMin: 0.52, vMax: 0.92, bodyH: 0.145, bodyW: 0.065 },
-                { id: 'B2', uMin: 0.46, uMax: 0.94, vMin: 0.52, vMax: 0.92, bodyH: 0.145, bodyW: 0.065 }
-            ];
+        assignCandidatesToSlots(team, cands, performance.now());
 
-            searchZones.forEach(zone => {
-                if (assignedSlots.has(zone.id)) return;
-                let sumU = 0, sumV = 0, sumW = 0;
-
-                for (let u = zone.uMin; u <= zone.uMax; u += 0.035) {
-                    for (let v = zone.vMin; v <= zone.vMax; v += 0.035) {
-                        const sc = ShuttleCV.courtNormalizedToScreen(u, v);
-                        // Skip if already covered by a MoveNet human box
-                        const insideExisting = newHumanBoxes.some(b =>
-                            sc.x >= b.xMin - 0.02 && sc.x <= b.xMax + 0.02 &&
-                            sc.y >= b.yMin - 0.02 && sc.y <= b.yMax + 0.02
-                        );
-                        if (insideExisting) continue;
-
-                        // Check torso pixel ~4% above ankle point for dark/colored jersey contrast against court floor
-                        const torsoSy = sc.y - zone.bodyH * 0.48;
-                        const cx = Math.round(((sc.x - cropX0) / cropW) * cw);
-                        const cy = Math.round(((torsoSy - cropY0) / cropH) * ch);
-                        if (cx < 4 || cx >= cw - 4 || cy < 4 || cy >= ch - 4) continue;
-
-                        const idx = (cy * cw + cx) * 4;
-                        const r = imgData[idx], g = imgData[idx + 1], b = imgData[idx + 2];
-                        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-                        // Court floor is bright blue/teal (b > r + 15, luma 95..175). Players wear dark black or red jerseys (luma < 72 or r > b + 35)
-                        const isDarkJersey = luma < 68;
-                        const isRedJersey = r > b + 30 && r > g + 25;
-
-                        if (isDarkJersey || isRedJersey) {
-                            const weight = isRedJersey ? 2.2 : (75 - luma) / 25;
-                            sumU += u * weight;
-                            sumV += v * weight;
-                            sumW += weight;
-                        }
-                    }
-                }
-
-                if (sumW >= 3.2) {
-                    const detU = sumU / sumW;
-                    const detV = sumV / sumW;
-                    const footSc = ShuttleCV.courtNormalizedToScreen(detU, detV);
-                    const box = {
-                        xMin: Math.max(0, footSc.x - zone.bodyW * 0.5),
-                        xMax: Math.min(1, footSc.x + zone.bodyW * 0.5),
-                        yMin: Math.max(0, footSc.y - zone.bodyH),
-                        yMax: Math.min(1, footSc.y + 0.015)
-                    };
-                    newHumanBoxes.push(box);
-                    assignedSlots.add(zone.id);
-                    updatePlayerSlotMetrics(players[zone.id], detU, detV, footSc.x, footSc.y, null, 0, dtSec, now);
-                }
-            });
-        }
-
-        detectedHumanBoxes = newHumanBoxes;
+        // All detected people (incl. off-court) are used as masks so their motion never becomes a "shuttle"
+        maskBoxesByTeam[team] = { boxes: masks, t: performance.now() };
+        const tNow = performance.now();
+        detectedHumanBoxes = []
+            .concat(tNow - maskBoxesByTeam.A.t < 400 ? maskBoxesByTeam.A.boxes : [])
+            .concat(tNow - maskBoxesByTeam.B.t < 400 ? maskBoxesByTeam.B.boxes : []);
     } catch (e) {
-        // Ignore single-frame error
+        // ignore single-frame inference error
+    } finally {
+        poseInferenceBusy = false;
     }
 }
 
-let lastShuttleUpdateMs = performance.now();
-let shuttleCandidateBuffer = []; // Stores recent unverified candidates [{ sx, sy, u, v, t }]
-let lastStrokeRecordedMs = 0;
+/* ================================================================
+ * 2. SHUTTLE TRACKER + PHYSICS SPEED (time-of-flight with drag)
+ *    Shuttle speed decays as v(t) = v0 / (1 + v0 t / L), L = vt² / g ≈ 4.7 m
+ *    (terminal velocity vt ≈ 6.8 m/s). Distance x(t) = L ln(1 + v0 t / L)
+ *    => v0 = L (e^(x/L) − 1) / t, where x = hitter→receiver/landing path
+ *    measured in real meters through the court homography.
+ * ================================================================ */
+const SHUTTLE_DRAG_LENGTH_M = 4.7;
+let shuttleTrack = [];         // [{ sx, sy, t }]
+let activeShot = null;         // { hitter, tHit, startU, startV }
+let pendingRallyEnd = null;    // { t }
+
+function playerChestScreen(p) {
+    const h = ShuttleCV.expectedPlayerHeightScreen(p.v);
+    return { x: p.screenX, y: p.screenY - h * 0.6, h };
+}
+
+function nearestPlayerToPoint(sx, sy, teamFilter = null) {
+    let best = null;
+    Object.values(players).forEach(p => {
+        if (!p.detected) return;
+        if (teamFilter && p.team !== teamFilter) return;
+        const c = playerChestScreen(p);
+        // distance normalized by player size (racket reach ≈ 0.9 body height)
+        const d = Math.hypot(sx - c.x, sy - c.y) / Math.max(0.02, c.h);
+        if (!best || d < best.d) best = { p, d };
+    });
+    return best;
+}
+
+function isPointOnCourtFloor(sx, sy) {
+    const uv = ShuttleCV.screenToCourtNormalized(sx, sy);
+    return ShuttleCV.isInsideCourt(uv.x, uv.y, 0.25, 0.12) ? uv : null;
+}
+
+function onTrackConfirmed(now) {
+    const first = shuttleTrack[0];
+    const second = shuttleTrack[Math.min(2, shuttleTrack.length - 1)];
+    const near = nearestPlayerToPoint(first.sx, first.sy);
+    const hitter = near && near.d < 2.2 ? near.p : null;
+
+    // Back-extrapolate hit time from the hitter's racket zone to the first tracked point
+    let lag = 0;
+    if (hitter) {
+        const c = playerChestScreen(hitter);
+        const spd = Math.hypot(second.sx - first.sx, second.sy - first.sy) / Math.max(0.008, (second.t - first.t) / 1000);
+        const gap = Math.max(0, Math.hypot(first.sx - c.x, first.sy - c.y) - c.h * 0.5);
+        lag = Math.min(0.12, gap / Math.max(0.05, spd));
+    }
+
+    activeShot = {
+        hitter,
+        tHit: first.t - lag * 1000,
+        startU: hitter ? hitter.u : null,
+        startV: hitter ? hitter.v : null
+    };
+    if (hitter) {
+        shuttle.lastHitter = hitter.id;
+        shuttle.lastHitterTeam = hitter.team;
+    }
+    shuttle.trail = [];
+    pendingRallyEnd = null;
+    if (scoreboard.rallyState !== 'RALLYING') {
+        scoreboard.rallyState = 'RALLYING';
+        updateScoreboardUI();
+    }
+}
+
+function finalizeShot(shot, endU, endV, tEnd, isLanding) {
+    if (!shot || !shot.hitter || shot.startU === null) return;
+    const dH = Math.hypot((endU - shot.startU) * ShuttleCV.COURT_WIDTH_M, (endV - shot.startV) * ShuttleCV.COURT_LENGTH_M);
+    const dz = isLanding ? 2.3 : 1.2; // contact height drop (overhead → floor / → receiver contact)
+    const x = Math.hypot(dH, dz);
+    const tf = (tEnd - shot.tHit) / 1000;
+    if (tf < 0.15 || tf > 3.0 || dH < 1.0) return;
+
+    const L = SHUTTLE_DRAG_LENGTH_M;
+    const v0 = (L * (Math.exp(x / L) - 1)) / tf; // m/s
+    const kmh = Math.round(v0 * 3.6);
+    if (kmh < 15 || kmh > 430) return; // physically implausible -> discard
+
+    shuttle.speedKmh = kmh;
+    classifyRealStroke(shot.hitter, kmh, dH);
+}
+
+function handleTrackEnd(now) {
+    if (shuttleTrack.length >= 4 && activeShot) {
+        const last = shuttleTrack[shuttleTrack.length - 1];
+        const prev = shuttleTrack[shuttleTrack.length - 2];
+        const oppTeam = activeShot.hitter ? (activeShot.hitter.team === 'A' ? 'B' : 'A') : null;
+        const rec = nearestPlayerToPoint(last.sx, last.sy, oppTeam);
+
+        if (rec && rec.d < 1.8) {
+            // Received by the opponent: end point = receiver position
+            finalizeShot(activeShot, rec.p.u, rec.p.v, last.t, false);
+            pendingRallyEnd = null;
+        } else {
+            const descending = last.sy > prev.sy;
+            const floorUV = descending ? isPointOnCourtFloor(last.sx, last.sy) : null;
+            if (floorUV) {
+                finalizeShot(activeShot, Math.max(-0.2, Math.min(1.2, floorUV.x)), Math.max(-0.1, Math.min(1.1, floorUV.y)), last.t, true);
+                pendingRallyEnd = { t: now };
+            }
+        }
+    }
+    activeShot = null;
+    shuttleTrack = [];
+}
 
 function processRealShuttleAndRally(cvResult) {
     const now = performance.now();
-    lastShuttleUpdateMs = now;
+    if (!ShuttleCV.getCourtLocked()) {
+        shuttleTrack = [];
+        activeShot = null;
+        shuttle.detected = false;
+        return;
+    }
 
-    // Prune stale candidates older than 220ms
-    shuttleCandidateBuffer = shuttleCandidateBuffer.filter(pt => now - pt.t <= 220);
+    const cands = cvResult?.shuttleCandidates || (cvResult?.shuttleCandidate ? [cvResult.shuttleCandidate] : []);
+    let chosen = null;
+    const n = shuttleTrack.length;
 
-    const cand = cvResult?.shuttleCandidate;
-    if (cand) {
-        const uv = ShuttleCV.screenToCourtNormalized(cand.x, cand.y);
-        // Clamp normalized court coords so airborne arcs above the net don't produce extreme perspective distances
-        const clampedU = Math.max(-0.15, Math.min(1.15, uv.x));
-        const clampedV = Math.max(-0.15, Math.min(1.15, uv.y));
+    if (n > 0 && now - shuttleTrack[n - 1].t > 140) {
+        handleTrackEnd(now);
+    }
 
-        const prevPt = shuttleCandidateBuffer[shuttleCandidateBuffer.length - 1];
-        if (!prevPt) {
-            shuttleCandidateBuffer.push({ sx: cand.x, sy: cand.y, u: clampedU, v: clampedV, t: now });
-        } else {
-            const stepScreen = Math.hypot(cand.x - prevPt.sx, cand.y - prevPt.sy);
-            const dtSec = Math.max(0.014, (now - prevPt.t) / 1000);
+    const m = shuttleTrack.length;
+    if (m >= 2) {
+        const a = shuttleTrack[m - 2], b = shuttleTrack[m - 1];
+        const k = (now - b.t) / Math.max(8, b.t - a.t);
+        const px = b.sx + (b.sx - a.sx) * k;
+        const py = b.sy + (b.sy - a.sy) * k;
+        const stepLen = Math.hypot(b.sx - a.sx, b.sy - a.sy);
+        const gate = 0.03 + stepLen * 0.8;
+        let bestD = gate;
+        cands.forEach(c => {
+            const d = Math.hypot(c.x - px, c.y - py);
+            if (d < bestD) { bestD = d; chosen = c; }
+        });
+    } else if (m === 1) {
+        const b = shuttleTrack[0];
+        const maxStep = Math.min(0.15, 0.09 * Math.max(1, (now - b.t) / 16.7));
+        let bestD = maxStep;
+        cands.forEach(c => {
+            const d = Math.hypot(c.x - b.sx, c.y - b.sy);
+            if (d >= 0.003 && d < bestD) { bestD = d; chosen = c; }
+        });
+        if (!chosen && cands.length) shuttleTrack = [{ sx: cands[0].x, sy: cands[0].y, t: now }];
+    } else if (cands.length) {
+        shuttleTrack = [{ sx: cands[0].x, sy: cands[0].y, t: now }];
+    }
 
-            // Plausible per-frame screen displacement for a shuttlecock (rejects static spots & huge random jumps)
-            if (stepScreen >= 0.008 && stepScreen <= 0.14) {
-                let isColinear = true;
-                if (shuttleCandidateBuffer.length >= 2) {
-                    const prev2 = shuttleCandidateBuffer[shuttleCandidateBuffer.length - 2];
-                    const vx1 = prevPt.sx - prev2.sx;
-                    const vy1 = prevPt.sy - prev2.sy;
-                    const vx2 = cand.x - prevPt.sx;
-                    const vy2 = cand.y - prevPt.sy;
-                    const mag1 = Math.hypot(vx1, vy1);
-                    const mag2 = Math.hypot(vx2, vy2);
-                    if (mag1 > 1e-4 && mag2 > 1e-4) {
-                        const cosAngle = (vx1 * vx2 + vy1 * vy2) / (mag1 * mag2);
-                        // Trajectory must move in a consistent forward/arc direction (cosAngle >= 0.5)
-                        if (cosAngle < 0.50) {
-                            isColinear = false;
-                        }
-                    }
-                }
-
-                if (isColinear) {
-                    shuttleCandidateBuffer.push({
-                        sx: cand.x,
-                        sy: cand.y,
-                        u: clampedU,
-                        v: clampedV,
-                        t: now,
-                        stepScreen,
-                        dtSec
-                    });
-                } else {
-                    // Restart buffer from this new direction
-                    shuttleCandidateBuffer = [{ sx: cand.x, sy: cand.y, u: clampedU, v: clampedV, t: now }];
-                }
-            } else if (stepScreen > 0.14) {
-                shuttleCandidateBuffer = [{ sx: cand.x, sy: cand.y, u: clampedU, v: clampedV, t: now }];
+    if (chosen) {
+        // Direction consistency (allows ballistic arcs, rejects zig-zag noise)
+        if (shuttleTrack.length >= 2) {
+            const a = shuttleTrack[shuttleTrack.length - 2], b = shuttleTrack[shuttleTrack.length - 1];
+            const v1x = b.sx - a.sx, v1y = b.sy - a.sy, v2x = chosen.x - b.sx, v2y = chosen.y - b.sy;
+            const m1 = Math.hypot(v1x, v1y), m2 = Math.hypot(v2x, v2y);
+            if (m1 > 1e-4 && m2 > 1e-4 && (v1x * v2x + v1y * v2y) / (m1 * m2) < 0.3) {
+                handleTrackEnd(now);
+                shuttleTrack = [{ sx: chosen.x, sy: chosen.y, t: now }];
+                chosen = null;
             }
         }
-
-        // Require at least 3 verified colinear consecutive frames before confirming shuttle flight & speed!
-        if (shuttleCandidateBuffer.length >= 3) {
-            const recent3 = shuttleCandidateBuffer.slice(-3);
-            // Compute median screen angular speed (normalized screen widths per second)
-            const speedsScreenPerSec = [];
-            for (let i = 1; i < recent3.length; i++) {
-                const dScreen = Math.hypot(recent3[i].sx - recent3[i - 1].sx, recent3[i].sy - recent3[i - 1].sy);
-                const dt = Math.max(0.015, (recent3[i].t - recent3[i - 1].t) / 1000);
-                speedsScreenPerSec.push(dScreen / dt);
-            }
-            speedsScreenPerSec.sort((a, b) => a - b);
-            const medScreenSpeed = speedsScreenPerSec[Math.floor(speedsScreenPerSec.length / 2)];
-
-            // Convert screen velocity across the 13.4m court airspace + downward smash trajectory slope
-            const dyScreen = recent3[recent3.length - 1].sy - recent3[0].sy;
-            const dxScreen = recent3[recent3.length - 1].sx - recent3[0].sx;
-            const isDownwardSteep = dyScreen > Math.abs(dxScreen) * 0.45; // Descending steep smash trajectory
-
-            // Calibrated physical speed mapping (1 screen height/width traversal ~ 8.5m effective perspective chord)
-            const effectiveChordMeters = isDownwardSteep ? 9.8 : 7.6;
-            const physicalKmh = Math.round(medScreenSpeed * effectiveChordMeters * 3.6);
-            const realisticKmh = Math.min(308, Math.max(58, physicalKmh));
-
-            shuttle.speedKmh = shuttle.detected
-                ? Math.round(shuttle.speedKmh * 0.5 + realisticKmh * 0.5)
-                : realisticKmh;
-
-            shuttle.screenX = cand.x;
-            shuttle.screenY = cand.y;
-            shuttle.u = clampedU;
-            shuttle.v = clampedV;
-            shuttle.detected = true;
-            shuttle.lastSeenMs = now;
-            shuttle.framesInFlight++;
-            shuttle.stationaryFrames = 0;
-
-            shuttle.trail.push({ sx: cand.x, sy: cand.y, u: clampedU, v: clampedV, t: now });
-            if (shuttle.trail.length > 18) shuttle.trail.shift();
-
-            // Record stroke at the start of a verified flight with a 1.1s cooldown
-            if (now - lastStrokeRecordedMs > 1100) {
-                lastStrokeRecordedMs = now;
-                classifyRealStroke(clampedU, clampedV, shuttle.speedKmh);
-            } else {
-                const speedEl = document.getElementById('liveSpeedValue');
-                if (speedEl) speedEl.textContent = shuttle.speedKmh;
-            }
-
-            if (scoreboard.rallyState !== 'RALLYING' && shuttle.framesInFlight >= 3) {
-                scoreboard.rallyState = 'RALLYING';
-                updateScoreboardUI();
-            }
-            return;
+        if (chosen) {
+            shuttleTrack.push({ sx: chosen.x, sy: chosen.y, t: now });
+            if (shuttleTrack.length > 120) shuttleTrack.shift();
+            if (shuttleTrack.length === 4) onTrackConfirmed(now);
         }
     }
 
-    if (shuttle.detected) {
-        shuttle.stationaryFrames++;
-        if (scoreboard.rallyState === 'RALLYING' && shuttle.stationaryFrames >= 18 && shuttle.framesInFlight >= 4) {
-            evaluateRallyEndAndAutoScore();
-            shuttle.detected = false;
-            shuttle.framesInFlight = 0;
-            shuttleCandidateBuffer = [];
-        } else if (now - shuttle.lastSeenMs > 550) {
-            shuttle.detected = false;
-            shuttle.framesInFlight = 0;
-            shuttleCandidateBuffer = [];
+    if (shuttleTrack.length >= 4) {
+        const last = shuttleTrack[shuttleTrack.length - 1];
+        const uv = ShuttleCV.screenToCourtNormalized(last.sx, last.sy);
+        shuttle.screenX = last.sx;
+        shuttle.screenY = last.sy;
+        shuttle.u = Math.max(-0.2, Math.min(1.2, uv.x));
+        shuttle.v = Math.max(-0.2, Math.min(1.2, uv.y));
+        shuttle.detected = true;
+        shuttle.lastSeenMs = now;
+        shuttle.framesInFlight = shuttleTrack.length;
+        if (chosen) {
+            shuttle.trail.push({ sx: last.sx, sy: last.sy, u: shuttle.u, v: shuttle.v, t: now });
+            if (shuttle.trail.length > 24) shuttle.trail.shift();
         }
+        return;
+    }
+
+    // Auto-score only after a verified floor landing and no new flight within 0.7 s
+    if (pendingRallyEnd && shuttleTrack.length === 0 && now - pendingRallyEnd.t > 700) {
+        pendingRallyEnd = null;
+        if (scoreboard.rallyState === 'RALLYING') evaluateRallyEndAndAutoScore();
+        shuttle.detected = false;
+        shuttle.trail = [];
+    } else if (shuttle.detected && now - shuttle.lastSeenMs > 400) {
+        shuttle.detected = false;
     }
 }
 
-function classifyRealStroke(u, v, speedKmh) {
-    const isTopHalf = v < 0.5;
-    const activePlayers = Object.values(players).filter(p => p.detected && (p.team === 'A') === isTopHalf);
-    let hitter = activePlayers[0] || (isTopHalf ? players.A1 : players.B1);
-
-    if (activePlayers.length > 1) {
-        activePlayers.sort((a, b) => Math.hypot(a.u - u, a.v - v) - Math.hypot(b.u - u, b.v - v));
-        hitter = activePlayers[0];
-    }
-
-    let typeName = 'Drive (ดาดเร็ว)';
+function classifyRealStroke(hitter, speedKmh, distM) {
+    let typeName;
     let isSmash = false;
-    if (speedKmh >= 245) {
+    if (speedKmh >= 230) {
         typeName = 'Jump Smash (ตบกระโดด)';
         isSmash = true;
-    } else if (speedKmh >= 195) {
+    } else if (speedKmh >= 170) {
         typeName = 'Smash (ลูกตบ)';
         isSmash = true;
-    } else if (speedKmh >= 150) {
-        typeName = 'Clear / Drive (ตีโต้เร็ว)';
+    } else if (speedKmh >= 110) {
+        typeName = distM >= 8 ? 'Clear (โยนลึก)' : 'Drive (ดาดเร็ว)';
     } else {
-        typeName = 'Drop / Net (หยอดหน้าเน็ท)';
+        typeName = distM <= 4.5 ? 'Net / Drop (หยอด)' : 'Lift (งัด)';
     }
 
     shuttle.shotType = typeName;
@@ -431,9 +512,7 @@ function classifyRealStroke(u, v, speedKmh) {
     shuttle.lastHitterTeam = hitter.team;
     hitter.shotsCount++;
 
-    if (isSmash) {
-        registerSmashStat(hitter, speedKmh);
-    }
+    if (isSmash) registerSmashStat(hitter, speedKmh);
     recordShotLog(hitter, typeName, speedKmh);
     updateLiveHUD();
 }

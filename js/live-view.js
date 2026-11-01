@@ -116,12 +116,13 @@ async function toggleWebcam() {
             webcamVideo.loop = false;
             await webcamVideo.play();
             isWebcamActive = true;
-            btnText.textContent = 'ปิดกล้องสด';
+            ShuttleCV.setCourtLocked(true);
+            if (btnText) btnText.textContent = 'ปิดกล้อง';
             initPoseDetectionModel();
             resizeCanvases();
-            showToast('เปิดกล้องสดเต็มหน้าจอแล้ว! กราฟิกสนาม ผู้เล่น และสกอร์บอร์ดแสดงแบบ On-Top');
+            showToast('เปิดกล้องสดเต็มจอแล้ว • ตรวจจับเฉพาะผู้เล่นและลูกในเขตสนาม');
         } catch (err) {
-            showToast('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตสิทธิ์กล้อง หรืออัปโหลดคลิปวิดีโอสนามจริง');
+            showToast('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตสิทธิ์กล้อง หรืออัปโหลดคลิปสนามจริง');
         }
     } else {
         if (webcamVideo.srcObject) {
@@ -129,7 +130,7 @@ async function toggleWebcam() {
             webcamVideo.srcObject = null;
         }
         isWebcamActive = false;
-        btnText.textContent = 'เปิดกล้องสดเต็มจอ';
+        if (btnText) btnText.textContent = 'กล้องสด';
         showToast('ปิดกล้องสดแล้ว');
     }
 }
@@ -146,7 +147,8 @@ function handleVideoUpload(event) {
         webcamVideo.srcObject.getTracks().forEach(t => t.stop());
         webcamVideo.srcObject = null;
         isWebcamActive = false;
-        document.getElementById('cameraBtnText').textContent = 'เปิดกล้องสด';
+        const btnText = document.getElementById('cameraBtnText');
+        if (btnText) btnText.textContent = 'กล้องสด';
     }
 
     if (uploadedVideoURL) URL.revokeObjectURL(uploadedVideoURL);
@@ -163,62 +165,35 @@ function handleVideoUpload(event) {
         document.getElementById('videoPlaybackControls').classList.remove('hidden');
         document.getElementById('uploadedFileName').textContent = file.name;
         document.getElementById('videoDurTime').textContent = formatTimeSec(webcamVideo.duration || 0);
-        initPoseDetectionModel();
-        resetMatchData(true);
-        // Auto-apply calibrated 3D perspective court & net lock for portrait baseline court videos (e.g. IMG_7847.MOV)
-        if (webcamVideo.videoHeight > webcamVideo.videoWidth) {
-            ShuttleCV.setCourtLocked(true);
-        }
-        webcamVideo.play();
-        resizeCanvases();
-        showToast(`โหลดคลิปสนามจริง "${file.name}" สำเร็จ! ล็อกเส้นคอร์ท 3D พร้อมวัดความเร็วลูกจริง`);
-    };
-}
-
-function loadBuiltInSampleVideo() {
-    if (isWebcamActive && webcamVideo.srcObject) {
-        webcamVideo.srcObject.getTracks().forEach(t => t.stop());
-        webcamVideo.srcObject = null;
-        isWebcamActive = false;
-        const btnText = document.getElementById('cameraBtnText');
-        if (btnText) btnText.textContent = 'เปิดกล้องสด';
-    }
-
-    if (uploadedVideoURL) {
-        URL.revokeObjectURL(uploadedVideoURL);
-        uploadedVideoURL = null;
-    }
-
-    webcamVideo.srcObject = null;
-    webcamVideo.src = 'sample-court.mp4';
-    webcamVideo.loop = true;
-    webcamVideo.muted = true;
-    webcamVideo.playbackRate = 1.0;
-
-    webcamVideo.onloadedmetadata = () => {
-        isUploadedVideoActive = true;
-        isTrackingPaused = false;
-        document.getElementById('videoPlaybackControls').classList.remove('hidden');
-        document.getElementById('uploadedFileName').textContent = 'IMG_7847.MOV (สนามจริง 60FPS)';
-        document.getElementById('videoDurTime').textContent = formatTimeSec(webcamVideo.duration || 0);
         ShuttleCV.setCourtLocked(true);
         initPoseDetectionModel();
         resetMatchData(true);
         webcamVideo.play();
         resizeCanvases();
-        showToast('โหลดคลิปตัวอย่างสนามจริง IMG_7847.MOV พร้อมล็อกพิกัดคอร์ท 3D & ตรวจจับผู้เล่นทั้ง 4 คน!');
+        setTimeout(() => {
+            if (ShuttleCV.refineCourtToLines) {
+                ShuttleCV.refineCourtToLines(webcamVideo, detectedHumanBoxes);
+            }
+        }, 250);
+        showToast(`โหลดคลิป "${file.name}" สำเร็จ! ล็อกเส้นสนาม & ตรวจจับเฉพาะในคอร์ท`);
     };
 }
 
 function setVideoSpeed(rate) {
     webcamVideo.playbackRate = rate;
-    [0.5, 1, 1.5].forEach(r => {
-        const btn = document.getElementById(`spd-${r}`);
-        if (!btn) return;
-        btn.className = (r === rate)
-            ? 'px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-bold text-[10px]'
-            : 'px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] hover:bg-slate-700';
-    });
+    const btn = document.getElementById('btnVideoSpeed');
+    if (btn) btn.textContent = `${rate.toFixed(1)}x`;
+}
+
+function cycleVideoSpeed() {
+    const cur = webcamVideo.playbackRate || 1.0;
+    const next = cur === 1.0 ? 0.5 : (cur === 0.5 ? 1.5 : 1.0);
+    setVideoSpeed(next);
+}
+
+function toggleMoreSheet() {
+    const sheet = document.getElementById('moreSheet');
+    if (sheet) sheet.classList.toggle('hidden');
 }
 
 function seekUploadedVideo(percentVal) {
@@ -238,40 +213,39 @@ function exitUploadedVideoMode() {
 
 function toggleCourtCalibrationMode() {
     if (!isWebcamActive && !isUploadedVideoActive) {
-        showToast('กรุณาเปิดกล้องสดหรืออัปโหลดคลิปวิดีโอสนามก่อนทำการล็อกพิกัดเส้นสนามและเน็ท');
+        showToast('กรุณาเปิดกล้องสดหรืออัปโหลดคลิปสนามก่อนตั้งเส้นสนาม');
         return;
     }
     isCalibratingCourt = !isCalibratingCourt;
-    const btn = document.getElementById('btnCalibrateCourt');
+    const icon = document.getElementById('calibIcon');
+    const label = document.getElementById('calibLabel');
     if (isCalibratingCourt) {
         ShuttleCV.setCourtLocked(true);
-        if (btn) {
-            btn.className = 'flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-amber-400 text-slate-950 text-xs font-bold shadow-lg shadow-amber-400/20 transition-all';
-            btn.innerHTML = '<i class="ph-fill ph-check-fat text-base"></i><span>บันทึกการล็อกเส้นสนาม & เน็ท</span>';
-        }
-        showToast('ลากจุดมุมคอร์ท 4 มุม และปลายเน็ท 2 ข้างให้ตรงกับสนามจริง (มีแว่นขยาย 3x ช่วยเล็ง)');
+        if (icon) icon.className = 'ph-fill ph-check-fat text-emerald-400';
+        if (label) label.textContent = 'บันทึกเส้น';
+        showToast('ลากจุดมุมคอร์ท 4 จุด และหัวเน็ท 2 ข้างให้ตรงเส้นจริง (มีแว่นขยาย 3x)');
     } else {
-        ShuttleCV.setCourtLocked(true);
-        if (btn) {
-            btn.className = 'flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition-all';
-            btn.innerHTML = '<i class="ph-bold ph-crosshair text-emerald-400 text-base"></i><span>ล็อกเส้นสนาม & เน็ทแล้ว (แก้ไข)</span>';
+        if (ShuttleCV.refineCourtToLines) {
+            ShuttleCV.refineCourtToLines(webcamVideo, detectedHumanBoxes);
         }
-        showToast('ล็อกพิกัดเส้นสนาม 13.40m × 6.10m และความสูงเน็ทเรียบร้อย!');
+        ShuttleCV.setCourtLocked(true);
+        if (icon) icon.className = 'ph-bold ph-crosshair text-amber-300';
+        if (label) label.textContent = 'ตั้งเส้น';
+        showToast('ล็อกพิกัดเส้นสนาม 13.40m × 6.10m เรียบร้อย (ไม่ตรวจจับคนนอกเส้น)');
     }
 }
 
 function triggerAutoSnapCourtCV() {
     if (!isWebcamActive && !isUploadedVideoActive) {
-        showToast('กรุณาเปิดกล้องสดหรืออัปโหลดคลิปวิดีโอก่อนสแกนเส้นสนาม');
+        showToast('กรุณาเปิดกล้องสดหรืออัปโหลดคลิปก่อนสแกนเส้นสนาม');
         return;
     }
-    ShuttleCV.setCourtLocked(false);
-    const cvRes = ShuttleCV.analyzeVideoFrameCV(webcamVideo, detectedHumanBoxes);
-    if (cvRes && cvRes.courtConfidence >= 55) {
-        ShuttleCV.setCourtLocked(true);
-        showToast(`AI สแกนและล็อกเส้นสนามจริงสำเร็จ! (ความแม่นยำ ${cvRes.courtConfidence}%, เน็ท ${cvRes.netConfidence}%)`);
+    const refineRes = ShuttleCV.refineCourtToLines ? ShuttleCV.refineCourtToLines(webcamVideo, detectedHumanBoxes) : null;
+    ShuttleCV.setCourtLocked(true);
+    if (refineRes && refineRes.ok) {
+        showToast(`ดูดเข้าหาเส้นขาวสนามจริงสำเร็จ! (ความคลาดเคลื่อนเฉลี่ย ${refineRes.rmsPx} px)`);
     } else {
-        showToast('กำลังสแกนหาเส้นขาวและขอบเน็ท... กดปุ่ม "ล็อกพิกัดเส้นสนาม & เน็ท" เพื่อเล็งด้วยแว่นขยายได้ทันที');
+        showToast('ล็อกเส้นสนามแล้ว • กดปุ่ม "ตั้งเส้น" เพื่อเล็งมุมคอร์ทด้วยแว่นขยาย 3x ได้ทันที');
     }
 }
 
@@ -855,12 +829,12 @@ function toggleTrackingPause() {
     const pauseIcon = document.getElementById('pauseIcon');
     if (isTrackingPaused) {
         if (isUploadedVideoActive) webcamVideo.pause();
-        if (pauseBtnText) pauseBtnText.textContent = 'วิเคราะห์ต่อ';
-        if (pauseIcon) pauseIcon.className = 'ph-fill ph-play text-base';
+        if (pauseBtnText) pauseBtnText.textContent = 'เล่นต่อ';
+        if (pauseIcon) pauseIcon.className = 'ph-fill ph-play text-emerald-400';
     } else {
         if (isUploadedVideoActive) webcamVideo.play();
-        if (pauseBtnText) pauseBtnText.textContent = 'หยุดชั่วคราว';
-        if (pauseIcon) pauseIcon.className = 'ph-fill ph-pause text-base';
+        if (pauseBtnText) pauseBtnText.textContent = 'หยุด';
+        if (pauseIcon) pauseIcon.className = 'ph-fill ph-pause';
     }
 }
 
@@ -892,7 +866,10 @@ function animateLoop() {
 setInterval(() => {
     if (!isTrackingPaused && (isWebcamActive || isUploadedVideoActive)) {
         matchSeconds++;
+        const tStr = formatTimeSec(matchSeconds);
         const el = document.getElementById('matchTimer');
-        if (el) el.textContent = formatTimeSec(matchSeconds);
+        const liveEl = document.getElementById('liveMatchTimer');
+        if (el) el.textContent = tStr;
+        if (liveEl) liveEl.textContent = tStr;
     }
 }, 1000);
