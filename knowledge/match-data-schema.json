@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ShuttlePro AI - BWF Match Data JSON Schema (Part 16 Master Knowledge)",
+  "description": "Structured match telemetry, 9-zone court coverage, BWF line calls, KPIs, and shot history passed to the AI Coach to prevent hallucination and enable deterministic retrieval.",
+  "schema_version": "2026.11.1",
+  "match_info": {
+    "match_id": "string",
+    "match_title": "string",
+    "club_code": "string",
+    "match_date_iso": "string (ISO-8601)",
+    "category": "Singles (5.18m x 13.40m) | Doubles (6.10m x 13.40m)",
+    "is_doubles": true,
+    "duration_seconds": 0,
+    "duration_formatted": "00:00",
+    "bwf_rules_standard": "BWF Laws of Badminton 2025-2026 (21-point rally scoring, max 30, 1.15m fixed-height service rule)"
+  },
+  "score_summary": {
+    "score_team_a": 0,
+    "score_team_b": 0,
+    "sets_team_a": 0,
+    "sets_team_b": 0,
+    "current_set": 1,
+    "serving_team": "A | B",
+    "service_court": "R (Even) | L (Odd)",
+    "pressure_phase": "Opening (0-5) | Pre-Interval (6-10) | Mid-Game (11-15) | Late-Game (16-19) | Deuce/GamePoint (20+)"
+  },
+  "match_kpis": {
+    "total_rallies_logged": 0,
+    "total_shots_detected": 0,
+    "total_smashes_detected": 0,
+    "max_smash_speed_kmh": 0,
+    "max_smash_holder": "string",
+    "min_smash_speed_kmh": 0,
+    "min_smash_holder": "string",
+    "avg_smash_speed_kmh": 0,
+    "team_a_total_distance_m": 0,
+    "team_b_total_distance_m": 0,
+    "line_call_summary": {
+      "in_calls": 0,
+      "out_errors": 0,
+      "net_errors": 0,
+      "error_rate_pct": 0
+    }
+  },
+  "players_telemetry": [
+    {
+      "player_id": "A1 | A2 | B1 | B2",
+      "name": "string",
+      "team": "A | B",
+      "distance_meters": 0,
+      "max_movement_speed_kmh": 0,
+      "shots_count": 0,
+      "max_smash_kmh": 0,
+      "min_smash_kmh": 0,
+      "avg_smash_kmh": 0,
+      "tracked_samples": 0,
+      "court_zone_coverage_pct": {
+        "front_court_pct": 0,
+        "mid_court_base_pct": 0,
+        "rear_court_pct": 0,
+        "left_side_pct": 0,
+        "center_lane_pct": 0,
+        "right_side_pct": 0,
+        "zones_9_grid": {
+          "front_left": 0,
+          "front_center": 0,
+          "front_right": 0,
+          "mid_left": 0,
+          "mid_center": 0,
+          "mid_right": 0,
+          "rear_left": 0,
+          "rear_center": 0,
+          "rear_right": 0
+        }
+      }
+    }
+  ],
+  "point_log": [
+    {
+      "timestamp": "MM:SS",
+      "winner_team": "A | B",
+      "call_type": "IN | OUT | NET",
+      "reason": "string",
+      "margin_cm": 0,
+      "score_after": "A-B"
+    }
+  ],
+  "shots_log": [
+    {
+      "timestamp": "MM:SS",
+      "player_name": "string",
+      "team": "A | B",
+      "shot_type": "Smash / Drive / Clear / Drop",
+      "speed_kmh": 0
+    }
+  ],
+  "data_completeness": {
+    "overall_confidence": "High | Medium | Low",
+    "has_score_data": false,
+    "has_movement_tracking": false,
+    "has_smash_telemetry": false,
+    "has_line_call_log": false,
+    "missing_metrics_note": "Single-camera vision system: physiological heart rate (HR) and grip angle are not measured; evaluate strictly from tracked movement, speed, and line-call data."
+  }
+}

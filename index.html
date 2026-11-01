@@ -550,13 +550,22 @@
             <div class="glass-panel rounded-2xl p-5 space-y-4">
                 <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
                     <div>
-                        <h2 class="text-base font-bold text-white">วิเคราะห์แมตช์จริงหลังจบเกมด้วย AI Coach</h2>
-                        <p class="text-xs text-slate-400">ประหยัดโควตาอัจฉริยะ: วิเคราะห์เฉพาะที่หน้านี้เมื่อกดปุ่มสรุปผล และสลับโมเดล AI ที่พร้อมใช้งานให้อัตโนมัติ</p>
+                        <h2 class="text-base font-bold text-white flex items-center gap-2">
+                            <span>วิเคราะห์แมตช์จริงด้วย BWF Knowledge Base AI</span>
+                            <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono">Anti-Hallucination</span>
+                        </h2>
+                        <p class="text-xs text-slate-400">ค้นคืนข้อมูลจาก Master Knowledge + System Prompt + Match Report Template + Match Data JSON</p>
                     </div>
-                    <button id="btnRunAICoach" onclick="generateAICoachAdvice('full', true)" class="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5">
-                        <i class="ph-fill ph-sparkle"></i>
-                        <span>วิเคราะห์ผลเกมนี้ด้วย AI</span>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button onclick="exportReportJSON()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 font-semibold text-xs flex items-center gap-1.5" title="ดาวน์โหลด Match Data JSON">
+                            <i class="ph-bold ph-file-code"></i>
+                            <span>Match Data JSON</span>
+                        </button>
+                        <button id="btnRunAICoach" onclick="generateAICoachAdvice('full', true)" class="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5">
+                            <i class="ph-fill ph-sparkle"></i>
+                            <span>วิเคราะห์ผลเกมนี้ด้วย AI</span>
+                        </button>
+                    </div>
                 </div>
                 <div id="aiCoachOutput" class="text-xs md:text-sm text-slate-200 leading-relaxed"></div>
             </div>
@@ -585,12 +594,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261101g" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261101g"></script>
-    <script src="js/cv-court.js?v=20261101g"></script>
-    <script src="js/pose-tracker.js?v=20261101g"></script>
-    <script src="js/scoreboard.js?v=20261101g"></script>
-    <script src="js/live-view.js?v=20261101g"></script>
-    <script src="js/analytics-coach.js?v=20261101g"></script>
+    <script src="js/env.local.js?v=20261101h" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261101h"></script>
+    <script src="js/cv-court.js?v=20261101h"></script>
+    <script src="js/pose-tracker.js?v=20261101h"></script>
+    <script src="js/scoreboard.js?v=20261101h"></script>
+    <script src="js/live-view.js?v=20261101h"></script>
+    <script src="js/analytics-coach.js?v=20261101h"></script>
 </body>
 </html>

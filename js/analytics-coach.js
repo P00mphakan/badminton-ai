@@ -280,7 +280,246 @@ const GEMINI_FALLBACK_MODELS = [
 const exhaustedModelsUntil = {}; // { modelName: timestampMs }
 let lastAnalyzedSnapshotKey = '';
 
-async function callGeminiAPIWithFallback(parts, expectJson = false) {
+// Modular Knowledge Base Cache (loaded from /knowledge/* with built-in deterministic fallbacks)
+const ShuttleKB = {
+    loaded: false,
+    masterKnowledge: '',
+    systemPrompt: `คุณคือ BWF-Informed Badminton Performance Coach, Technical Analyst, Tactical Analyst และ Match Performance Analyst ประจำระบบ ShuttlePro AI
+กฎเหล็กป้องกันการมโนข้อมูล (Strict Anti-Hallucination Rules):
+1. วิเคราะห์จากข้อมูลใน Match Data JSON ที่ส่งให้เท่านั้น ห้ามสมมติตัวเลข ความเร็วลูกตบ จำนวนแรลลี่ หรือเหตุการณ์ที่ไม่ได้เกิดขึ้นจริงโดยเด็ดขาด
+2. แยกข้อเท็จจริงออกจากข้อสังเกตเชิงกลยุทธ์อย่างชัดเจน โดยติดป้าย [ข้อเท็จจริงจากข้อมูลจริง] และ [ข้อสังเกตและคำแนะนำโค้ช]
+3. ระบุระดับความเชื่อมั่น [Confidence: High / Medium / Low] ในแต่ละหัวข้อตามความสมบูรณ์ของข้อมูล
+4. หากตัวชี้วัดใดไม่มีข้อมูลบันทึกไว้ ให้ระบุตรงไปตรงมาว่า "ข้อมูลไม่เพียงพอในการประเมินจากกล้องสนามปัจจุบัน (Insufficient Data)" ห้ามคาดเดา
+5. อ้างอิง [เวลา MM:SS] จาก shots_log หรือ point_log เสมอเมื่อกล่าวถึงช็อตสำคัญหรือแต้มที่ได้/เสีย
+6. แยกประเภทความผิดพลาดตามหลักวิชาการ: Technical Error (เทคนิคหน้าไม้/ตีติดเน็ต NET/ตีออกเส้น OUT), Tactical Error (การเลือกช็อต), Movement Error (การเคลื่อนที่/การกลับ Base Position)
+7. ใช้กติกา BWF 2025-2026 (21 คะแนน, ดิวซ์ชนะห่าง 2 สูงสุด 30, เสิร์ฟต่ำกว่า 1.15m, สนามเดี่ยว 5.18x13.40m / คู่ 6.10x13.40m) และห้ามวินิจฉัยทางการแพทย์`,
+    reportTemplate: `กรุณาเขียนรายงานวิเคราะห์การแข่งขันเป็นภาษาไทยตามโครงสร้างมาตรฐาน 7 หมวดหมู่ดังนี้:
+1. 🏆 สรุปผลการแข่งขันและภาพรวม (Match Summary & Executive Overview) [ระบุ Confidence Level]
+2. 📊 ตารางคะแนนสมรรถนะ 100 คะแนน (100-Point Performance Scoring Rubric: Technical 20, Tactical 20, Footwork 15, Offensive 15, Defensive 10, Consistency 10, Mental 10 พร้อมระดับ Rating)
+3. 🏸 วิเคราะห์ทักษะเทคนิคและพลังเกมบุก (Technical & Offensive Shot Analysis พร้อมอ้างอิง [เวลา MM:SS])
+4. 🗺️ วิเคราะห์การเคลื่อนที่และพื้นที่สนาม 9 โซน (Footwork, Base Recovery & 9-Zone Coverage แยกตาม Singles 5.18m หรือ Doubles 6.10m)
+5. ⚠️ วิเคราะห์ข้อผิดพลาดและแต้มสำคัญ (Error Taxonomy: IN/OUT/NET, Technical/Tactical/Movement Error & Pressure Points)
+6. 🏋️ แผนการฝึกซ้อมเพื่อพัฒนาเฉพาะจุด (Training Plan: Objective, Identified Weakness, Drill Description, Duration/Reps, Success Criteria)
+7. 🎯 แผนกลยุทธ์สำหรับการแข่งขันนัดถัดไป (Next Match Tactical Strategy สำหรับทีม A และทีม B)`,
+    dataSchema: null
+};
+
+async function ensureKnowledgeBaseLoaded() {
+    if (ShuttleKB.loaded) return;
+    try {
+        const [sysRes, tplRes, masterRes, schemaRes] = await Promise.allSettled([
+            fetch('knowledge/system-prompt.md'),
+            fetch('knowledge/match-report-template.md'),
+            fetch('knowledge/master-knowledge.md'),
+            fetch('knowledge/match-data-schema.json')
+        ]);
+        if (sysRes.status === 'fulfilled' && sysRes.value.ok) {
+            ShuttleKB.systemPrompt = await sysRes.value.text();
+        }
+        if (tplRes.status === 'fulfilled' && tplRes.value.ok) {
+            ShuttleKB.reportTemplate = await tplRes.value.text();
+        }
+        if (masterRes.status === 'fulfilled' && masterRes.value.ok) {
+            ShuttleKB.masterKnowledge = await masterRes.value.text();
+        }
+        if (schemaRes.status === 'fulfilled' && schemaRes.value.ok) {
+            ShuttleKB.dataSchema = await schemaRes.value.json();
+        }
+    } catch (e) {
+        // Fallback constants in ShuttleKB remain active when running offline or via file://
+    }
+    ShuttleKB.loaded = true;
+}
+
+// Compute 9-zone court coverage (Front/Mid/Rear x Left/Center/Right) from normalized player positions
+function computePlayer9ZoneCoverage(positions = [], team = 'A') {
+    const total = positions.length;
+    const emptyGrid = {
+        front_left: 0, front_center: 0, front_right: 0,
+        mid_left: 0, mid_center: 0, mid_right: 0,
+        rear_left: 0, rear_center: 0, rear_right: 0
+    };
+    if (total === 0) {
+        return {
+            front_court_pct: 0,
+            mid_court_base_pct: 0,
+            rear_court_pct: 0,
+            left_side_pct: 0,
+            center_lane_pct: 0,
+            right_side_pct: 0,
+            zones_9_grid: emptyGrid
+        };
+    }
+
+    const counts = { ...emptyGrid };
+    positions.forEach(pt => {
+        // Normalized court coordinates: y in [0..1] along 13.4m length (net at 0.5), x in [0..1] across width
+        const distFromNet = team === 'A' ? Math.abs(0.5 - Math.min(0.5, pt.y)) / 0.5 : Math.abs(Math.max(0.5, pt.y) - 0.5) / 0.5;
+        const depthBand = distFromNet < 0.33 ? 'front' : (distFromNet < 0.68 ? 'mid' : 'rear');
+        const sideBand = pt.x < 0.33 ? 'left' : (pt.x <= 0.67 ? 'center' : 'right');
+        const key = `${depthBand}_${sideBand}`;
+        if (counts[key] !== undefined) counts[key]++;
+    });
+
+    const pct = k => Math.round((counts[k] / total) * 100);
+    const gridPct = {};
+    Object.keys(counts).forEach(k => { gridPct[k] = pct(k); });
+
+    return {
+        front_court_pct: gridPct.front_left + gridPct.front_center + gridPct.front_right,
+        mid_court_base_pct: gridPct.mid_left + gridPct.mid_center + gridPct.mid_right,
+        rear_court_pct: gridPct.rear_left + gridPct.rear_center + gridPct.rear_right,
+        left_side_pct: gridPct.front_left + gridPct.mid_left + gridPct.rear_left,
+        center_lane_pct: gridPct.front_center + gridPct.mid_center + gridPct.rear_center,
+        right_side_pct: gridPct.front_right + gridPct.mid_right + gridPct.rear_right,
+        zones_9_grid: gridPct
+    };
+}
+
+// Build canonical Match Data JSON following knowledge/match-data-schema.json (Part 16)
+function buildStructuredMatchDataJSON() {
+    const avgSmash = allSmashSpeeds.length > 0
+        ? Math.round(allSmashSpeeds.reduce((a, b) => a + b, 0) / allSmashSpeeds.length)
+        : 0;
+    const teamADist = +(players.A1.distanceMeters + players.A2.distanceMeters).toFixed(1);
+    const teamBDist = +(players.B1.distanceMeters + players.B2.distanceMeters).toFixed(1);
+
+    const pointLog = Array.isArray(scoreboard.pointLog) ? scoreboard.pointLog : [];
+    const inCalls = pointLog.filter(p => p.callType === 'IN').length;
+    const outErrors = pointLog.filter(p => p.callType === 'OUT').length;
+    const netErrors = pointLog.filter(p => p.callType === 'NET').length;
+    const totalPointsLogged = pointLog.length;
+
+    const maxScore = Math.max(scoreboard.scoreA, scoreboard.scoreB);
+    let pressurePhase = 'Opening (0-5)';
+    if (scoreboard.scoreA >= 20 && scoreboard.scoreB >= 20) pressurePhase = 'Deuce / GamePoint (20+)';
+    else if (maxScore >= 16) pressurePhase = 'Late-Game (16-19)';
+    else if (maxScore >= 11) pressurePhase = 'Mid-Game (11-15)';
+    else if (maxScore >= 6) pressurePhase = 'Pre-Interval (6-10)';
+
+    const hasScore = (scoreboard.scoreA + scoreboard.scoreB + scoreboard.setsA + scoreboard.setsB) > 0;
+    const hasMovement = (teamADist + teamBDist) > 0;
+    const hasSmash = allSmashSpeeds.length > 0 || shotHistory.length > 0;
+    const hasLineCalls = totalPointsLogged > 0;
+    const evidenceCount = [hasScore, hasMovement, hasSmash, hasLineCalls].filter(Boolean).length;
+    const overallConfidence = evidenceCount >= 3 ? 'High' : (evidenceCount >= 1 ? 'Medium' : 'Low');
+
+    return {
+        schema_version: '2026.11.1',
+        match_info: {
+            match_title: matchTitle || 'แมตช์ซ้อม/แข่งขัน',
+            club_code: clubCode || 'PUBLIC',
+            match_date_iso: new Date().toISOString(),
+            category: isDoublesMatch ? 'Doubles (6.10m x 13.40m)' : 'Singles (5.18m x 13.40m)',
+            is_doubles: isDoublesMatch,
+            duration_seconds: matchSeconds,
+            duration_formatted: formatTimeSec(matchSeconds),
+            bwf_rules_standard: 'BWF Laws of Badminton 2025-2026 (21-point rally scoring, max 30, 1.15m service height)'
+        },
+        score_summary: {
+            score_team_a: scoreboard.scoreA,
+            score_team_b: scoreboard.scoreB,
+            sets_team_a: scoreboard.setsA,
+            sets_team_b: scoreboard.setsB,
+            current_set: scoreboard.currentSet,
+            serving_team: scoreboard.servingTeam,
+            service_court: scoreboard.serviceCourt === 'R' ? 'Right (Even)' : 'Left (Odd)',
+            pressure_phase: pressurePhase
+        },
+        match_kpis: {
+            total_rallies_logged: totalPointsLogged,
+            total_shots_detected: shotHistory.length,
+            total_smashes_detected: allSmashSpeeds.length,
+            max_smash_speed_kmh: maxRecordedSpeed,
+            max_smash_holder: maxSpeedHolder,
+            min_smash_speed_kmh: minRecordedSmashSpeed,
+            min_smash_holder: minSmashHolder,
+            avg_smash_speed_kmh: avgSmash,
+            team_a_total_distance_m: teamADist,
+            team_b_total_distance_m: teamBDist,
+            line_call_summary: {
+                in_calls: inCalls,
+                out_errors: outErrors,
+                net_errors: netErrors,
+                error_rate_pct: totalPointsLogged > 0 ? Math.round(((outErrors + netErrors) / totalPointsLogged) * 100) : 0
+            }
+        },
+        players_telemetry: Object.values(players).map(p => ({
+            player_id: p.id,
+            name: p.name,
+            team: p.team,
+            distance_meters: +p.distanceMeters.toFixed(1),
+            max_movement_speed_kmh: p.maxSpeedKmh,
+            shots_count: p.shotsCount,
+            max_smash_kmh: p.maxSmashKmh,
+            min_smash_kmh: p.minSmashKmh,
+            avg_smash_kmh: p.avgSmashKmh,
+            tracked_samples: p.positions.length,
+            court_zone_coverage_pct: computePlayer9ZoneCoverage(p.positions, p.team)
+        })),
+        point_log: pointLog.slice(0, 15).map(pt => ({
+            timestamp: pt.time || '00:00',
+            winner_team: pt.winnerTeam,
+            call_type: pt.callType,
+            reason: pt.reason,
+            margin_cm: pt.marginCm || 0,
+            score_after: pt.scoreAfter
+        })),
+        shots_log: shotHistory.slice(0, 15).map(s => ({
+            timestamp: s.time,
+            player_name: s.player,
+            team: s.team,
+            shot_type: s.type,
+            speed_kmh: s.speed
+        })),
+        data_completeness: {
+            overall_confidence: overallConfidence,
+            has_score_data: hasScore,
+            has_movement_tracking: hasMovement,
+            has_smash_telemetry: hasSmash,
+            has_line_call_log: hasLineCalls,
+            missing_metrics_note: 'วิเคราะห์จากข้อมูลจริงใน JSON นี้เท่านั้น ห้ามสมมติค่าที่ไม่มีในระบบตรวจจับ'
+        }
+    };
+}
+
+// Retrieve targeted sections from Master Knowledge (Part 5 Singles vs Part 6 Doubles + Error/Pressure/Rubric rules)
+function retrieveMasterKnowledgeContext(matchData) {
+    const raw = ShuttleKB.masterKnowledge || '';
+    const extracted = [];
+
+    if (raw) {
+        const extractPart = (startMarker, endMarker) => {
+            const sIdx = raw.indexOf(startMarker);
+            if (sIdx === -1) return '';
+            const eIdx = endMarker ? raw.indexOf(endMarker, sIdx) : -1;
+            return raw.slice(sIdx, eIdx !== -1 ? eIdx : sIdx + 2200).trim();
+        };
+
+        if (matchData.match_info.is_doubles) {
+            const part6 = extractPart('PART 6: DOUBLES ANALYSIS', 'PART 7:');
+            if (part6) extracted.push(part6);
+        } else {
+            const part5 = extractPart('PART 5: SINGLES ANALYSIS', 'PART 6:');
+            if (part5) extracted.push(part5);
+        }
+
+        const part8 = extractPart('8.2 Pressure Point Analysis', 'PART 9:');
+        if (part8) extracted.push(part8);
+
+        const part12 = extractPart('PART 12: PERFORMANCE SCORING MODEL', 'PART 13:');
+        if (part12) extracted.push(part12);
+    }
+
+    if (extracted.length === 0) {
+        return matchData.match_info.is_doubles
+            ? 'กรอบความรู้ประเภทคู่ (PART 6 Doubles): วิเคราะห์ระบบยืน Front-Back (เกมรุก), Side-by-Side (เกมรับ), การหมุนตำแหน่ง (Rotation), ช่องว่างระหว่างคู่ขา และความสมดุลของระยะวิ่งระหว่างผู้เล่น A1-A2 และ B1-B2'
+            : 'กรอบความรู้ประเภทเดี่ยว (PART 5 Singles): วิเคราะห์การครอบคลุมพื้นที่ 4 มุมสนาม (Court Coverage), การกลับสู่จุดศูนย์กลาง (Base Position Recovery), ความแม่นยำลูก Clear/Drop/Smash และความทนทานในการเล่นแรลลี่';
+    }
+    return extracted.join('\n\n---\n\n');
+}
+
+async function callGeminiAPIWithFallback(parts, expectJson = false, systemPromptText = '') {
     let lastError = 'ไม่สามารถเชื่อมต่อ AI ได้';
     const now = Date.now();
 
@@ -291,9 +530,16 @@ async function callGeminiAPIWithFallback(parts, expectJson = false) {
         try {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
             const isGemma = modelName.startsWith('gemma-');
-            const body = { contents: [{ parts }] };
+            const effectiveParts = (isGemma && systemPromptText)
+                ? [{ text: `[SYSTEM INSTRUCTION - STRICT BWF KNOWLEDGE BASE]\n${systemPromptText}\n\n---\n` }, ...parts]
+                : parts;
+
+            const body = { contents: [{ parts: effectiveParts }] };
             if (!isGemma) {
-                body.generationConfig = { thinkingConfig: { thinkingBudget: 0 } };
+                if (systemPromptText) {
+                    body.systemInstruction = { parts: [{ text: systemPromptText }] };
+                }
+                body.generationConfig = { thinkingConfig: { thinkingBudget: 0 }, temperature: 0.2 };
                 if (expectJson) body.generationConfig.responseMimeType = 'application/json';
             }
 
@@ -324,33 +570,37 @@ async function callGeminiAPIWithFallback(parts, expectJson = false) {
 }
 
 function buildLocalTacticalCoachReport() {
-    const pList = Object.values(players);
-    const teamADist = +(players.A1.distanceMeters + players.A2.distanceMeters).toFixed(1);
-    const teamBDist = +(players.B1.distanceMeters + players.B2.distanceMeters).toFixed(1);
-    const avgSmash = allSmashSpeeds.length > 0
-        ? Math.round(allSmashSpeeds.reduce((a, b) => a + b, 0) / allSmashSpeeds.length)
-        : 0;
-    const topRunner = [...pList].sort((a, b) => b.distanceMeters - a.distanceMeters)[0];
-    const topHitter = [...pList].sort((a, b) => b.shotsCount - a.shotsCount)[0];
+    const matchData = buildStructuredMatchDataJSON();
+    const kpis = matchData.match_kpis;
+    const pList = matchData.players_telemetry;
+    const topRunner = [...pList].sort((a, b) => b.distance_meters - a.distance_meters)[0];
+    const topHitter = [...pList].sort((a, b) => b.shots_count - a.shots_count)[0];
 
     const leadText = scoreboard.scoreA === scoreboard.scoreB
-        ? `สกอร์สูสีกันที่ ${scoreboard.scoreA}-${scoreboard.scoreB} แต้ม`
+        ? `สกอร์เสมอกันที่ ${scoreboard.scoreA}-${scoreboard.scoreB} แต้ม`
         : (scoreboard.scoreA > scoreboard.scoreB
             ? `ทีม A นำอยู่ ${scoreboard.scoreA}-${scoreboard.scoreB} แต้ม`
             : `ทีม B นำอยู่ ${scoreboard.scoreB}-${scoreboard.scoreA} แต้ม`);
 
+    const lineCallText = kpis.total_rallies_logged > 0
+        ? `บันทึกแต้มจากสายตาเหยี่ยว ${kpis.total_rallies_logged} แต้ม (ลงในเส้น IN ${kpis.line_call_summary.in_calls} ครั้ง, ออกเส้น OUT ${kpis.line_call_summary.out_errors} ครั้ง, ติดเน็ต NET ${kpis.line_call_summary.net_errors} ครั้ง)`
+        : `ยังไม่มีประวัติแต้มจากสายตาเหยี่ยว (Insufficient Line-Call Data)`;
+
     return [
-        `**1. 📊 ภาพรวมรูปเกมและการเคลื่อนที่ (Footwork & Coverage)**`,
-        `- สถานการณ์ปัจจุบัน: ${leadText} (เซต ${scoreboard.setsA}-${scoreboard.setsB}) รูปแบบ ${isDoublesMatch ? 'ประเภทคู่ (6.10m)' : 'ประเภทเดี่ยว (5.18m)'}`,
-        `- ระยะวิ่งสะสม: ทีม A รวม ${teamADist} ม. vs ทีม B รวม ${teamBDist} ม. (${topRunner && topRunner.distanceMeters > 0 ? `${topRunner.name} เคลื่อนที่เยอะที่สุด ${topRunner.distanceMeters.toFixed(1)} ม.` : 'รอสะสมระยะวิ่งจากแรลลี่จริง'})`,
+        `**1. 🏆 สรุปผลการแข่งขันและภาพรวม (Match Summary)** [Confidence: ${matchData.data_completeness.overall_confidence}]`,
+        `- **[ข้อเท็จจริงจากข้อมูลจริง]** แมตช์ "${matchData.match_info.match_title}" (${matchData.match_info.category}) • ${leadText} (เซต ${scoreboard.setsA}-${scoreboard.setsB}) • ช่วงเกม: ${matchData.score_summary.pressure_phase}`,
+        `- **[ข้อเท็จจริงจากข้อมูลจริง]** ${lineCallText}`,
         ``,
-        `**2. 🏸 วิเคราะห์เกมรุก-เกมรับ และจังหวะตบ (Shot Selection & Smash Power)**`,
-        `- ความเร็วลูกตบสูงสุดของเกม: **${maxRecordedSpeed} km/h** (โดย ${maxSpeedHolder}) • ค่าเฉลี่ยลูกตบ **${avgSmash} km/h** จากทั้งหมด ${allSmashSpeeds.length} ลูกตบ`,
-        `- ผู้เล่นที่ออกลูกมากที่สุด: ${topHitter && topHitter.shotsCount > 0 ? `${topHitter.name} (${topHitter.shotsCount} ลูก)` : 'ยังไม่มีจังหวะตีที่บันทึกไว้'}`,
+        `**2. 🗺️ การเคลื่อนที่และพื้นที่สนาม 9 โซน (Footwork & 9-Zone Coverage)**`,
+        `- **[ข้อเท็จจริงจากข้อมูลจริง]** ระยะวิ่งสะสม: ทีม A รวม ${kpis.team_a_total_distance_m} ม. vs ทีม B รวม ${kpis.team_b_total_distance_m} ม. (${topRunner && topRunner.distance_meters > 0 ? `${topRunner.name} เคลื่อนที่สูงสุด ${topRunner.distance_meters} ม. • โซนหน้า ${topRunner.court_zone_coverage_pct.front_court_pct}% / โซนกลาง Base ${topRunner.court_zone_coverage_pct.mid_court_base_pct}% / โซนหลัง ${topRunner.court_zone_coverage_pct.rear_court_pct}%` : 'รอสะสมระยะวิ่งจากแรลลี่จริง'})`,
         ``,
-        `**3. 🎯 แผนกลยุทธ์แก้เกมหลังจบเกม**`,
-        `- **ทีม A:** เน้นวางลูกตัดหยอดสลับโยนลึกไปมุมหลังเพื่อดึงจังหวะ แล้วรอเข้าทำด้วยลูกตบเมื่อฝ่ายตรงข้ามงัดลูกสั้น`,
-        `- **ทีม B:** กระชับพื้นที่หน้าเน็ต บีบจังหวะดาดเร็ว (Drive) และยืนคุมโซนรับลูกตบคู่ขนานเส้นข้าง`
+        `**3. 🏸 วิเคราะห์ทักษะเทคนิคและพลังเกมบุก (Technical & Smash Analysis)**`,
+        `- **[ข้อเท็จจริงจากข้อมูลจริง]** ความเร็วลูกตบสูงสุด: **${kpis.max_smash_speed_kmh} km/h** (โดย ${kpis.max_smash_holder}) • ค่าเฉลี่ยลูกตบ **${kpis.avg_smash_speed_kmh} km/h** จากทั้งหมด ${kpis.total_smashes_detected} ลูกตบ`,
+        `- **[ข้อเท็จจริงจากข้อมูลจริง]** ผู้เล่นที่ออกลูกมากที่สุด: ${topHitter && topHitter.shots_count > 0 ? `${topHitter.name} (${topHitter.shots_count} ลูก)` : 'ยังไม่มีจังหวะตีที่บันทึกไว้'}`,
+        ``,
+        `**4. 🎯 แผนการฝึกซ้อมและกลยุทธ์แก้เกม (BWF Knowledge Base Recommendations)**`,
+        `- **[ข้อสังเกตและคำแนะนำโค้ช - ทีม A]:** ${isDoublesMatch ? 'เน้นระบบยืน Front-Back เมื่อได้บุก ให้มือหน้าดักตัดลูกหยอดและมือหลังตบจี้ช่องว่างระหว่างผู้เล่นทีม B' : 'เน้นดึงลูก Clear ลึกไปมุมแบ็คแฮนด์สลับตัดหยอดหน้าเน็ต แล้วกลับเข้าจุด Base (Mid Center) ทันที'}`,
+        `- **[ข้อสังเกตและคำแนะนำโค้ช - ทีม B]:** ${isDoublesMatch ? 'กางโซนรับ Side-by-Side ลดการตีเสียเอง (Unforced Errors) และบีบจังหวะรับเสิร์ฟลูกที่ 2-3 ให้เข้าทำก่อน' : 'เพิ่มความเหนียวแน่นในเกมรับบล็อกลูกตบขนานเส้นข้าง และใช้ลูกดาดเร็วเปลี่ยนจากรับเป็นรุก'}`
     ].join('\n');
 }
 
@@ -366,14 +616,14 @@ function renderCoachPreviewStandby() {
         <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3 text-xs leading-relaxed">
             <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
                 <span class="font-bold text-cyan-300 flex items-center gap-1.5">
-                    <i class="ph-fill ph-chart-polar"></i> สรุปสถิติแมตช์อัตโนมัติ (โหมดประหยัดโควตา AI)
+                    <i class="ph-fill ph-book-open-text"></i> สรุปสถิติตามฐานความรู้ BWF Master Knowledge (โหมดประหยัดโควตา)
                 </span>
-                <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">พร้อมเรียก AI หลังจบเกม</span>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Zero-Hallucination Mode</span>
             </div>
             <div class="text-slate-200">${formatted}</div>
             <div class="pt-1 text-[11px] text-amber-300/90 flex items-center gap-1.5">
                 <i class="ph-fill ph-info"></i>
-                <span>เมื่อจบเกมแล้ว กดปุ่ม <b>"วิเคราะห์ผลเกมนี้ด้วย AI"</b> ด้านบนเพื่อใช้ AI วิเคราะห์เชิงลึก (ระบบจะสลับโมเดลที่พร้อมใช้งานให้อัตโนมัติ)</span>
+                <span>เมื่อจบเกม กดปุ่ม <b>"วิเคราะห์ผลเกมนี้ด้วย AI"</b> ด้านบน ระบบจะค้นคืนข้อมูลจาก <b>Master Knowledge + System Prompt + Match Data JSON</b> เพื่อสร้างรายงานวิเคราะห์เชิงลึก 7 หมวดหมู่</span>
             </div>
         </div>
     `;
@@ -389,11 +639,10 @@ async function generateAICoachAdvice(focusTopic = 'full', userTriggered = false)
         return;
     }
 
-    const statsSnapshot = Object.values(players).map(p =>
-        `- ${p.name} (ทีม ${p.team}): วิ่งสะสม ${p.distanceMeters.toFixed(1)} ม., ความเร็ววิ่งสูงสุด ${p.maxSpeedKmh} km/h, ตบสูงสุด ${p.maxSmashKmh} km/h, ตบเฉลี่ย ${p.avgSmashKmh} km/h, ตีทั้งหมด ${p.shotsCount} ลูก`
-    ).join('\n');
+    await ensureKnowledgeBaseLoaded();
+    const matchDataJSON = buildStructuredMatchDataJSON();
 
-    const snapshotKey = `${scoreboard.scoreA}-${scoreboard.scoreB}-${maxRecordedSpeed}-${shotHistory.length}-${focusTopic}`;
+    const snapshotKey = `${scoreboard.scoreA}-${scoreboard.scoreB}-${maxRecordedSpeed}-${shotHistory.length}-${scoreboard.pointLog?.length || 0}-${focusTopic}`;
     if (snapshotKey === lastAnalyzedSnapshotKey && latestAICoachReportText) {
         const cachedHtml = latestAICoachReportText
             .replace(/\*\*(.*?)\*\*/g, '<strong class="text-emerald-300">$1</strong>')
@@ -402,7 +651,7 @@ async function generateAICoachAdvice(focusTopic = 'full', userTriggered = false)
             <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 space-y-3 text-xs leading-relaxed">
                 <div class="flex items-center justify-between border-b border-slate-800 pb-2">
                     <span class="font-bold text-emerald-400 flex items-center gap-1.5">
-                        <i class="ph-fill ph-sparkle"></i> บทวิเคราะห์หลังจบเกมจาก AI Coach
+                        <i class="ph-fill ph-sparkle"></i> รายงานวิเคราะห์หลังจบเกม (BWF Knowledge Base AI)
                     </span>
                     <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono">Cached (ประหยัดโควตา)</span>
                 </div>
@@ -412,34 +661,34 @@ async function generateAICoachAdvice(focusTopic = 'full', userTriggered = false)
         return;
     }
 
-    const recentShotsText = shotHistory.length > 0
-        ? shotHistory.slice(0, 8).map(s => `[${s.time}] ${s.player} (ทีม ${s.team}): ${s.type} ความเร็ว ${s.speed} km/h`).join('\n')
-        : 'ยังไม่มีประวัติช็อตที่บันทึกไว้';
-
     outputBox.innerHTML = `
         <div class="py-8 text-center text-xs text-emerald-300 flex flex-col items-center gap-2">
             <i class="ph-bold ph-spinner animate-spin text-2xl text-emerald-400"></i>
-            <span>กำลังเลือกโมเดล AI ที่พร้อมใช้งานและวิเคราะห์สรุปผลเกม...</span>
+            <span>กำลังค้นคืนฐานความรู้ BWF Master Knowledge และส่ง Match Data JSON ให้ AI วิเคราะห์...</span>
         </div>
     `;
     try {
-        const prompt = `คุณคือโค้ชแบดมินตันระดับโลก (BWF Pro Coach) วิเคราะห์สรุปผลแมตช์ "${matchTitle}" รูปแบบ ${isDoublesMatch ? 'ประเภทคู่ (Doubles)' : 'ประเภทเดี่ยว (Singles)'}
-สกอร์: ทีม A ${scoreboard.scoreA} - ${scoreboard.scoreB} ทีม B (เซต ${scoreboard.setsA}-${scoreboard.setsB})
+        const retrievedMasterContext = retrieveMasterKnowledgeContext(matchDataJSON);
+        const userPrompt = [
+            `### 1. ข้อมูลการแข่งขันจริงจากสนาม (MATCH DATA JSON - ห้ามสมมติข้อมูลนอกเหนือจาก JSON นี้เด็ดขาด):`,
+            '```json',
+            JSON.stringify(matchDataJSON, null, 2),
+            '```',
+            ``,
+            `### 2. ความรู้เฉพาะทางที่ค้นคืนจาก BWF Master Knowledge สำหรับแมตช์นี้:`,
+            retrievedMasterContext,
+            ``,
+            `### 3. โครงสร้างรายงานที่ต้องส่งออก (MATCH REPORT TEMPLATE):`,
+            ShuttleKB.reportTemplate
+        ].join('\n');
 
-สถิติผู้เล่นรายบุคคล:
-${statsSnapshot}
-
-บันทึกช็อตล่าสุด:
-${recentShotsText}
-
-กรุณาสรุปเป็นภาษาไทยที่อ่านง่าย กระชับ แบ่งเป็น 3 หัวข้อ:
-1. 📊 ภาพรวมรูปเกมและการเคลื่อนที่ (Footwork & Coverage)
-2. 🏸 วิเคราะห์เกมรุก-เกมรับ และจังหวะตบ (Shot Selection & Smash Power)
-3. 🎯 แผนกลยุทธ์แก้เกมสำหรับทีม A และทีม B`;
-
-        const result = await callGeminiAPIWithFallback([{ text: prompt }], false);
+        const result = await callGeminiAPIWithFallback(
+            [{ text: userPrompt }],
+            false,
+            ShuttleKB.systemPrompt
+        );
         const finalReportText = result.ok ? result.text.trim() : buildLocalTacticalCoachReport();
-        const badgeLabel = result.ok ? `AI: ${result.model}` : 'On-Device Tactical AI (สลับอัตโนมัติ)';
+        const badgeLabel = result.ok ? `BWF Knowledge AI (${result.model})` : 'On-Device BWF Knowledge AI';
 
         latestAICoachReportText = finalReportText;
         lastAnalyzedSnapshotKey = snapshotKey;
@@ -452,7 +701,7 @@ ${recentShotsText}
             <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 space-y-3 text-xs leading-relaxed">
                 <div class="flex items-center justify-between border-b border-slate-800 pb-2">
                     <span class="font-bold text-emerald-400 flex items-center gap-1.5">
-                        <i class="ph-fill ph-sparkle"></i> คำแนะนำกลยุทธ์หลังจบเกมจาก AI Coach
+                        <i class="ph-fill ph-sparkle"></i> รายงานวิเคราะห์หลังจบเกม (BWF Knowledge Base)
                     </span>
                     <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono">${badgeLabel}</span>
                 </div>
@@ -1104,20 +1353,11 @@ function startNewMatch() {
 }
 
 function exportReportJSON() {
+    const structuredMatchData = buildStructuredMatchDataJSON();
     const reportData = {
-        matchTitle,
-        exportedAt: new Date().toISOString(),
-        durationSec: matchSeconds,
-        scoreboard,
-        smashStats: {
-            maxSmashSpeedKmh: maxRecordedSpeed,
-            maxSmashHolder: maxSpeedHolder,
-            minSmashSpeedKmh: minRecordedSmashSpeed,
-            minSmashHolder: minSmashHolder,
-            totalSmashes: allSmashSpeeds.length
-        },
-        players,
-        recentShots: shotHistory
+        ...structuredMatchData,
+        ai_coach_report_markdown: latestAICoachReportText || buildLocalTacticalCoachReport(),
+        exported_at_iso: new Date().toISOString()
     };
     const safeName = (matchTitle || 'match').replace(/[^a-zA-Z0-9ก-๙_-]/g, '_');
     const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
@@ -1127,10 +1367,11 @@ function exportReportJSON() {
     a.download = `shuttlepro-${safeName}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`ส่งออกข้อมูลแมตช์ "${matchTitle}" (.JSON) สำเร็จ`);
+    showToast(`ส่งออก Match Data JSON "${matchTitle}" สำเร็จ`);
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+    ensureKnowledgeBaseLoaded();
     initSupabaseAuth();
     renderMatchTitleUI();
     renderSavedMatchesList();
