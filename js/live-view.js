@@ -482,7 +482,7 @@ async function toggleWebcam() {
             webcamVideo.loop = false;
             await webcamVideo.play();
             isWebcamActive = true;
-            ShuttleCV.setCourtLocked(false);
+            ShuttleCV.setCourtLocked(true);
             if (btnText) btnText.textContent = 'ปิดกล้อง';
 
             const track = stream.getVideoTracks()[0];
@@ -846,20 +846,19 @@ function toggleCourtCalibrationMode() {
     const label = document.getElementById('calibLabel');
     const floatSaveBtn = document.getElementById('floatingSaveCalibBtn');
     if (isCalibratingCourt) {
-        ShuttleCV.setCourtLocked(true);
         if (icon) icon.className = 'ph-fill ph-check-fat text-emerald-400 text-lg shrink-0';
         if (label) label.textContent = 'บันทึกเส้นสนาม';
         if (floatSaveBtn) floatSaveBtn.classList.remove('hidden');
         showToast('ลากจุดมุมคอร์ท 4 จุด และหัวเน็ท 2 ข้างให้ตรงเส้นจริง แล้วกด "บันทึกเส้นสนาม"');
     } else {
-        if (ShuttleCV.refineCourtToLines) {
-            ShuttleCV.refineCourtToLines(webcamVideo, detectedHumanBoxes);
+        if (ShuttleCV.updateHomography) {
+            ShuttleCV.updateHomography();
         }
         ShuttleCV.setCourtLocked(true);
         if (icon) icon.className = 'ph-bold ph-crosshair text-amber-300 text-lg shrink-0';
         if (label) label.textContent = 'ตั้งเส้นสนาม';
         if (floatSaveBtn) floatSaveBtn.classList.add('hidden');
-        showToast('ล็อกพิกัดเส้นสนาม 13.40m × 6.10m เรียบร้อย (ไม่ตรวจจับคนนอกเส้น)');
+        showToast('ล็อกพิกัดเส้นสนาม 13.40m × 6.10m เรียบร้อยแล้ว');
     }
 }
 
@@ -868,13 +867,22 @@ function triggerAutoSnapCourtCV() {
         showToast('กรุณาเปิดกล้องสดหรืออัปโหลดคลิปก่อนสแกนเส้นสนาม');
         return;
     }
-    const refineRes = ShuttleCV.refineCourtToLines ? ShuttleCV.refineCourtToLines(webcamVideo, detectedHumanBoxes) : null;
-    ShuttleCV.setCourtLocked(true);
-    if (refineRes && refineRes.ok) {
-        showToast(`ดูดเข้าหาเส้นขาวสนามจริงสำเร็จ! (ความคลาดเคลื่อนเฉลี่ย ${refineRes.rmsPx} px)`);
-    } else {
-        showToast('ล็อกเส้นสนามแล้ว • กดปุ่ม "ตั้งเส้น" เพื่อเล็งมุมคอร์ทด้วยแว่นขยาย 3x ได้ทันที');
-    }
+    showToast('กำลังตรวจจับเส้นสนามอัตโนมัติ...');
+    setTimeout(() => {
+        try {
+            const videoEl = isUploadedVideoActive ? uploadedVideo : webcamVideo;
+            const refineRes = ShuttleCV.refineCourtToLines ? ShuttleCV.refineCourtToLines(videoEl, detectedHumanBoxes) : null;
+            ShuttleCV.setCourtLocked(true);
+            if (refineRes && refineRes.ok) {
+                showToast(`ดูดเข้าหาเส้นขาวสนามจริงสำเร็จ! (ความคลาดเคลื่อน ${refineRes.rmsPx} px)`);
+            } else {
+                showToast('ล็อกเส้นสนามแล้ว • สามารถกด "ตั้งเส้น" เพื่อปรับแต่งมุมคอร์ท 4 จุดได้');
+            }
+        } catch (e) {
+            ShuttleCV.setCourtLocked(true);
+            showToast('ล็อกเส้นสนามตามพิกัดมาตรฐานเรียบร้อย');
+        }
+    }, 40);
 }
 
 function getPointerNormPos(evt) {
@@ -1526,7 +1534,8 @@ function drawCalibrationHandlesAndLoupe(ctx, w, h) {
         ctx.restore();
     });
 
-    if (draggingHandleKey && dragPointerPos && webcamVideo.readyState >= 2) {
+    if (draggingHandleKey && dragPointerPos && (webcamVideo.readyState >= 2 || (isUploadedVideoActive && uploadedVideo.readyState >= 2))) {
+        const activeVideo = isUploadedVideoActive ? uploadedVideo : webcamVideo;
         const loupeRadius = 56;
         const zoom = 3.0;
         const targetX = dragPointerPos.x * w;
@@ -1534,12 +1543,17 @@ function drawCalibrationHandlesAndLoupe(ctx, w, h) {
         const loupeX = Math.max(loupeRadius + 12, Math.min(w - loupeRadius - 12, targetX));
         const loupeY = targetY > loupeRadius * 2.4 ? targetY - loupeRadius - 28 : targetY + loupeRadius + 28;
 
-        const vW = webcamVideo.videoWidth || w;
-        const vH = webcamVideo.videoHeight || h;
+        const vW = activeVideo.videoWidth || w;
+        const vH = activeVideo.videoHeight || h;
         const srcW = (loupeRadius * 2 / zoom) * (vW / w);
         const srcH = (loupeRadius * 2 / zoom) * (vH / h);
-        const srcX = dragPointerPos.x * vW - srcW / 2;
-        const srcY = dragPointerPos.y * vH - srcH / 2;
+        const rawSrcX = dragPointerPos.x * vW - srcW / 2;
+        const rawSrcY = dragPointerPos.y * vH - srcH / 2;
+        // Strict boundary clamping prevents Canvas IndexSizeError crash when dragging near edges
+        const safeSrcX = Math.max(0, Math.min(vW - 10, rawSrcX));
+        const safeSrcY = Math.max(0, Math.min(vH - 10, rawSrcY));
+        const safeSrcW = Math.max(4, Math.min(vW - safeSrcX, srcW));
+        const safeSrcH = Math.max(4, Math.min(vH - safeSrcY, srcH));
 
         ctx.save();
         ctx.beginPath();
@@ -1548,11 +1562,15 @@ function drawCalibrationHandlesAndLoupe(ctx, w, h) {
 
         ctx.fillStyle = '#090d16';
         ctx.fillRect(loupeX - loupeRadius, loupeY - loupeRadius, loupeRadius * 2, loupeRadius * 2);
-        ctx.drawImage(
-            webcamVideo,
-            srcX, srcY, srcW, srcH,
-            loupeX - loupeRadius, loupeY - loupeRadius, loupeRadius * 2, loupeRadius * 2
-        );
+        try {
+            ctx.drawImage(
+                activeVideo,
+                safeSrcX, safeSrcY, safeSrcW, safeSrcH,
+                loupeX - loupeRadius, loupeY - loupeRadius, loupeRadius * 2, loupeRadius * 2
+            );
+        } catch (err) {
+            // Silently protect live loop if video source dimension shifts momentarily
+        }
 
         ctx.strokeStyle = '#fbbf24';
         ctx.lineWidth = 1.5;

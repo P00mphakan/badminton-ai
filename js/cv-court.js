@@ -63,7 +63,7 @@ window.ShuttleCV = (function () {
     let detectedNetSegment = null;
     let courtConfidence = 0; // 0..100%
     let netConfidence = 0;   // 0..100%
-    let isCourtLocked = false;
+    let isCourtLocked = true;
     let isManuallyEdited = false;
     let autoLockEnabled = true;
 
@@ -664,175 +664,179 @@ window.ShuttleCV = (function () {
 
     function refineCourtToLines(videoEl, humanBoxes = []) {
         if (!videoEl || videoEl.readyState < 2) return { ok: false, reason: 'no-video' };
-        const vw = videoEl.videoWidth || 1280;
-        const vh = videoEl.videoHeight || 720;
-        const LONG = 1280;
-        const W = vw >= vh ? LONG : Math.round(LONG * vw / vh);
-        const Hh = vw >= vh ? Math.round(LONG * vh / vw) : LONG;
-        refineCanvas.width = W;
-        refineCanvas.height = Hh;
-        refineCtx.drawImage(videoEl, 0, 0, W, Hh);
-        const d = refineCtx.getImageData(0, 0, W, Hh).data;
-        const g = new Uint8Array(W * Hh);
-        for (let i = 0, p = 0; i < d.length; i += 4, p++) g[p] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
-        const lumAt = (x, y) => {
-            const xi = Math.round(x), yi = Math.round(y);
-            if (xi < 0 || yi < 0 || xi >= W || yi >= Hh) return -1;
-            return g[yi * W + xi];
-        };
+        try {
+            const vw = videoEl.videoWidth || 1280;
+            const vh = videoEl.videoHeight || 720;
+            const LONG = 480; // Fast downscaled 480p CV pass to prevent freezing the main UI thread
+            const W = vw >= vh ? LONG : Math.round(LONG * vw / vh);
+            const Hh = vw >= vh ? Math.round(LONG * vh / vw) : LONG;
+            refineCanvas.width = W;
+            refineCanvas.height = Hh;
+            refineCtx.drawImage(videoEl, 0, 0, W, Hh);
+            const d = refineCtx.getImageData(0, 0, W, Hh).data;
+            const g = new Uint8Array(W * Hh);
+            for (let i = 0, p = 0; i < d.length; i += 4, p++) g[p] = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
+            const lumAt = (x, y) => {
+                const xi = Math.round(x), yi = Math.round(y);
+                if (xi < 0 || yi < 0 || xi >= W || yi >= Hh) return -1;
+                return g[yi * W + xi];
+            };
 
-        // Painted BWF lines in normalized court coordinates (net line v=0.5 is not painted)
-        const lines = [];
-        [0, 0.0567, 0.3522, 0.6478, 0.9433, 1].forEach(v => lines.push({ a: [0, v], b: [1, v] }));
-        [0, 0.0754, 0.9246, 1].forEach(u => lines.push({ a: [u, 0], b: [u, 1] }));
-        lines.push({ a: [0.5, 0], b: [0.5, 0.3522] });
-        lines.push({ a: [0.5, 0.6478], b: [0.5, 1] });
+            // Painted BWF lines in normalized court coordinates (net line v=0.5 is not painted)
+            const lines = [];
+            [0, 0.0567, 0.3522, 0.6478, 0.9433, 1].forEach(v => lines.push({ a: [0, v], b: [1, v] }));
+            [0, 0.0754, 0.9246, 1].forEach(u => lines.push({ a: [u, 0], b: [u, 1] }));
+            lines.push({ a: [0.5, 0], b: [0.5, 0.3522] });
+            lines.push({ a: [0.5, 0.6478], b: [0.5, 1] });
 
-        const H_before = H_courtToScreen.slice();
-        let H = H_courtToScreen.slice();
-        let lastStats = null;
-        const radii = [0.022, 0.012, 0.007];
+            const H_before = H_courtToScreen.slice();
+            let H = H_courtToScreen.slice();
+            let lastStats = null;
+            const radii = [0.02, 0.01]; // 2 fast passes (coarse -> fine)
 
-        for (let iter = 0; iter < radii.length; iter++) {
-            const searchR = Math.max(6, Math.round(radii[iter] * Math.max(W, Hh)));
-            const src = [];
-            const dst = [];
-            const offsets = [];
+            for (let iter = 0; iter < radii.length; iter++) {
+                const searchR = Math.min(14, Math.max(5, Math.round(radii[iter] * Math.max(W, Hh))));
+                const src = [];
+                const dst = [];
+                const offsets = [];
 
-            lines.forEach(L => {
-                const N = 28;
-                for (let s = 1; s < N; s++) {
-                    const t = s / N;
-                    const u = L.a[0] + (L.b[0] - L.a[0]) * t;
-                    const v = L.a[1] + (L.b[1] - L.a[1]) * t;
-                    const p = projectPoint(H, u, v);
-                    const p2 = projectPoint(H, u + (L.b[0] - L.a[0]) * 0.01, v + (L.b[1] - L.a[1]) * 0.01);
-                    if (p.x < 0.01 || p.x > 0.99 || p.y < 0.01 || p.y > 0.99) continue;
-                    if (humanBoxes.some(b => p.x >= b.xMin - 0.01 && p.x <= b.xMax + 0.01 && p.y >= b.yMin - 0.01 && p.y <= b.yMax + 0.01)) continue;
+                lines.forEach(L => {
+                    const N = 14; // 14 samples per line for smooth real-time execution
+                    for (let s = 1; s < N; s++) {
+                        const t = s / N;
+                        const u = L.a[0] + (L.b[0] - L.a[0]) * t;
+                        const v = L.a[1] + (L.b[1] - L.a[1]) * t;
+                        const p = projectPoint(H, u, v);
+                        const p2 = projectPoint(H, u + (L.b[0] - L.a[0]) * 0.01, v + (L.b[1] - L.a[1]) * 0.01);
+                        if (p.x < 0.02 || p.x > 0.98 || p.y < 0.02 || p.y > 0.98) continue;
+                        if (humanBoxes.some(b => p.x >= b.xMin - 0.01 && p.x <= b.xMax + 0.01 && p.y >= b.yMin - 0.01 && p.y <= b.yMax + 0.01)) continue;
 
-                    const px = p.x * W, py = p.y * Hh;
-                    let dx = (p2.x - p.x) * W, dy = (p2.y - p.y) * Hh;
-                    const len = Math.hypot(dx, dy) || 1;
-                    dx /= len; dy /= len;
-                    const nx = -dy, ny = dx; // perpendicular
+                        const px = p.x * W, py = p.y * Hh;
+                        let dx = (p2.x - p.x) * W, dy = (p2.y - p.y) * Hh;
+                        const len = Math.hypot(dx, dy) || 1;
+                        dx /= len; dy /= len;
+                        const nx = -dy, ny = dx; // perpendicular
 
-                    // Multi-scale flank (thin far lines -> wide near lines under perspective)
-                    const flanks = [4, 8, 14];
-                    let bestT = 0, bestResp = -1e9;
-                    for (let k = -searchR; k <= searchR; k++) {
-                        const cx = px + nx * k, cy = py + ny * k;
-                        const c = lumAt(cx, cy);
-                        if (c < 0) continue;
-                        for (let f = 0; f < flanks.length; f++) {
-                            const flank = flanks[f];
-                            const l = lumAt(cx - nx * flank, cy - ny * flank);
-                            const r = lumAt(cx + nx * flank, cy + ny * flank);
-                            if (l < 0 || r < 0) continue;
-                            const resp = c - Math.max(l, r);
-                            if (resp > bestResp) { bestResp = resp; bestT = k; }
+                        // Multi-scale flank (thin far lines -> wide near lines under perspective)
+                        const flanks = [3, 7];
+                        let bestT = 0, bestResp = -1e9;
+                        for (let k = -searchR; k <= searchR; k++) {
+                            const cx = px + nx * k, cy = py + ny * k;
+                            const c = lumAt(cx, cy);
+                            if (c < 0) continue;
+                            for (let f = 0; f < flanks.length; f++) {
+                                const flank = flanks[f];
+                                const l = lumAt(cx - nx * flank, cy - ny * flank);
+                                const r = lumAt(cx + nx * flank, cy + ny * flank);
+                                if (l < 0 || r < 0) continue;
+                                const resp = c - Math.max(l, r);
+                                if (resp > bestResp) { bestResp = resp; bestT = k; }
+                            }
+                        }
+                        if (bestResp >= 16) {
+                            src.push({ x: u, y: v });
+                            dst.push({ x: (px + nx * bestT) / W, y: (py + ny * bestT) / Hh });
+                            offsets.push(Math.abs(bestT));
                         }
                     }
-                    if (bestResp >= 18) {
-                        src.push({ x: u, y: v });
-                        dst.push({ x: (px + nx * bestT) / W, y: (py + ny * bestT) / Hh });
-                        offsets.push(Math.abs(bestT));
-                    }
+                });
+
+                if (src.length < 12) {
+                    lastStats = { ok: false, reason: 'few-lines', samples: src.length };
+                    break;
                 }
-            });
 
-            if (src.length < 16) {
-                lastStats = { ok: false, reason: 'few-lines', samples: src.length };
-                break;
+                // Robust outlier rejection on perpendicular offsets
+                const sorted = offsets.slice().sort((a, b) => a - b);
+                const med = sorted[Math.floor(sorted.length / 2)];
+                const gate = med * 2.5 + 2;
+                const fSrc = [], fDst = [];
+                offsets.forEach((o, i) => { if (o <= gate) { fSrc.push(src[i]); fDst.push(dst[i]); } });
+                if (fSrc.length < 10) {
+                    lastStats = { ok: false, reason: 'outliers', samples: fSrc.length };
+                    break;
+                }
+
+                const Hn = solveHomographyLeastSquares(fSrc, fDst);
+                if (!Hn) break;
+                let rms = 0;
+                fSrc.forEach((s, i) => {
+                    const q = projectPoint(Hn, s.x, s.y);
+                    rms += ((q.x - fDst[i].x) * W) ** 2 + ((q.y - fDst[i].y) * Hh) ** 2;
+                });
+                rms = Math.sqrt(rms / fSrc.length);
+                H = Hn;
+                lastStats = { ok: true, samples: fSrc.length, total: offsets.length, rmsPx: +rms.toFixed(2) };
             }
 
-            // Robust outlier rejection on perpendicular offsets
-            const sorted = offsets.slice().sort((a, b) => a - b);
-            const med = sorted[Math.floor(sorted.length / 2)];
-            const gate = med * 2.5 + 2;
-            const fSrc = [], fDst = [];
-            offsets.forEach((o, i) => { if (o <= gate) { fSrc.push(src[i]); fDst.push(dst[i]); } });
-            if (fSrc.length < 14) {
-                lastStats = { ok: false, reason: 'outliers', samples: fSrc.length };
-                break;
+            if (!lastStats || !lastStats.ok) return lastStats || { ok: false };
+
+            // Sanity: refined court must stay close to current calibration
+            const anchors = [[0, 0], [1, 0], [1, 0.6478], [0, 0.6478]];
+            const maxShift = Math.max(...anchors.map(([u, v]) => {
+                const a = projectPoint(H_before, u, v);
+                const b = projectPoint(H, u, v);
+                return Math.hypot(a.x - b.x, a.y - b.y);
+            }));
+            if (maxShift > 0.08 || lastStats.rmsPx > 8) {
+                return { ok: false, reason: 'unstable', maxShift: +maxShift.toFixed(3), rmsPx: lastStats.rmsPx };
             }
 
-            const Hn = solveHomographyLeastSquares(fSrc, fDst);
-            if (!Hn) break;
-            let rms = 0;
-            fSrc.forEach((s, i) => {
-                const q = projectPoint(Hn, s.x, s.y);
-                rms += ((q.x - fDst[i].x) * W) ** 2 + ((q.y - fDst[i].y) * Hh) ** 2;
-            });
-            rms = Math.sqrt(rms / fSrc.length);
-            H = Hn;
-            lastStats = { ok: true, samples: fSrc.length, total: offsets.length, rmsPx: +rms.toFixed(2) };
-        }
-
-        if (!lastStats || !lastStats.ok) return lastStats || { ok: false };
-
-        // Sanity: refined court must stay close to the user's calibration (no jumps to wrong lines)
-        const anchors = [[0, 0], [1, 0], [1, 0.6478], [0, 0.6478]];
-        const maxShift = Math.max(...anchors.map(([u, v]) => {
-            const a = projectPoint(H_before, u, v);
-            const b = projectPoint(H, u, v);
-            return Math.hypot(a.x - b.x, a.y - b.y);
-        }));
-        if (maxShift > 0.08 || lastStats.rmsPx > 6) {
-            return { ok: false, reason: 'unstable', maxShift: +maxShift.toFixed(3), rmsPx: lastStats.rmsPx };
-        }
-
-        // Apply: update corner handles from refined homography
-        const tl = projectPoint(H, 0, 0), tr = projectPoint(H, 1, 0);
-        const br = projectPoint(H, 1, 0.6478), bl = projectPoint(H, 0, 0.6478);
-        courtCorners.tl = { x: tl.x, y: tl.y };
-        courtCorners.tr = { x: tr.x, y: tr.y };
-        courtCorners.br = { x: br.x, y: br.y };
-        courtCorners.bl = { x: bl.x, y: bl.y };
-        H_courtToScreen = H;
-        H_screenToCourt = invert3x3(H);
-        if (!courtCorners._customNet) {
-            const midL = projectPoint(H, 0, 0.5);
-            const midR = projectPoint(H, 1, 0.5);
-            courtCorners.netL = { x: midL.x, y: courtCorners.netL.y };
-            courtCorners.netR = { x: midR.x, y: courtCorners.netR.y };
-        }
-
-        // Refine net top tape: bright horizontal tape, search vertically around current net line
-        const netPts = [];
-        for (let s = 2; s <= 18; s++) {
-            const t = s / 20;
-            const x = courtCorners.netL.x + (courtCorners.netR.x - courtCorners.netL.x) * t;
-            const y = courtCorners.netL.y + (courtCorners.netR.y - courtCorners.netL.y) * t;
-            if (humanBoxes.some(b => x >= b.xMin && x <= b.xMax && y >= b.yMin && y <= b.yMax)) continue;
-            const px = x * W, py = y * Hh;
-            const R = Math.round(0.02 * Hh);
-            let bestK = 0, bestResp = -1e9;
-            for (let k = -R; k <= R; k++) {
-                const c = lumAt(px, py + k), up = lumAt(px, py + k - 4), dn = lumAt(px, py + k + 4);
-                if (c < 0 || up < 0 || dn < 0) continue;
-                const resp = c - Math.max(up, dn);
-                if (resp > bestResp) { bestResp = resp; bestK = k; }
+            // Apply: update corner handles from refined homography
+            const tl = projectPoint(H, 0, 0), tr = projectPoint(H, 1, 0);
+            const br = projectPoint(H, 1, 0.6478), bl = projectPoint(H, 0, 0.6478);
+            courtCorners.tl = { x: tl.x, y: tl.y };
+            courtCorners.tr = { x: tr.x, y: tr.y };
+            courtCorners.br = { x: br.x, y: br.y };
+            courtCorners.bl = { x: bl.x, y: bl.y };
+            H_courtToScreen = H;
+            H_screenToCourt = invert3x3(H);
+            if (!courtCorners._customNet) {
+                const midL = projectPoint(H, 0, 0.5);
+                const midR = projectPoint(H, 1, 0.5);
+                courtCorners.netL = { x: midL.x, y: courtCorners.netL.y };
+                courtCorners.netR = { x: midR.x, y: courtCorners.netR.y };
             }
-            if (bestResp >= 16) netPts.push({ x, y: (py + bestK) / Hh });
-        }
-        if (netPts.length >= 6) {
-            // Least-squares line y = a + b x
-            const n = netPts.length;
-            const sx = netPts.reduce((a, p) => a + p.x, 0), sy = netPts.reduce((a, p) => a + p.y, 0);
-            const sxx = netPts.reduce((a, p) => a + p.x * p.x, 0), sxy = netPts.reduce((a, p) => a + p.x * p.y, 0);
-            const den = n * sxx - sx * sx;
-            if (Math.abs(den) > 1e-9) {
-                const b = (n * sxy - sx * sy) / den;
-                const a = (sy - b * sx) / n;
-                courtCorners.netL.y = a + b * courtCorners.netL.x;
-                courtCorners.netR.y = a + b * courtCorners.netR.x;
-                lastStats.netRefined = true;
-            }
-        }
 
-        courtConfidence = Math.min(99, Math.round((lastStats.samples / Math.max(1, lastStats.total)) * 100));
-        netConfidence = lastStats.netRefined ? 95 : netConfidence;
-        return lastStats;
+            // Refine net top tape: bright horizontal tape, search vertically around current net line
+            const netPts = [];
+            for (let s = 2; s <= 18; s += 2) {
+                const t = s / 20;
+                const x = courtCorners.netL.x + (courtCorners.netR.x - courtCorners.netL.x) * t;
+                const y = courtCorners.netL.y + (courtCorners.netR.y - courtCorners.netL.y) * t;
+                if (humanBoxes.some(b => x >= b.xMin && x <= b.xMax && y >= b.yMin && y <= b.yMax)) continue;
+                const px = x * W, py = y * Hh;
+                const R = Math.round(0.02 * Hh);
+                let bestK = 0, bestResp = -1e9;
+                for (let k = -R; k <= R; k++) {
+                    const c = lumAt(px, py + k), up = lumAt(px, py + k - 4), dn = lumAt(px, py + k + 4);
+                    if (c < 0 || up < 0 || dn < 0) continue;
+                    const resp = c - Math.max(up, dn);
+                    if (resp > bestResp) { bestResp = resp; bestK = k; }
+                }
+                if (bestResp >= 16) netPts.push({ x, y: (py + bestK) / Hh });
+            }
+            if (netPts.length >= 4) {
+                const n = netPts.length;
+                const sx = netPts.reduce((a, p) => a + p.x, 0), sy = netPts.reduce((a, p) => a + p.y, 0);
+                const sxx = netPts.reduce((a, p) => a + p.x * p.x, 0), sxy = netPts.reduce((a, p) => a + p.x * p.y, 0);
+                const den = n * sxx - sx * sx;
+                if (Math.abs(den) > 1e-9) {
+                    const b = (n * sxy - sx * sy) / den;
+                    const a = (sy - b * sx) / n;
+                    courtCorners.netL.y = a + b * courtCorners.netL.x;
+                    courtCorners.netR.y = a + b * courtCorners.netR.x;
+                    lastStats.netRefined = true;
+                }
+            }
+
+            courtConfidence = Math.min(99, Math.round((lastStats.samples / Math.max(1, lastStats.total)) * 100));
+            netConfidence = lastStats.netRefined ? 95 : netConfidence;
+            return lastStats;
+        } catch (err) {
+            console.warn('Court line refinement caught error:', err);
+            return { ok: false, reason: err.message || 'error' };
+        }
     }
 
     /****************************************************************
@@ -937,6 +941,7 @@ window.ShuttleCV = (function () {
         getDetectedNet: () => detectedNetSegment,
         setCourtLocked: (locked) => { isCourtLocked = locked; },
         getCourtLocked: () => isCourtLocked,
+        updateHomography: updateHomographyFromCorners,
         analyzeVideoFrameCV,
         refineCourtToLines,
         expectedPlayerHeightScreen,

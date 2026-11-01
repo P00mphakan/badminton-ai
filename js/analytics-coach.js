@@ -1897,6 +1897,9 @@ async function fetchCommunityReviewsFromSupabase() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+    if (typeof initPoseDetectionModel === 'function') {
+        initPoseDetectionModel();
+    }
     communityReviews = loadLocalCommunityReviews();
     fetchCommunityReviewsFromSupabase(); // Automatically sync reviews across all mobile & desktop devices immediately on boot!
     ensureKnowledgeBaseLoaded();

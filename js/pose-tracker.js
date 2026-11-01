@@ -76,7 +76,7 @@ function computeHalfCourtCrop(team) {
     return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
-function evaluatePoseCandidate(pose, crop, team) {
+function evaluatePoseCandidate(pose, crop) {
     const kps = pose.keypoints.map(k => ({
         name: k.name,
         x: crop.x + (k.x / poseCropCanvas.width) * crop.w,
@@ -84,8 +84,8 @@ function evaluatePoseCandidate(pose, crop, team) {
         score: k.score ?? 0
     }));
     const get = n => kps.find(k => k.name === n);
-    const conf = kps.filter(k => k.score > 0.25);
-    if (conf.length < 5) return { mask: null, player: null };
+    const conf = kps.filter(k => k.score > 0.2);
+    if (conf.length < 4) return { mask: null, player: null };
 
     const xs = conf.map(k => k.x), ys = conf.map(k => k.y);
     const box = {
@@ -95,46 +95,39 @@ function evaluatePoseCandidate(pose, crop, team) {
         yMax: Math.min(1, Math.max(...ys) + 0.015)
     };
 
-    // Foot contact point: ankles first, then knee extrapolation. No guessing from bounding boxes.
-    const ankles = ['left_ankle', 'right_ankle'].map(get).filter(k => k && k.score >= 0.3);
+    // Foot contact point: ankles first, then knee/hip extrapolation, fallback to bottom of box
+    const ankles = ['left_ankle', 'right_ankle'].map(get).filter(k => k && k.score >= 0.22);
     let footX, footY;
     if (ankles.length) {
         footX = ankles.reduce((a, k) => a + k.x, 0) / ankles.length;
         footY = Math.max(...ankles.map(k => k.y));
     } else {
-        const knees = ['left_knee', 'right_knee'].map(get).filter(k => k && k.score >= 0.35);
-        const hips = ['left_hip', 'right_hip'].map(get).filter(k => k && k.score >= 0.3);
-        if (!knees.length || !hips.length) return { mask: box, player: null };
-        const kneeY = knees.reduce((a, k) => a + k.y, 0) / knees.length;
-        const hipY = hips.reduce((a, k) => a + k.y, 0) / hips.length;
-        footX = knees.reduce((a, k) => a + k.x, 0) / knees.length;
-        footY = kneeY + (kneeY - hipY) * 0.9;
+        const knees = ['left_knee', 'right_knee'].map(get).filter(k => k && k.score >= 0.22);
+        const hips = ['left_hip', 'right_hip'].map(get).filter(k => k && k.score >= 0.2);
+        if (knees.length && hips.length) {
+            const kneeY = knees.reduce((a, k) => a + k.y, 0) / knees.length;
+            const hipY = hips.reduce((a, k) => a + k.y, 0) / hips.length;
+            footX = knees.reduce((a, k) => a + k.x, 0) / knees.length;
+            footY = Math.min(1, kneeY + (kneeY - hipY) * 0.9);
+        } else {
+            footX = xs.reduce((a, b) => a + b, 0) / xs.length;
+            footY = Math.min(1, Math.max(...ys) + 0.01);
+        }
     }
 
     const uv = ShuttleCV.screenToCourtNormalized(footX, footY);
+    // Assign team based on court Y or screen vertical division (Far court = A, Near court = B)
+    const team = (uv.y <= 0.5 || footY <= 0.5) ? 'A' : 'B';
+    const ankleConf = ankles.length ? Math.max(...ankles.map(k => k.score)) : 0.35;
 
-    // STRICT: the feet must be inside the court lines -> spectators, coaches, umpires, players on other courts are rejected
-    if (!ShuttleCV.isInsideCourt(uv.x, uv.y, IN_COURT_TOL_U, IN_COURT_TOL_V)) return { mask: box, player: null };
-    if (team === 'A' && uv.y > 0.52) return { mask: box, player: null };
-    if (team === 'B' && uv.y < 0.48) return { mask: box, player: null };
-
-    // Depth-consistent body size check (rejects people standing behind the court whose feet are hidden)
-    const head = ['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'].map(get).filter(k => k && k.score >= 0.3);
-    const shoulders = ['left_shoulder', 'right_shoulder'].map(get).filter(k => k && k.score >= 0.3);
-    let topY;
-    if (head.length) topY = Math.min(...head.map(k => k.y));
-    else if (shoulders.length) topY = Math.min(...shoulders.map(k => k.y)) - 0.16 * ShuttleCV.expectedPlayerHeightScreen(uv.y);
-    else return { mask: box, player: null };
-
-    const ratio = (footY - topY) / ShuttleCV.expectedPlayerHeightScreen(uv.y);
-    if (ratio < 0.4 || ratio > 1.75) return { mask: box, player: null };
-
-    const ankleConf = ankles.length ? Math.max(...ankles.map(k => k.score)) : 0.3;
     return {
         mask: box,
         player: {
-            u: uv.x, v: uv.y, footX, footY, box, kps,
-            score: pose.score * (0.6 + 0.4 * ankleConf) * (1 - Math.min(0.5, Math.abs(1 - ratio) * 0.5))
+            team,
+            u: Math.max(0, Math.min(1, uv.x)),
+            v: Math.max(0, Math.min(1, uv.y)),
+            footX, footY, box, kps,
+            score: (pose.score ?? 0.5) * (0.6 + 0.4 * ankleConf)
         }
     };
 }
@@ -211,8 +204,8 @@ function updatePlayerSlot(slot, c, now) {
     const ring = ShuttleCV.courtNormalizedToScreen(newU, newV);
     slot.u = newU;
     slot.v = newV;
-    slot.screenX = ring.x;
-    slot.screenY = ring.y;
+    slot.screenX = c.footX !== undefined ? c.footX : ring.x;
+    slot.screenY = c.footY !== undefined ? c.footY : ring.y;
     slot.box = c.box;
     slot.keypoints = c.kps;
     slot.detected = true;
@@ -224,32 +217,22 @@ async function runRealPoseEstimation(videoEl) {
     const now = performance.now();
 
     Object.values(players).forEach(p => {
-        if (p.detected && now - p.lastSeenMs > 700) {
+        if (p.detected && now - p.lastSeenMs > 800) {
             p.detected = false;
             p.currentSpeedKmh = 0;
         }
     });
 
-    // Without a locked court we cannot verify "inside the lines" -> track nobody (no guessing)
-    if (!ShuttleCV.getCourtLocked()) {
-        Object.values(players).forEach(p => { p.detected = false; p.currentSpeedKmh = 0; });
-        detectedHumanBoxes = [];
-        return;
-    }
     if (!poseModelReady || !poseDetector || poseInferenceBusy) return;
     if (now - lastPoseTimestamp < 40) return;
     lastPoseTimestamp = now;
 
-    const team = posePassTeam;
-    posePassTeam = team === 'A' ? 'B' : 'A';
-
-    const crop = computeHalfCourtCrop(team);
-    if (crop.w < 0.03 || crop.h < 0.03) return;
-
+    // Full-frame crop so MoveNet MultiPose detects all players across both courts simultaneously
+    const crop = { x: 0, y: 0, w: 1, h: 1 };
     const vW = videoEl.videoWidth || 1280;
     const vH = videoEl.videoHeight || 720;
-    const aspect = (crop.w * vW) / (crop.h * vH);
-    const LONG = 512;
+    const aspect = vW / vH;
+    const LONG = 384;
     const cw = aspect >= 1 ? LONG : Math.max(96, Math.round(LONG * aspect));
     const ch = aspect >= 1 ? Math.max(96, Math.round(LONG / aspect)) : LONG;
     if (poseCropCanvas.width !== cw) poseCropCanvas.width = cw;
@@ -257,35 +240,38 @@ async function runRealPoseEstimation(videoEl) {
 
     poseInferenceBusy = true;
     try {
-        poseCropCtx.drawImage(videoEl, crop.x * vW, crop.y * vH, crop.w * vW, crop.h * vH, 0, 0, cw, ch);
+        poseCropCtx.drawImage(videoEl, 0, 0, vW, vH, 0, 0, cw, ch);
         const poses = await poseDetector.estimatePoses(poseCropCanvas, { maxPoses: 6, flipHorizontal: false });
 
         const masks = [];
-        let cands = [];
+        const candsA = [];
+        const candsB = [];
+
         poses.forEach(pose => {
             if ((pose.score ?? 0) < 0.2) return;
-            const r = evaluatePoseCandidate(pose, crop, team);
+            const r = evaluatePoseCandidate(pose, crop);
             if (r.mask) masks.push(r.mask);
-            if (r.player) cands.push(r.player);
+            if (r.player) {
+                if (r.player.team === 'A') candsA.push(r.player);
+                else candsB.push(r.player);
+            }
         });
 
-        // Non-maximum suppression in court meters (one player per 0.6 m)
-        cands.sort((a, b) => b.score - a.score);
-        const kept = [];
-        cands.forEach(c => {
-            const dup = kept.some(k => Math.hypot((k.u - c.u) * ShuttleCV.COURT_WIDTH_M, (k.v - c.v) * ShuttleCV.COURT_LENGTH_M) < 0.6);
-            if (!dup) kept.push(c);
-        });
-        cands = kept.slice(0, isDoublesMatch ? 2 : 1);
+        // Non-maximum suppression per team in screen/court space
+        const filterTeam = (cands) => {
+            cands.sort((a, b) => b.score - a.score);
+            const kept = [];
+            cands.forEach(c => {
+                const dup = kept.some(k => Math.hypot((k.u - c.u) * ShuttleCV.COURT_WIDTH_M, (k.v - c.v) * ShuttleCV.COURT_LENGTH_M) < 0.5);
+                if (!dup) kept.push(c);
+            });
+            return kept.slice(0, isDoublesMatch ? 2 : 1);
+        };
 
-        assignCandidatesToSlots(team, cands, performance.now());
+        assignCandidatesToSlots('A', filterTeam(candsA), now);
+        assignCandidatesToSlots('B', filterTeam(candsB), now);
 
-        // All detected people (incl. off-court) are used as masks so their motion never becomes a "shuttle"
-        maskBoxesByTeam[team] = { boxes: masks, t: performance.now() };
-        const tNow = performance.now();
-        detectedHumanBoxes = []
-            .concat(tNow - maskBoxesByTeam.A.t < 400 ? maskBoxesByTeam.A.boxes : [])
-            .concat(tNow - maskBoxesByTeam.B.t < 400 ? maskBoxesByTeam.B.boxes : []);
+        detectedHumanBoxes = masks;
     } catch (e) {
         // ignore single-frame inference error
     } finally {
