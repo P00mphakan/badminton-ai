@@ -484,6 +484,26 @@ function buildStructuredMatchDataJSON() {
             shot_type: s.type,
             speed_kmh: s.speed
         })),
+        data_quality: {
+            court_calibrated_and_trusted: ShuttleCV.isCourtTrusted(),
+            telemetry_data_valid: ShuttleCV.isCourtTrusted() && matchSeconds > 10,
+            warnings: (() => {
+                const w = [];
+                if (!ShuttleCV.isCourtTrusted()) {
+                    w.push('พิกัดเส้นสนามยังไม่ได้รับการตั้งเส้น (Uncalibrated Court) ข้อมูลพื้นที่และระยะวิ่งเป็นเพียงค่าประมาณการ');
+                }
+                const matchMin = Math.max(0.5, matchSeconds / 60);
+                Object.values(players).forEach(p => {
+                    if (p.distanceMeters / matchMin > 110) {
+                        w.push(`ระยะวิ่งของ ${p.name} (${p.distanceMeters} ม.) สูงผิดปกติเมื่อเทียบกับเวลาแมตช์`);
+                    }
+                });
+                if (maxRecordedSpeed > 265) {
+                    w.push(`ความเร็วลูกตบสูงสุด (${maxRecordedSpeed} km/h) สูงเกินเกณฑ์มาตรฐาน`);
+                }
+                return w;
+            })()
+        },
         data_completeness: {
             overall_confidence: overallConfidence,
             has_score_data: hasScore,
