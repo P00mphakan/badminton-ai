@@ -184,7 +184,7 @@ async function toggleWebcam() {
             webcamVideo.srcObject = null;
         }
         isWebcamActive = false;
-        if (btnText) btnText.textContent = 'กล้องสด';
+        if (btnText) btnText.textContent = 'Live';
         showToast('ปิดกล้องสดแล้ว');
     }
 }
@@ -209,7 +209,7 @@ function updateRawRecordUI(recording) {
     const topDot = document.getElementById('recDot');
 
     if (recording) {
-        if (iconWrap) iconWrap.className = 'dock-icon bg-rose-500 text-white animate-pulse';
+        if (iconWrap) iconWrap.className = 'dock-icon !bg-rose-500 text-white animate-pulse';
         if (icon) icon.className = 'ph-fill ph-stop text-white';
         if (label) label.textContent = '00:00';
         if (sheetLabel) sheetLabel.textContent = 'หยุดอัดคลิป';
@@ -217,7 +217,7 @@ function updateRawRecordUI(recording) {
     } else {
         if (iconWrap) iconWrap.className = 'dock-icon';
         if (icon) icon.className = 'ph-fill ph-record text-rose-400';
-        if (label) label.textContent = 'อัดคลิป';
+        if (label) label.textContent = 'Record';
         if (sheetLabel) sheetLabel.textContent = 'อัดคลิปสด';
         if (topDot) topDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
     }
@@ -382,8 +382,96 @@ function cycleVideoSpeed() {
 
 function toggleMoreSheet() {
     const sheet = document.getElementById('moreSheet');
-    if (sheet) sheet.classList.toggle('hidden');
+    const panel = document.getElementById('moreSheetPanel');
+    if (!sheet) return;
+    const willOpen = sheet.classList.contains('hidden');
+    if (willOpen) {
+        sheet.classList.remove('hidden');
+        if (panel) {
+            panel.style.transition = 'none';
+            panel.style.transform = 'translateY(100%)';
+            requestAnimationFrame(() => {
+                panel.style.transition = 'transform 0.24s cubic-bezier(0.22, 1, 0.36, 1)';
+                panel.style.transform = 'translateY(0px)';
+            });
+        }
+    } else {
+        closeMoreSheet();
+    }
 }
+
+function closeMoreSheet() {
+    const sheet = document.getElementById('moreSheet');
+    const panel = document.getElementById('moreSheetPanel');
+    if (!sheet || sheet.classList.contains('hidden')) return;
+    if (panel) {
+        panel.style.transition = 'transform 0.22s ease-in';
+        panel.style.transform = 'translateY(100%)';
+        setTimeout(() => {
+            sheet.classList.add('hidden');
+            panel.style.transform = 'translateY(0px)';
+        }, 210);
+    } else {
+        sheet.classList.add('hidden');
+    }
+}
+
+// Mobile Touch Swipe-Down / Slide-to-Close Gesture for Hamburger Menu Card
+(function initMoreSheetSwipeGesture() {
+    let startY = 0;
+    let startX = 0;
+    let currentDY = 0;
+    let isDraggingSheet = false;
+
+    window.addEventListener('DOMContentLoaded', () => {
+        const panel = document.getElementById('moreSheetPanel');
+        const dragZone = document.getElementById('moreSheetDragZone');
+        if (!panel) return;
+
+        const onTouchStart = (e) => {
+            const touch = e.touches ? e.touches[0] : e;
+            // Allow swipe-to-close from the top drag handle OR anywhere when panel is scrolled to top
+            const fromHandle = dragZone && dragZone.contains(e.target);
+            if (!fromHandle && panel.scrollTop > 4) return;
+            startY = touch.clientY;
+            startX = touch.clientX;
+            currentDY = 0;
+            isDraggingSheet = true;
+            panel.style.transition = 'none';
+        };
+
+        const onTouchMove = (e) => {
+            if (!isDraggingSheet) return;
+            const touch = e.touches ? e.touches[0] : e;
+            const dy = touch.clientY - startY;
+            const dx = touch.clientX - startX;
+            if (dy > 0) {
+                currentDY = dy;
+                panel.style.transform = `translateY(${dy}px)`;
+                if (e.cancelable) e.preventDefault();
+            } else if (dx < -65 && Math.abs(dy) < 40) {
+                // Also allow horizontal left-swipe to dismiss on mobile
+                currentDY = 120;
+            }
+        };
+
+        const onTouchEnd = () => {
+            if (!isDraggingSheet) return;
+            isDraggingSheet = false;
+            panel.style.transition = 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)';
+            if (currentDY > 70) {
+                closeMoreSheet();
+            } else {
+                panel.style.transform = 'translateY(0px)';
+            }
+            currentDY = 0;
+        };
+
+        panel.addEventListener('touchstart', onTouchStart, { passive: true });
+        panel.addEventListener('touchmove', onTouchMove, { passive: false });
+        panel.addEventListener('touchend', onTouchEnd);
+    });
+})();
 
 function seekUploadedVideo(percentVal) {
     if (!isUploadedVideoActive || !webcamVideo.duration) return;
@@ -408,18 +496,21 @@ function toggleCourtCalibrationMode() {
     isCalibratingCourt = !isCalibratingCourt;
     const icon = document.getElementById('calibIcon');
     const label = document.getElementById('calibLabel');
+    const floatSaveBtn = document.getElementById('floatingSaveCalibBtn');
     if (isCalibratingCourt) {
         ShuttleCV.setCourtLocked(true);
-        if (icon) icon.className = 'ph-fill ph-check-fat text-emerald-400';
-        if (label) label.textContent = 'บันทึกเส้น';
-        showToast('ลากจุดมุมคอร์ท 4 จุด และหัวเน็ท 2 ข้างให้ตรงเส้นจริง (มีแว่นขยาย 3x)');
+        if (icon) icon.className = 'ph-fill ph-check-fat text-emerald-400 text-lg shrink-0';
+        if (label) label.textContent = 'บันทึกเส้นสนาม';
+        if (floatSaveBtn) floatSaveBtn.classList.remove('hidden');
+        showToast('ลากจุดมุมคอร์ท 4 จุด และหัวเน็ท 2 ข้างให้ตรงเส้นจริง แล้วกด "บันทึกเส้นสนาม"');
     } else {
         if (ShuttleCV.refineCourtToLines) {
             ShuttleCV.refineCourtToLines(webcamVideo, detectedHumanBoxes);
         }
         ShuttleCV.setCourtLocked(true);
-        if (icon) icon.className = 'ph-bold ph-crosshair text-amber-300';
-        if (label) label.textContent = 'ตั้งเส้น';
+        if (icon) icon.className = 'ph-bold ph-crosshair text-amber-300 text-lg shrink-0';
+        if (label) label.textContent = 'ตั้งเส้นสนาม';
+        if (floatSaveBtn) floatSaveBtn.classList.add('hidden');
         showToast('ล็อกพิกัดเส้นสนาม 13.40m × 6.10m เรียบร้อย (ไม่ตรวจจับคนนอกเส้น)');
     }
 }

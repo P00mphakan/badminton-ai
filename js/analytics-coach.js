@@ -519,6 +519,57 @@ function retrieveMasterKnowledgeContext(matchData) {
     return extracted.join('\n\n---\n\n');
 }
 
+const LOCAL_AI_BASE_URL = 'https://touched-orleans-treating-pack.trycloudflare.com';
+const LOCAL_AI_FALLBACK_MODELS = [
+    'qwen2.5:7b',
+    'hermes3:latest',
+    'qwen2.5:3b',
+    'qwen2.5-coder:7b'
+];
+
+async function callLocalAIFallback(parts, systemPromptText = '') {
+    const userPrompt = (parts || []).map(p => p.text || '').filter(Boolean).join('\n\n');
+    if (!userPrompt) return { ok: false, error: 'ไม่มีข้อความส่งให้ Local AI' };
+
+    const messages = [];
+    if (systemPromptText) {
+        messages.push({ role: 'system', content: systemPromptText });
+    }
+    messages.push({ role: 'user', content: userPrompt });
+
+    let lastErr = 'Local AI ไม่ตอบสนอง';
+    for (const localModel of LOCAL_AI_FALLBACK_MODELS) {
+        try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 28000);
+            const res = await fetch(`${LOCAL_AI_BASE_URL}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: localModel,
+                    stream: false,
+                    options: { temperature: 0.2 },
+                    messages
+                }),
+                signal: controller.signal
+            });
+            clearTimeout(timer);
+            if (!res.ok) {
+                lastErr = `Local AI HTTP ${res.status}`;
+                continue;
+            }
+            const data = await res.json();
+            const replyText = data?.message?.content || data?.response || '';
+            if (replyText && replyText.trim()) {
+                return { ok: true, text: replyText.trim(), model: `Local AI (${localModel})` };
+            }
+        } catch (err) {
+            lastErr = err.message || String(err);
+        }
+    }
+    return { ok: false, error: lastErr };
+}
+
 async function callGeminiAPIWithFallback(parts, expectJson = false, systemPromptText = '') {
     let lastError = 'ไม่สามารถเชื่อมต่อ AI ได้';
     const now = Date.now();
@@ -566,7 +617,14 @@ async function callGeminiAPIWithFallback(parts, expectJson = false, systemPrompt
             lastError = err.message || String(err);
         }
     }
-    return { ok: false, error: lastError };
+
+    // Automatic Fallback to Local AI Server (Cloudflare Tunnel Ollama) when Gemini token/quota is exhausted
+    const localRes = await callLocalAIFallback(parts, systemPromptText);
+    if (localRes.ok) {
+        return localRes;
+    }
+
+    return { ok: false, error: `${lastError} | ${localRes.error}` };
 }
 
 function buildLocalTacticalCoachReport() {
@@ -855,24 +913,36 @@ function updateAuthUI() {
     const headerIcon = document.getElementById('headerAuthIcon');
     const headerBtn = document.getElementById('btnHeaderAuth');
     const sheetLabel = document.getElementById('sheetAuthLabel');
+    const sheetStatusSub = document.getElementById('sheetUserStatusSub');
+    const hudUserBtn = document.getElementById('hudUserAuthBtn');
+    const hudUserIcon = document.getElementById('hudUserAuthIcon');
+    const hudUserLabel = document.getElementById('hudUserAuthLabel');
 
     if (currentAuthUser) {
         const email = currentAuthUser.email || 'ผู้ใช้งาน Cloud';
-        const shortName = email.split('@')[0];
+        const displayName = currentAuthUser.user_metadata?.full_name || currentAuthUser.user_metadata?.name || email.split('@')[0];
         if (loggedInView) loggedInView.classList.remove('hidden');
         if (formView) formView.classList.add('hidden');
         if (emailEl) emailEl.textContent = email;
-        if (headerLabel) headerLabel.textContent = shortName;
+        if (headerLabel) headerLabel.textContent = displayName;
         if (headerIcon) headerIcon.className = 'ph-fill ph-check-circle text-emerald-400 text-sm';
         if (headerBtn) headerBtn.className = 'h-8 px-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 text-[11px] font-semibold';
-        if (sheetLabel) sheetLabel.textContent = `บัญชี: ${shortName}`;
+        if (sheetLabel) sheetLabel.textContent = `${displayName} (${email})`;
+        if (sheetStatusSub) sheetStatusSub.textContent = 'เข้าสู่ระบบ Cloud แล้ว';
+        if (hudUserLabel) hudUserLabel.textContent = displayName;
+        if (hudUserIcon) hudUserIcon.className = 'ph-fill ph-user-check text-emerald-400 text-xs';
+        if (hudUserBtn) hudUserBtn.className = 'hud-glass rounded-full px-2.5 py-[3px] flex items-center gap-1 shrink-0 text-[10px] text-emerald-300 font-semibold pointer-events-auto border border-emerald-500/40';
     } else {
         if (loggedInView) loggedInView.classList.add('hidden');
         if (formView) formView.classList.remove('hidden');
         if (headerLabel) headerLabel.textContent = 'เข้าสู่ระบบ';
         if (headerIcon) headerIcon.className = 'ph-bold ph-user-circle text-sm';
         if (headerBtn) headerBtn.className = 'h-8 px-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-cyan-300 border border-slate-700 flex items-center gap-1 text-[11px] font-semibold';
-        if (sheetLabel) sheetLabel.textContent = 'เข้าสู่ระบบ / สมัคร';
+        if (sheetLabel) sheetLabel.textContent = 'ยังไม่ได้เข้าสู่ระบบ (แตะเพื่อล็อกอิน)';
+        if (sheetStatusSub) sheetStatusSub.textContent = 'สถานะบัญชีผู้ใช้';
+        if (hudUserLabel) hudUserLabel.textContent = 'เข้าสู่ระบบ';
+        if (hudUserIcon) hudUserIcon.className = 'ph-bold ph-user-circle text-cyan-300 text-xs';
+        if (hudUserBtn) hudUserBtn.className = 'hud-glass rounded-full px-2.5 py-[3px] flex items-center gap-1 shrink-0 text-[10px] text-cyan-300 font-semibold pointer-events-auto border border-cyan-500/30';
     }
 }
 
