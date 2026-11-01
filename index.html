@@ -15,6 +15,8 @@
     <!-- Real On-Device AI Pose Detection (TensorFlow.js + MoveNet MultiPose) -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+    <!-- Supabase Auth & PostgreSQL Cloud Sync -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -63,6 +65,10 @@
                 <button onclick="saveCurrentMatchRecord()" class="w-8 h-8 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 flex items-center justify-center" title="บันทึกแมตช์นี้">
                     <i class="ph-bold ph-floppy-disk text-sm"></i>
                 </button>
+                <button id="btnHeaderAuth" onclick="toggleAuthModal()" class="h-8 px-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-cyan-300 border border-slate-700 flex items-center gap-1 text-[11px] font-semibold" title="เข้าสู่ระบบ / บัญชีผู้ใช้">
+                    <i id="headerAuthIcon" class="ph-bold ph-user-circle text-sm"></i>
+                    <span id="headerAuthLabel" class="hidden sm:inline max-w-[90px] truncate">เข้าสู่ระบบ</span>
+                </button>
                 <button onclick="toggleIOSGuideModal()" class="w-8 h-8 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center" title="วิธีเพิ่มลงหน้าจอโฮม iPhone">
                     <i class="ph-bold ph-device-mobile text-emerald-400 text-sm"></i>
                 </button>
@@ -104,30 +110,74 @@
         </div>
     </div>
 
-    <!-- Gemini API Key Modal -->
-    <div id="apiKeyModal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+    <!-- Supabase User Auth Modal (Email/Password Sign In, Sign Up + Google OAuth) -->
+    <div id="authModal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="glass-panel rounded-3xl max-w-md w-full p-5 border border-slate-700 shadow-2xl space-y-4">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2.5">
-                    <div class="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
-                        <i class="ph-fill ph-key text-xl"></i>
+                    <div class="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+                        <i class="ph-fill ph-user-circle-gear text-xl"></i>
                     </div>
                     <div>
-                        <h3 class="text-sm font-bold text-white">เชื่อมต่อ Gemini Vision AI</h3>
-                        <p class="text-[11px] text-slate-400">ใช้ตรวจสอบเส้นสนามและผู้เล่นเพิ่มเติมด้วย Multimodal AI</p>
+                        <h3 class="text-sm font-bold text-white">บัญชีผู้ใช้งาน ShuttlePro Cloud</h3>
+                        <p class="text-[11px] text-slate-400">ซิงค์สถิติและบทวิเคราะห์ AI ส่วนตัวของคุณ (ไม่เก็บไฟล์คลิปวิดีโอ)</p>
                     </div>
                 </div>
-                <button onclick="toggleApiKeyModal()" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
+                <button onclick="toggleAuthModal()" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
                     <i class="ph-bold ph-x"></i>
                 </button>
             </div>
-            <div class="space-y-2">
-                <label class="text-xs text-slate-300 block">Gemini API Key (เก็บไว้ในเครื่องของคุณเท่านั้น):</label>
-                <input type="password" id="geminiKeyInput" placeholder="AIzaSy..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-400">
+
+            <!-- Logged-in State View -->
+            <div id="authLoggedInView" class="hidden space-y-3">
+                <div class="bg-slate-900/90 border border-emerald-500/30 rounded-2xl p-3.5 flex items-center justify-between">
+                    <div class="min-w-0">
+                        <div class="text-[10px] text-emerald-400 font-semibold">เข้าสู่ระบบสำเร็จ</div>
+                        <div id="authUserEmail" class="text-xs font-bold text-white truncate">user@example.com</div>
+                    </div>
+                    <span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold">Cloud Active</span>
+                </div>
+                <button onclick="handleSignOut()" class="w-full py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold text-xs flex items-center justify-center gap-1.5">
+                    <i class="ph-bold ph-sign-out"></i>
+                    <span>ออกจากระบบ (Sign Out)</span>
+                </button>
             </div>
-            <div class="flex gap-2">
-                <button onclick="saveGeminiApiKey()" class="flex-1 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">บันทึก API Key</button>
-                <button onclick="toggleApiKeyModal()" class="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs">ปิด</button>
+
+            <!-- Logged-out Form View (Sign In / Sign Up Tabs + Google Login) -->
+            <div id="authFormView" class="space-y-3.5">
+                <div class="grid grid-cols-2 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                    <button id="tabAuthSignIn" onclick="switchAuthMode('signin')" class="py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-slate-950 transition-all">เข้าสู่ระบบ (Sign In)</button>
+                    <button id="tabAuthSignUp" onclick="switchAuthMode('signup')" class="py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition-all">สมัครสมาชิก (Sign Up)</button>
+                </div>
+
+                <div class="space-y-2.5">
+                    <div>
+                        <label class="text-[11px] text-slate-300 block mb-1">อีเมล (Email):</label>
+                        <input type="email" id="authEmailInput" placeholder="you@example.com" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-400">
+                    </div>
+                    <div>
+                        <label class="text-[11px] text-slate-300 block mb-1">รหัสผ่าน (Password อย่างน้อย 6 ตัวอักษร):</label>
+                        <input type="password" id="authPasswordInput" placeholder="••••••••" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-400">
+                    </div>
+                </div>
+
+                <div id="authStatusMsg" class="hidden text-[11px] px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-amber-300"></div>
+
+                <button id="btnSubmitEmailAuth" onclick="handleEmailAuthSubmit()" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5">
+                    <i class="ph-bold ph-envelope-simple"></i>
+                    <span id="btnSubmitEmailAuthText">เข้าสู่ระบบด้วย Email</span>
+                </button>
+
+                <div class="relative flex py-1 items-center">
+                    <div class="flex-grow border-t border-slate-800"></div>
+                    <span class="flex-shrink mx-3 text-[10px] text-slate-500">หรือทางเลือกเสริม</span>
+                    <div class="flex-grow border-t border-slate-800"></div>
+                </div>
+
+                <button onclick="handleGoogleSignIn()" class="w-full py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs flex items-center justify-center gap-2 shadow">
+                    <i class="ph-fill ph-google-logo text-rose-500 text-base"></i>
+                    <span>ดำเนินการต่อด้วย Google (Gmail)</span>
+                </button>
             </div>
         </div>
     </div>
@@ -320,7 +370,8 @@
                         <label class="sheet-toggle"><input type="checkbox" id="chkShowTrails" checked class="accent-emerald-500"><span>เส้นวิ่ง</span></label>
                         <label class="sheet-toggle"><input type="checkbox" id="chkShowSkeleton" class="accent-emerald-500"><span>โครงร่าง</span></label>
                     </div>
-                    <div class="grid grid-cols-1 gap-2">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="toggleMoreSheet(); toggleAuthModal()" class="sheet-btn !flex-row !justify-center !px-3"><i class="ph-bold ph-user-circle text-emerald-300"></i><span id="sheetAuthLabel">เข้าสู่ระบบ / สมัคร</span></button>
                         <button onclick="cycleCameraOrientation()" class="sheet-btn !flex-row !justify-center !px-3"><i class="ph-bold ph-frame-corners text-cyan-300"></i><span id="btnOrientationLabel">ภาพ: Auto</span></button>
                     </div>
                 </div>
@@ -518,12 +569,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261101d" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261101d"></script>
-    <script src="js/cv-court.js?v=20261101d"></script>
-    <script src="js/pose-tracker.js?v=20261101d"></script>
-    <script src="js/scoreboard.js?v=20261101d"></script>
-    <script src="js/live-view.js?v=20261101d"></script>
-    <script src="js/analytics-coach.js?v=20261101d"></script>
+    <script src="js/env.local.js?v=20261101e" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261101e"></script>
+    <script src="js/cv-court.js?v=20261101e"></script>
+    <script src="js/pose-tracker.js?v=20261101e"></script>
+    <script src="js/scoreboard.js?v=20261101e"></script>
+    <script src="js/live-view.js?v=20261101e"></script>
+    <script src="js/analytics-coach.js?v=20261101e"></script>
 </body>
 </html>

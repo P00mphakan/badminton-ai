@@ -407,6 +407,7 @@ ${recentShotsText}
         const result = await callGeminiAPIWithFallback([{ text: prompt }], false);
         if (!result.ok) throw new Error(result.error);
 
+        latestAICoachReportText = result.text.trim();
         const formattedHtml = result.text
             .replace(/\*\*(.*?)\*\*/g, '<strong class="text-emerald-300">$1</strong>')
             .replace(/\n/g, '<br>');
@@ -499,22 +500,167 @@ function switchTab(tabId) {
     }
 }
 
-function toggleApiKeyModal() {
-    const modal = document.getElementById('apiKeyModal');
+function toggleAuthModal() {
+    const modal = document.getElementById('authModal');
     if (!modal) return;
     modal.classList.toggle('hidden');
-    const input = document.getElementById('geminiKeyInput');
-    if (input) input.value = geminiApiKey;
+    const msg = document.getElementById('authStatusMsg');
+    if (msg) msg.classList.add('hidden');
+    updateAuthUI();
 }
 
-function saveGeminiApiKey() {
-    const input = document.getElementById('geminiKeyInput');
-    if (input) {
-        geminiApiKey = input.value.trim();
-        localStorage.setItem('shuttlepro_gemini_key', geminiApiKey);
-        showToast(geminiApiKey ? 'บันทึก Gemini API Key สำเร็จ!' : 'ล้างค่า API Key แล้ว');
+function switchAuthMode(mode) {
+    currentAuthMode = mode === 'signup' ? 'signup' : 'signin';
+    const tabIn = document.getElementById('tabAuthSignIn');
+    const tabUp = document.getElementById('tabAuthSignUp');
+    const btnTxt = document.getElementById('btnSubmitEmailAuthText');
+    const msg = document.getElementById('authStatusMsg');
+    if (msg) msg.classList.add('hidden');
+
+    if (currentAuthMode === 'signin') {
+        if (tabIn) tabIn.className = 'py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-slate-950 transition-all';
+        if (tabUp) tabUp.className = 'py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition-all';
+        if (btnTxt) btnTxt.textContent = 'เข้าสู่ระบบด้วย Email';
+    } else {
+        if (tabUp) tabUp.className = 'py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-slate-950 transition-all';
+        if (tabIn) tabIn.className = 'py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition-all';
+        if (btnTxt) btnTxt.textContent = 'สมัครสมาชิกด้วย Email';
     }
-    toggleApiKeyModal();
+}
+
+function showAuthMessage(text, isError = true) {
+    const msg = document.getElementById('authStatusMsg');
+    if (!msg) return;
+    msg.textContent = text;
+    msg.className = isError
+        ? 'text-[11px] px-3 py-2 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300'
+        : 'text-[11px] px-3 py-2 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300';
+    msg.classList.remove('hidden');
+}
+
+function updateAuthUI() {
+    const loggedInView = document.getElementById('authLoggedInView');
+    const formView = document.getElementById('authFormView');
+    const emailEl = document.getElementById('authUserEmail');
+    const headerLabel = document.getElementById('headerAuthLabel');
+    const headerIcon = document.getElementById('headerAuthIcon');
+    const headerBtn = document.getElementById('btnHeaderAuth');
+    const sheetLabel = document.getElementById('sheetAuthLabel');
+
+    if (currentAuthUser) {
+        const email = currentAuthUser.email || 'ผู้ใช้งาน Cloud';
+        const shortName = email.split('@')[0];
+        if (loggedInView) loggedInView.classList.remove('hidden');
+        if (formView) formView.classList.add('hidden');
+        if (emailEl) emailEl.textContent = email;
+        if (headerLabel) headerLabel.textContent = shortName;
+        if (headerIcon) headerIcon.className = 'ph-fill ph-check-circle text-emerald-400 text-sm';
+        if (headerBtn) headerBtn.className = 'h-8 px-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 text-[11px] font-semibold';
+        if (sheetLabel) sheetLabel.textContent = `บัญชี: ${shortName}`;
+    } else {
+        if (loggedInView) loggedInView.classList.add('hidden');
+        if (formView) formView.classList.remove('hidden');
+        if (headerLabel) headerLabel.textContent = 'เข้าสู่ระบบ';
+        if (headerIcon) headerIcon.className = 'ph-bold ph-user-circle text-sm';
+        if (headerBtn) headerBtn.className = 'h-8 px-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-cyan-300 border border-slate-700 flex items-center gap-1 text-[11px] font-semibold';
+        if (sheetLabel) sheetLabel.textContent = 'เข้าสู่ระบบ / สมัคร';
+    }
+}
+
+async function initSupabaseAuth() {
+    if (!supabaseClient) return;
+    try {
+        const { data } = await supabaseClient.auth.getSession();
+        currentAuthUser = data?.session?.user || null;
+        updateAuthUI();
+
+        supabaseClient.auth.onAuthStateChange((_event, session) => {
+            const prevUser = currentAuthUser?.id;
+            currentAuthUser = session?.user || null;
+            updateAuthUI();
+            if (prevUser !== currentAuthUser?.id) {
+                fetchCloudMatches(false);
+            }
+        });
+    } catch (e) {
+        console.warn('Supabase Auth init warning:', e);
+    }
+}
+
+async function handleEmailAuthSubmit() {
+    if (!supabaseClient) {
+        showAuthMessage('ไม่สามารถเชื่อมต่อบริการ Supabase Auth ได้');
+        return;
+    }
+    const email = document.getElementById('authEmailInput')?.value.trim();
+    const password = document.getElementById('authPasswordInput')?.value;
+    if (!email || !password) {
+        showAuthMessage('กรุณากรอกอีเมลและรหัสผ่านให้ครบถ้วน');
+        return;
+    }
+    if (password.length < 6) {
+        showAuthMessage('รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
+        return;
+    }
+
+    const btnTxt = document.getElementById('btnSubmitEmailAuthText');
+    const origText = btnTxt ? btnTxt.textContent : '';
+    if (btnTxt) btnTxt.textContent = 'กำลังดำเนินการ...';
+
+    try {
+        if (currentAuthMode === 'signup') {
+            const { data, error } = await supabaseClient.auth.signUp({ email, password });
+            if (error) throw error;
+            if (data?.session) {
+                currentAuthUser = data.session.user;
+                updateAuthUI();
+                toggleAuthModal();
+                showToast(`สมัครสมาชิกและเข้าสู่ระบบสำเร็จ (${email})`);
+                fetchCloudMatches(false);
+            } else {
+                showAuthMessage('สมัครสมาชิกสำเร็จ! หากระบบตั้งค่ายืนยันอีเมลไว้ กรุณาตรวจสอบกล่องจดหมายของคุณ หรือกดเข้าสู่ระบบได้เลย', false);
+            }
+        } else {
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+            currentAuthUser = data?.user || null;
+            updateAuthUI();
+            toggleAuthModal();
+            showToast(`เข้าสู่ระบบสำเร็จ (${email})`);
+            fetchCloudMatches(true);
+        }
+    } catch (err) {
+        showAuthMessage(err.message || 'อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+    } finally {
+        if (btnTxt) btnTxt.textContent = origText;
+    }
+}
+
+async function handleGoogleSignIn() {
+    if (!supabaseClient) {
+        showAuthMessage('ไม่สามารถเชื่อมต่อบริการ Supabase Auth ได้');
+        return;
+    }
+    try {
+        const redirectTo = window.location.origin + window.location.pathname;
+        const { error } = await supabaseClient.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo }
+        });
+        if (error) throw error;
+    } catch (err) {
+        showAuthMessage(`ไม่สามารถเข้าสู่ระบบด้วย Google ได้: ${err.message || 'กรุณาเปิด Google Provider ในหน้า Supabase Auth'}`);
+    }
+}
+
+async function handleSignOut() {
+    if (!supabaseClient) return;
+    await supabaseClient.auth.signOut();
+    currentAuthUser = null;
+    updateAuthUI();
+    toggleAuthModal();
+    showToast('ออกจากระบบเรียบร้อยแล้ว');
+    fetchCloudMatches(false);
 }
 
 function toggleIOSGuideModal() {
@@ -586,9 +732,14 @@ function updateCloudSyncBadge(text, isOk = true) {
 async function syncMatchRecordToSupabase(record) {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
     try {
+        // Store AI text summary inside players_summary JSONB or as a dedicated metadata entry (NEVER upload video files)
+        const playersPayload = (record.playersSummary || []).map((p, idx) =>
+            idx === 0 && record.aiAnalysisText ? { ...p, aiAnalysisText: record.aiAnalysisText } : p
+        );
         const payload = {
             client_match_id: record.id,
             club_code: record.clubCode || clubCode || 'PUBLIC',
+            user_id: currentAuthUser?.id || null,
             title: record.title,
             saved_at_text: record.savedAt,
             duration_sec: record.durationSec || 0,
@@ -600,36 +751,46 @@ async function syncMatchRecordToSupabase(record) {
             max_smash_kmh: record.maxSmashKmh || 0,
             avg_smash_kmh: record.avgSmashKmh || 0,
             total_smashes: record.totalSmashes || 0,
-            players_summary: record.playersSummary || [],
+            players_summary: playersPayload,
             recent_shots: record.recentShots || []
         };
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/matches`, {
-            method: 'POST',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=representation,resolution=merge-duplicates'
-            },
-            body: JSON.stringify(payload)
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            console.warn('Supabase insert warning:', err);
-            updateCloudSyncBadge('บันทึกในเครื่องแล้ว (รอตั้งค่าสิทธิ์ตาราง Supabase)', false);
-            return false;
-        }
-        const rows = await res.json();
-        if (rows && rows[0] && rows[0].id) {
-            record.cloudId = rows[0].id;
-            localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
-            renderSavedMatchesList();
+
+        if (supabaseClient) {
+            const { data, error } = await supabaseClient
+                .from('matches')
+                .upsert(payload, { onConflict: 'club_code,client_match_id' })
+                .select();
+            if (error) throw error;
+            if (data && data[0] && data[0].id) {
+                record.cloudId = data[0].id;
+                localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
+                renderSavedMatchesList();
+            }
+        } else {
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/matches`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation,resolution=merge-duplicates'
+                },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const rows = await res.json();
+            if (rows && rows[0] && rows[0].id) {
+                record.cloudId = rows[0].id;
+                localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
+                renderSavedMatchesList();
+            }
         }
         isCloudSynced = true;
-        updateCloudSyncBadge('ซิงค์ขึ้น Supabase Cloud แล้ว', true);
+        updateCloudSyncBadge('ซิงค์บทวิเคราะห์ขึ้น Cloud แล้ว (ไม่เก็บไฟล์คลิป)', true);
         return true;
     } catch (e) {
-        updateCloudSyncBadge('ออฟไลน์ (เก็บในเครื่องอัตโนมัติ)', false);
+        console.warn('Supabase sync warning:', e);
+        updateCloudSyncBadge('บันทึกในเครื่องแล้ว', false);
         return false;
     }
 }
@@ -638,46 +799,60 @@ async function fetchCloudMatches(showNotification = false) {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
     try {
         updateCloudSyncBadge('กำลังซิงค์...', true);
-        const code = encodeURIComponent(clubCode || 'PUBLIC');
-        const url = `${SUPABASE_URL}/rest/v1/matches?club_code=eq.${code}&order=created_at.desc&limit=30`;
-        const res = await fetch(url, {
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            }
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            if (err.code === '42501') {
-                updateCloudSyncBadge('รอเปิดสิทธิ์ GRANT ตารางใน Supabase SQL', false);
+        let rows = [];
+        if (supabaseClient) {
+            let query = supabaseClient
+                .from('matches')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(30);
+            if (currentAuthUser?.id) {
+                query = query.or(`user_id.eq.${currentAuthUser.id},club_code.eq.${clubCode || 'PUBLIC'}`);
             } else {
-                updateCloudSyncBadge('ใช้ข้อมูลในเครื่อง', false);
+                query = query.eq('club_code', clubCode || 'PUBLIC');
             }
-            if (showNotification) showToast('ยังไม่ได้เปิดสิทธิ์ GRANT SELECT/INSERT บนตาราง matches ใน Supabase');
-            return;
+            const { data, error } = await query;
+            if (error) throw error;
+            rows = data || [];
+        } else {
+            const code = encodeURIComponent(clubCode || 'PUBLIC');
+            const url = `${SUPABASE_URL}/rest/v1/matches?club_code=eq.${code}&order=created_at.desc&limit=30`;
+            const res = await fetch(url, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            rows = await res.json();
         }
-        const rows = await res.json();
-        const cloudRecords = (rows || []).map(r => ({
-            id: r.client_match_id || new Date(r.created_at).getTime(),
-            cloudId: r.id,
-            clubCode: r.club_code || 'PUBLIC',
-            title: r.title,
-            savedAt: r.saved_at_text || new Date(r.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }),
-            isoDate: r.created_at,
-            durationSec: r.duration_sec || 0,
-            format: r.format || 'Doubles (6.10m)',
-            scoreA: r.score_a || 0,
-            scoreB: r.score_b || 0,
-            setsA: r.sets_a || 0,
-            setsB: r.sets_b || 0,
-            maxSmashKmh: r.max_smash_kmh || 0,
-            avgSmashKmh: r.avg_smash_kmh || 0,
-            totalSmashes: r.total_smashes || 0,
-            playersSummary: r.players_summary || [],
-            recentShots: r.recent_shots || []
-        }));
 
-        // Merge unsynced local records for the current clubCode with cloud records
+        const cloudRecords = (rows || []).map(r => {
+            const pSum = r.players_summary || [];
+            const savedAiText = (pSum[0] && pSum[0].aiAnalysisText) ? pSum[0].aiAnalysisText : '';
+            return {
+                id: r.client_match_id || new Date(r.created_at).getTime(),
+                cloudId: r.id,
+                userId: r.user_id || null,
+                clubCode: r.club_code || 'PUBLIC',
+                title: r.title,
+                savedAt: r.saved_at_text || new Date(r.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }),
+                isoDate: r.created_at,
+                durationSec: r.duration_sec || 0,
+                format: r.format || 'Doubles (6.10m)',
+                scoreA: r.score_a || 0,
+                scoreB: r.score_b || 0,
+                setsA: r.sets_a || 0,
+                setsB: r.sets_b || 0,
+                maxSmashKmh: r.max_smash_kmh || 0,
+                avgSmashKmh: r.avg_smash_kmh || 0,
+                totalSmashes: r.total_smashes || 0,
+                playersSummary: pSum,
+                recentShots: r.recent_shots || [],
+                aiAnalysisText: savedAiText
+            };
+        });
+
         const cloudIds = new Set(cloudRecords.map(c => c.id));
         const localUnsynced = matchHistory.filter(m => (!m.clubCode || m.clubCode === clubCode) && !cloudIds.has(m.id));
         matchHistory = [...localUnsynced, ...cloudRecords].slice(0, 35);
@@ -688,11 +863,10 @@ async function fetchCloudMatches(showNotification = false) {
         isCloudSynced = true;
         updateCloudSyncBadge(`ซิงค์ Cloud ล่าสุด (${cloudRecords.length} แมตช์)`, true);
 
-        // Push any local unsynced matches up to Supabase automatically
         for (const unsynced of localUnsynced) {
             syncMatchRecordToSupabase(unsynced);
         }
-        if (showNotification) showToast(`ซิงค์ข้อมูลห้องก๊วน "${clubCode}" จาก Supabase สำเร็จ (${cloudRecords.length} แมตช์)`);
+        if (showNotification) showToast(`ซิงค์ข้อมูลจาก Supabase สำเร็จ (${cloudRecords.length} แมตช์)`);
     } catch (e) {
         updateCloudSyncBadge('ออฟไลน์ (ใช้ข้อมูลในเครื่อง)', false);
     }
@@ -702,8 +876,18 @@ async function saveCurrentMatchRecord() {
     const avgSmash = allSmashSpeeds.length > 0
         ? Math.round(allSmashSpeeds.reduce((a, b) => a + b, 0) / allSmashSpeeds.length)
         : 0;
+
+    // Ensure we have an AI text summary for the match (never store video files, only text analysis + metrics)
+    if (!latestAICoachReportText) {
+        const statsBrief = Object.values(players).map(p =>
+            `${p.name}: วิ่ง ${p.distanceMeters.toFixed(1)} ม., ตบสูงสุด ${p.maxSmashKmh} km/h (${p.shotsCount} ลูก)`
+        ).join(' | ');
+        latestAICoachReportText = `สรุปผลแมตช์ (A ${scoreboard.scoreA}-${scoreboard.scoreB} B): ตบสูงสุด ${maxRecordedSpeed} km/h เฉลี่ย ${avgSmash} km/h • ${statsBrief}`;
+    }
+
     const record = {
         id: Date.now(),
+        userId: currentAuthUser?.id || null,
         clubCode: clubCode || 'PUBLIC',
         title: matchTitle || buildDefaultMatchTitle(),
         savedAt: new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }),
@@ -717,6 +901,7 @@ async function saveCurrentMatchRecord() {
         maxSmashKmh: maxRecordedSpeed,
         avgSmashKmh: avgSmash,
         totalSmashes: allSmashSpeeds.length,
+        aiAnalysisText: latestAICoachReportText,
         playersSummary: Object.values(players).map(p => ({
             id: p.id,
             name: p.name,
@@ -735,10 +920,10 @@ async function saveCurrentMatchRecord() {
     } catch (e) {}
     renderSavedMatchesList();
     document.getElementById('moreSheet')?.classList.add('hidden');
-    showToast(`กำลังบันทึกแมตช์ "${record.title}" ขึ้น Supabase Cloud...`);
+    showToast(`กำลังบันทึกเฉพาะข้อความบทวิเคราะห์และสถิติขึ้น Supabase Cloud...`);
     const ok = await syncMatchRecordToSupabase(record);
     if (ok) {
-        showToast(`บันทึกแมตช์ "${record.title}" ขึ้น Supabase (ก๊วน ${clubCode}) สำเร็จ!`);
+        showToast(`บันทึกบทวิเคราะห์ "${record.title}" ขึ้น Supabase สำเร็จ! (ไม่เก็บไฟล์คลิปวิดีโอ)`);
     }
 }
 
@@ -746,41 +931,46 @@ function renderSavedMatchesList() {
     const container = document.getElementById('savedMatchesList');
     if (!container) return;
     if (!matchHistory || matchHistory.length === 0) {
-        container.innerHTML = `<div class="text-center text-xs text-slate-500 py-5">ยังไม่มีแมตช์ในห้องก๊วน "${clubCode}" • กดปุ่ม "บันทึกแมตช์" เพื่อเก็บสถิติขึ้น Supabase Cloud</div>`;
+        container.innerHTML = `<div class="text-center text-xs text-slate-500 py-5">ยังไม่มีบทวิเคราะห์แมตช์ในห้องก๊วน "${clubCode}" • กดปุ่ม "บันทึกแมตช์" เพื่อเก็บข้อความวิเคราะห์ขึ้น Cloud</div>`;
         return;
     }
     container.innerHTML = matchHistory.map((m, idx) => {
         const cloudIcon = m.cloudId
-            ? `<i class="ph-fill ph-cloud-check text-cyan-400 text-xs shrink-0" title="บันทึกบน Supabase Cloud แล้ว"></i>`
+            ? `<i class="ph-fill ph-cloud-check text-cyan-400 text-xs shrink-0" title="ซิงค์บทวิเคราะห์บน Supabase Cloud แล้ว"></i>`
             : `<i class="ph-bold ph-device-mobile text-slate-500 text-xs shrink-0" title="บันทึกในเครื่อง"></i>`;
+        const aiSnippet = m.aiAnalysisText || (m.playersSummary?.[0]?.aiAnalysisText) || '';
+        const cleanSnippet = aiSnippet.replace(/\*\*/g, '').slice(0, 140);
         return `
-        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2">
-            <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-1.5 min-w-0">
-                    ${cloudIcon}
-                    <span class="text-xs font-bold text-white truncate">${m.title}</span>
-                    <span class="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold shrink-0">
-                        A ${m.scoreA} - ${m.scoreB} B
-                    </span>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 space-y-1.5">
+            <div class="flex items-center justify-between gap-2">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5 min-w-0">
+                        ${cloudIcon}
+                        <span class="text-xs font-bold text-white truncate">${m.title}</span>
+                        <span class="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold shrink-0">
+                            A ${m.scoreA} - ${m.scoreB} B
+                        </span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
+                        <span class="text-cyan-300/90 font-mono">[${m.clubCode || 'PUBLIC'}]</span>
+                        <span>•</span>
+                        <span>${m.savedAt}</span>
+                        <span>•</span>
+                        <span>เวลา ${formatTimeSec(m.durationSec || 0)}</span>
+                        <span>•</span>
+                        <span class="text-amber-300">ตบสูงสุด ${m.maxSmashKmh || 0} km/h</span>
+                    </div>
                 </div>
-                <div class="text-[10px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
-                    <span class="text-cyan-300/90 font-mono">[${m.clubCode || 'PUBLIC'}]</span>
-                    <span>•</span>
-                    <span>${m.savedAt}</span>
-                    <span>•</span>
-                    <span>เวลา ${formatTimeSec(m.durationSec || 0)}</span>
-                    <span>•</span>
-                    <span class="text-amber-300">ตบสูงสุด ${m.maxSmashKmh || 0} km/h</span>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button onclick="exportSavedMatchById(${idx})" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center justify-center" title="Export JSON">
+                        <i class="ph-bold ph-download-simple text-xs"></i>
+                    </button>
+                    <button onclick="deleteSavedMatchById(${idx})" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-rose-300 flex items-center justify-center" title="ลบรายการ">
+                        <i class="ph-bold ph-trash text-xs"></i>
+                    </button>
                 </div>
             </div>
-            <div class="flex items-center gap-1 shrink-0">
-                <button onclick="exportSavedMatchById(${idx})" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center justify-center" title="Export JSON">
-                    <i class="ph-bold ph-download-simple text-xs"></i>
-                </button>
-                <button onclick="deleteSavedMatchById(${idx})" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-rose-300 flex items-center justify-center" title="ลบรายการ">
-                    <i class="ph-bold ph-trash text-xs"></i>
-                </button>
-            </div>
+            ${cleanSnippet ? `<div class="text-[11px] text-slate-300 bg-slate-950/70 border border-slate-800/80 rounded-lg px-2.5 py-1.5 line-clamp-2">📝 ${cleanSnippet}${aiSnippet.length > 140 ? '...' : ''}</div>` : ''}
         </div>
     `}).join('');
 }
@@ -857,6 +1047,7 @@ function exportReportJSON() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+    initSupabaseAuth();
     renderMatchTitleUI();
     renderSavedMatchesList();
     fetchCloudMatches(false);
