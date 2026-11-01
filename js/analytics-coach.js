@@ -646,13 +646,153 @@ function buildLocalTacticalCoachReport() {
     ].join('\n');
 }
 
+function renderMarkdownSafe(mdText) {
+    if (!mdText) return '';
+    const lines = String(mdText).split(/\r?\n/);
+    const htmlParts = [];
+    let inList = null; // 'ul' | 'ol'
+    let inTable = false;
+    let tableHeaderDone = false;
+
+    function closeList() {
+        if (inList) {
+            htmlParts.push(inList === 'ul' ? '</ul>' : '</ol>');
+            inList = null;
+        }
+    }
+    function closeTable() {
+        if (inTable) {
+            htmlParts.push('</tbody></table></div>');
+            inTable = false;
+            tableHeaderDone = false;
+        }
+    }
+
+    function escapeHtml(str) {
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/\x27/g, '&#39;');
+    }
+
+    function formatInline(str) {
+        return str
+            .replace(/\*\*(.*?)\*\*/g, '<strong class="text-emerald-300 font-semibold">$1</strong>')
+            .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-mono text-[10.5px] border border-slate-700/50">$1</code>')
+            .replace(/(^|[^\*])\*([^\*]+)\*([^\*]|$)/g, '$1<em class="text-slate-300 italic">$2</em>$3');
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+        const rawLine = lines[i];
+        const trimmed = rawLine.trim();
+
+        if (!trimmed) {
+            closeList();
+            closeTable();
+            continue;
+        }
+
+        // Table row
+        if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+            closeList();
+            // Separator row e.g. |---|---|
+            if (/^\|(\s*:?-+:?\s*\|)+$/.test(trimmed)) {
+                tableHeaderDone = true;
+                continue;
+            }
+            const rawCells = trimmed.slice(1, -1).split('|').map(c => c.trim());
+            const cells = rawCells.map(c => formatInline(escapeHtml(c)));
+
+            if (!inTable) {
+                inTable = true;
+                tableHeaderDone = false;
+                htmlParts.push('<div class="overflow-x-auto my-3 rounded-lg border border-slate-800"><table class="w-full text-[11px] border-collapse bg-slate-900/60">');
+                htmlParts.push('<thead><tr class="bg-slate-800/80 border-b border-slate-700/60">');
+                cells.forEach(c => htmlParts.push(`<th class="text-emerald-300 font-semibold p-2 text-left border border-slate-700/50">${c}</th>`));
+                htmlParts.push('</tr></thead><tbody>');
+            } else if (!tableHeaderDone) {
+                htmlParts.push('<tr class="bg-slate-800/80 border-b border-slate-700/60">');
+                cells.forEach(c => htmlParts.push(`<th class="text-emerald-300 font-semibold p-2 text-left border border-slate-700/50">${c}</th>`));
+                htmlParts.push('</tr>');
+            } else {
+                htmlParts.push('<tr class="border-b border-slate-800/60 hover:bg-slate-800/30">');
+                cells.forEach(c => htmlParts.push(`<td class="p-2 border border-slate-800 text-slate-200">${c}</td>`));
+                htmlParts.push('</tr>');
+            }
+            continue;
+        } else {
+            closeTable();
+        }
+
+        // Horizontal line
+        if (/^---+$|^===+$/.test(trimmed)) {
+            closeList();
+            htmlParts.push('<hr class="border-slate-800 my-3" />');
+            continue;
+        }
+
+        // Headings
+        const hMatch = trimmed.match(/^(#{1,4})\s+(.*)$/);
+        if (hMatch) {
+            closeList();
+            const level = hMatch[1].length;
+            const text = formatInline(escapeHtml(hMatch[2]));
+            if (level === 1) {
+                htmlParts.push(`<h2 class="text-base font-bold text-white mt-4 mb-2 pb-1 border-b border-slate-700">${text}</h2>`);
+            } else if (level === 2) {
+                htmlParts.push(`<h3 class="text-sm font-bold text-emerald-300 mt-4 mb-2 pb-1 border-b border-slate-800/80 flex items-center gap-1.5">${text}</h3>`);
+            } else if (level === 3) {
+                htmlParts.push(`<h4 class="text-xs font-bold text-cyan-300 mt-3 mb-1 flex items-center gap-1.5">${text}</h4>`);
+            } else {
+                htmlParts.push(`<h5 class="text-xs font-bold text-slate-300 mt-2 mb-1">${text}</h5>`);
+            }
+            continue;
+        }
+
+        // Unordered list
+        const ulMatch = trimmed.match(/^[\*\-]\s+(.*)$/);
+        if (ulMatch) {
+            if (inList !== 'ul') {
+                closeList();
+                inList = 'ul';
+                htmlParts.push('<ul class="space-y-1.5 my-2 pl-1">');
+            }
+            const itemContent = formatInline(escapeHtml(ulMatch[1]));
+            htmlParts.push(`<li class="flex items-start gap-2 text-slate-200"><span class="text-emerald-400 font-bold select-none">•</span><span>${itemContent}</span></li>`);
+            continue;
+        }
+
+        // Ordered list
+        const olMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+        if (olMatch) {
+            if (inList !== 'ol') {
+                closeList();
+                inList = 'ol';
+                htmlParts.push('<ol class="space-y-1 my-2 pl-4 list-decimal text-slate-200">');
+            }
+            const itemContent = formatInline(escapeHtml(olMatch[2]));
+            htmlParts.push(`<li class="pl-1">${itemContent}</li>`);
+            continue;
+        }
+
+        closeList();
+        // Regular paragraph line
+        const pText = formatInline(escapeHtml(trimmed));
+        htmlParts.push(`<p class="my-1.5 text-slate-200 leading-relaxed">${pText}</p>`);
+    }
+
+    closeList();
+    closeTable();
+    return htmlParts.join('');
+}
+
 function renderCoachPreviewStandby() {
     const outputBox = document.getElementById('aiCoachOutput');
     if (!outputBox) return;
     const localReport = buildLocalTacticalCoachReport();
-    const formatted = localReport
-        .replace(/\*\*(.*?)\*\*/g, '<strong class="text-emerald-300">$1</strong>')
-        .replace(/\n/g, '<br>');
+    const formatted = renderMarkdownSafe(localReport);
 
     outputBox.innerHTML = `
         <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3 text-xs leading-relaxed">
@@ -686,9 +826,7 @@ async function generateAICoachAdvice(focusTopic = 'full', userTriggered = false)
 
     const snapshotKey = `${scoreboard.scoreA}-${scoreboard.scoreB}-${maxRecordedSpeed}-${shotHistory.length}-${scoreboard.pointLog?.length || 0}-${focusTopic}`;
     if (snapshotKey === lastAnalyzedSnapshotKey && latestAICoachReportText) {
-        const cachedHtml = latestAICoachReportText
-            .replace(/\*\*(.*?)\*\*/g, '<strong class="text-emerald-300">$1</strong>')
-            .replace(/\n/g, '<br>');
+        const cachedHtml = renderMarkdownSafe(latestAICoachReportText);
         outputBox.innerHTML = `
             <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 space-y-3 text-xs leading-relaxed">
                 <div class="flex items-center justify-between border-b border-slate-800 pb-2">
@@ -743,9 +881,7 @@ async function generateAICoachAdvice(focusTopic = 'full', userTriggered = false)
         latestAICoachReportText = finalReportText;
         lastAnalyzedSnapshotKey = snapshotKey;
 
-        const formattedHtml = finalReportText
-            .replace(/\*\*(.*?)\*\*/g, '<strong class="text-emerald-300">$1</strong>')
-            .replace(/\n/g, '<br>');
+        const formattedHtml = renderMarkdownSafe(finalReportText);
 
         outputBox.innerHTML = `
             <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 space-y-3 text-xs leading-relaxed">
@@ -1331,7 +1467,7 @@ function renderSavedMatchesList() {
             ? `<i class="ph-fill ph-cloud-check text-cyan-400 text-xs shrink-0" title="ซิงค์บทวิเคราะห์บน Supabase Cloud แล้ว"></i>`
             : `<i class="ph-bold ph-device-mobile text-slate-500 text-xs shrink-0" title="บันทึกในเครื่อง"></i>`;
         const aiSnippet = m.aiAnalysisText || (m.playersSummary?.[0]?.aiAnalysisText) || '';
-        const cleanSnippet = aiSnippet.replace(/\*\*/g, '').slice(0, 140);
+        const cleanSnippet = aiSnippet.replace(/[#*`|\-_]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
         return `
         <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 space-y-1.5">
             <div class="flex items-center justify-between gap-2">
