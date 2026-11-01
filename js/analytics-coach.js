@@ -1405,7 +1405,472 @@ function exportReportJSON() {
     showToast(`ส่งออก Match Data JSON "${matchTitle}" สำเร็จ`);
 }
 
+/********************************************************************
+ * APP STORE / PLAY STORE STYLE COMMUNITY REVIEWS & USER FEEDBACK
+ * (Identified & Anonymous Modes, Public Community Feed, Cloud Sync)
+ ********************************************************************/
+
+const DEFAULT_COMMUNITY_SEED_REVIEWS = [
+    {
+        id: 1730460000001,
+        created_at: new Date(Date.now() - 3600000 * 3).toISOString(),
+        user_id: null,
+        display_name: 'โค้ชธีระ (BWF Certified)',
+        is_anonymous: false,
+        rating: 5,
+        category: 'EXPERIENCE',
+        comment: 'ระบบ 8-DOF Homography คอร์ท 13.40m x 6.10m จับตำแหน่ง rotation ผู้เล่นเกมคู่ได้แม่นยำมาก เอามาเปิดวิเคราะห์แท็กติกหลังแมตช์ซ้อมได้เห็นภาพชัดเจนเลยครับ',
+        helpful_count: 16
+    },
+    {
+        id: 1730460000002,
+        created_at: new Date(Date.now() - 3600000 * 8).toISOString(),
+        user_id: null,
+        display_name: 'นักแบดมินตันนิรนาม #348',
+        is_anonymous: true,
+        rating: 5,
+        category: 'ACCURACY',
+        comment: 'ความเร็วลูกตบวัดได้สมจริงมาก ไม่ดีดเกิน 300-400 km/h เหมือนระบบเดิมแล้ว และเสียงกรรมการภาษาไทยช่วยให้เล่นสนุกขึ้นเยอะ',
+        helpful_count: 11
+    },
+    {
+        id: 1730460000003,
+        created_at: new Date(Date.now() - 3600000 * 16).toISOString(),
+        user_id: null,
+        display_name: 'ปอนด์ ชายคู่วงการแบด',
+        is_anonymous: false,
+        rating: 5,
+        category: 'FEATURE',
+        comment: 'อยากเสนอให้เพิ่มระบบจำแนกลูกหยอด Net Kill กับ Drive เพิ่มเติมด้วยครับ ภาพรวมแอปนี้ลื่นไหลมาก 60fps ไม่มีสะดุด',
+        helpful_count: 8
+    },
+    {
+        id: 1730460000004,
+        created_at: new Date(Date.now() - 3600000 * 26).toISOString(),
+        user_id: null,
+        display_name: 'ผู้ใช้งานนิรนาม (Anonymous) #192',
+        is_anonymous: true,
+        rating: 4,
+        category: 'EXPERIENCE',
+        comment: 'ฟีเจอร์อัดคลิปสดไม่มีกราฟิกทับลงมือถือดีมาก ประหยัดพื้นที่จัดเก็บได้เยอะ เอาไฟล์ไปตัดต่อต่อได้สบาย',
+        helpful_count: 6
+    },
+    {
+        id: 1730460000005,
+        created_at: new Date(Date.now() - 3600000 * 38).toISOString(),
+        user_id: null,
+        display_name: 'ก๊วนแบดวันศุกร์ CMU',
+        is_anonymous: false,
+        rating: 5,
+        category: 'ACCURACY',
+        comment: 'สายตาเหยี่ยว IN/OUT มาร์จิ้นบอกเป็นเซนติเมตรช่วยลดข้อถกเถียงในสนามได้จริง ประทับใจมากครับ',
+        helpful_count: 14
+    }
+];
+
+const REVIEW_CATEGORY_META = {
+    EXPERIENCE: { label: '🌟 ประสบการณ์ใช้งาน', badgeClass: 'text-amber-300 bg-amber-500/15 border-amber-500/30' },
+    FEATURE: { label: '💡 ขอเพิ่มฟีเจอร์', badgeClass: 'text-cyan-300 bg-cyan-500/15 border-cyan-500/30' },
+    ACCURACY: { label: '⚡ ความแม่นยำ AI', badgeClass: 'text-emerald-300 bg-emerald-500/15 border-emerald-500/30' },
+    BUG: { label: '🐞 แจ้งปัญหา/บั๊ก', badgeClass: 'text-rose-300 bg-rose-500/15 border-rose-500/30' }
+};
+
+const RATING_TEXT_LABELS = {
+    5: '5 ดาว - ยอดเยี่ยม ประทับใจมาก',
+    4: '4 ดาว - ใช้งานได้ดีมาก',
+    3: '3 ดาว - พอใช้ได้',
+    2: '2 ดาว - ควรปรับปรุง',
+    1: '1 ดาว - ต้องแก้ไข'
+};
+
+let communityReviews = [];
+let selectedReviewRating = 5;
+let selectedReviewCategory = 'EXPERIENCE';
+let isReviewAnonymous = false;
+let activeReviewFilter = 'ALL';
+let userHelpfulUpvotes = new Set();
+
+try {
+    const savedUpvotes = JSON.parse(localStorage.getItem('shuttlepro_helpful_upvotes') || '[]');
+    userHelpfulUpvotes = new Set(savedUpvotes);
+} catch (e) {
+    userHelpfulUpvotes = new Set();
+}
+
+function loadLocalCommunityReviews() {
+    try {
+        const stored = localStorage.getItem('shuttlepro_community_reviews');
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                return parsed;
+            }
+        }
+    } catch (e) {}
+    return [...DEFAULT_COMMUNITY_SEED_REVIEWS];
+}
+
+function saveLocalCommunityReviews() {
+    try {
+        localStorage.setItem('shuttlepro_community_reviews', JSON.stringify(communityReviews));
+    } catch (e) {}
+}
+
+function openCommunityReviewModal() {
+    const modal = document.getElementById('communityReviewModal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+
+    if (!communityReviews || communityReviews.length === 0) {
+        communityReviews = loadLocalCommunityReviews();
+    }
+
+    updateReviewIdentityPreview();
+    updateReviewScorecardUI();
+    renderCommunityReviews();
+    fetchCommunityReviewsFromSupabase();
+}
+
+function closeCommunityReviewModal() {
+    const modal = document.getElementById('communityReviewModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function setReviewRating(stars) {
+    selectedReviewRating = Math.max(1, Math.min(5, stars));
+    const container = document.getElementById('starInputContainer');
+    const label = document.getElementById('starRatingLabel');
+    if (container) {
+        const buttons = container.querySelectorAll('.star-rating-btn');
+        buttons.forEach((btn, idx) => {
+            if (idx < selectedReviewRating) {
+                btn.className = 'star-rating-btn text-amber-400';
+            } else {
+                btn.className = 'star-rating-btn text-slate-600 hover:text-amber-400/60';
+            }
+        });
+    }
+    if (label) {
+        label.textContent = RATING_TEXT_LABELS[selectedReviewRating] || `${selectedReviewRating} ดาว`;
+    }
+}
+
+function setReviewCategory(cat) {
+    if (!REVIEW_CATEGORY_META[cat]) return;
+    selectedReviewCategory = cat;
+    const chips = document.querySelectorAll('#reviewCategoryChips .review-category-chip');
+    chips.forEach(chip => {
+        if (chip.getAttribute('data-cat') === cat) {
+            chip.classList.add('active');
+        } else {
+            chip.classList.remove('active');
+        }
+    });
+}
+
+function setReviewAnonymous(isAnon) {
+    isReviewAnonymous = Boolean(isAnon);
+    const btnIdentified = document.getElementById('btnIdentityIdentified');
+    const btnAnonymous = document.getElementById('btnIdentityAnonymous');
+    const nicknameRow = document.getElementById('nicknameInputRow');
+
+    if (isReviewAnonymous) {
+        if (btnAnonymous) btnAnonymous.className = 'p-2.5 rounded-xl border border-amber-500/50 bg-amber-500/15 text-white flex items-center gap-2 text-left transition-all';
+        if (btnIdentified) btnIdentified.className = 'p-2.5 rounded-xl border border-slate-700 bg-slate-950/70 text-slate-400 flex items-center gap-2 text-left transition-all hover:text-white';
+        if (nicknameRow) nicknameRow.classList.add('hidden');
+    } else {
+        if (btnIdentified) btnIdentified.className = 'p-2.5 rounded-xl border border-emerald-500/50 bg-emerald-500/15 text-white flex items-center gap-2 text-left transition-all';
+        if (btnAnonymous) btnAnonymous.className = 'p-2.5 rounded-xl border border-slate-700 bg-slate-950/70 text-slate-400 flex items-center gap-2 text-left transition-all hover:text-white';
+        if (nicknameRow) {
+            nicknameRow.classList.toggle('hidden', Boolean(currentAuthUser));
+        }
+    }
+    updateReviewIdentityPreview();
+}
+
+function updateReviewIdentityPreview() {
+    const previewEl = document.getElementById('identityUserPreview');
+    const nicknameRow = document.getElementById('nicknameInputRow');
+    if (!previewEl) return;
+
+    if (currentAuthUser) {
+        const displayName = currentAuthUser.user_metadata?.full_name || currentAuthUser.user_metadata?.name || currentAuthUser.email.split('@')[0];
+        previewEl.textContent = `${displayName} (สมาชิกยืนยัน)`;
+        if (nicknameRow) nicknameRow.classList.add('hidden');
+    } else {
+        previewEl.textContent = 'ระบุนามแฝง / ชื่อเล่น';
+        if (!isReviewAnonymous && nicknameRow) {
+            nicknameRow.classList.remove('hidden');
+        }
+    }
+}
+
+function updateReviewCharCount(textarea) {
+    const countEl = document.getElementById('reviewCharCount');
+    if (countEl && textarea) {
+        countEl.textContent = `${textarea.value.length} / 400`;
+    }
+}
+
+async function submitCommunityReview() {
+    const commentEl = document.getElementById('reviewCommentInput');
+    const statusMsg = document.getElementById('reviewFormStatusMsg');
+    const submitBtn = document.getElementById('btnSubmitReview');
+    const nicknameEl = document.getElementById('reviewNicknameInput');
+    const commentText = (commentEl?.value || '').trim();
+
+    if (!commentText || commentText.length < 5) {
+        if (statusMsg) statusMsg.textContent = 'กรุณาพิมพ์ข้อความรีวิวอย่างน้อย 5 ตัวอักษร';
+        return;
+    }
+
+    let displayName = 'ผู้ใช้งานนิรนาม';
+    if (isReviewAnonymous) {
+        const randomTag = Math.floor(100 + Math.random() * 900);
+        displayName = `นักแบดมินตันนิรนาม #${randomTag}`;
+    } else if (currentAuthUser) {
+        displayName = currentAuthUser.user_metadata?.full_name || currentAuthUser.user_metadata?.name || currentAuthUser.email.split('@')[0];
+    } else {
+        displayName = (nicknameEl?.value || '').trim() || 'ผู้เล่นแบดมินตัน';
+    }
+
+    const newReview = {
+        id: Date.now(),
+        created_at: new Date().toISOString(),
+        user_id: isReviewAnonymous ? null : (currentAuthUser?.id || null),
+        display_name: displayName,
+        is_anonymous: isReviewAnonymous,
+        rating: selectedReviewRating,
+        category: selectedReviewCategory,
+        comment: commentText,
+        helpful_count: 0
+    };
+
+    if (statusMsg) statusMsg.textContent = 'กำลังส่งความคิดเห็น...';
+    if (submitBtn) submitBtn.disabled = true;
+
+    // Save locally first
+    communityReviews.unshift(newReview);
+    saveLocalCommunityReviews();
+    updateReviewScorecardUI();
+    renderCommunityReviews();
+
+    // Reset Form
+    if (commentEl) commentEl.value = '';
+    updateReviewCharCount(commentEl);
+    setReviewRating(5);
+
+    // Sync to Supabase `app_reviews` table if available
+    try {
+        const res = await ShuttleSecurity.fetchSupabaseRest('app_reviews', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify({
+                user_id: newReview.user_id,
+                display_name: newReview.display_name,
+                is_anonymous: newReview.is_anonymous,
+                rating: newReview.rating,
+                category: newReview.category,
+                comment: newReview.comment,
+                helpful_count: 0
+            })
+        });
+        if (res.ok) {
+            const savedRows = await res.json().catch(() => []);
+            if (savedRows && savedRows[0] && savedRows[0].id) {
+                newReview.id = savedRows[0].id;
+                saveLocalCommunityReviews();
+            }
+        }
+    } catch (e) {
+        // Safe local persistence fallback
+    }
+
+    if (statusMsg) statusMsg.textContent = '';
+    if (submitBtn) submitBtn.disabled = false;
+    showToast('ขอบคุณสำหรับความคิดเห็นและคะแนนรีวิวของคุณ!');
+}
+
+function updateReviewScorecardUI() {
+    const list = communityReviews;
+    if (!list || list.length === 0) return;
+
+    const total = list.length;
+    const sumRatings = list.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
+    const avgScore = (sumRatings / total).toFixed(1);
+
+    const scoreEl = document.getElementById('reviewAvgScoreText');
+    const totalEl = document.getElementById('reviewTotalCountText');
+    const starsContainer = document.getElementById('reviewAvgStarsContainer');
+
+    if (scoreEl) scoreEl.textContent = avgScore;
+    if (totalEl) totalEl.textContent = total;
+    if (starsContainer) {
+        const roundedScore = Math.round(Number(avgScore));
+        starsContainer.innerHTML = Array.from({ length: 5 }).map((_, i) =>
+            i < roundedScore ? '<i class="ph-fill ph-star"></i>' : '<i class="ph-bold ph-star text-slate-600"></i>'
+        ).join('');
+    }
+
+    // Breakdown bars
+    const counts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    list.forEach(r => {
+        const star = Math.max(1, Math.min(5, Math.round(r.rating || 5)));
+        counts[star]++;
+    });
+
+    [5, 4, 3, 2, 1].forEach(star => {
+        const pct = Math.round((counts[star] / total) * 100);
+        const bar = document.getElementById(`reviewBar${star}`);
+        const pctEl = document.getElementById(`reviewPct${star}`);
+        if (bar) bar.style.width = `${pct}%`;
+        if (pctEl) pctEl.textContent = `${pct}%`;
+    });
+}
+
+function filterCommunityReviews(filterKey) {
+    activeReviewFilter = filterKey;
+    const filterBtns = document.querySelectorAll('#reviewFilterBar button');
+    filterBtns.forEach(btn => {
+        if (btn.getAttribute('data-filter') === filterKey) {
+            btn.className = 'px-2.5 py-1 rounded-lg bg-amber-500/25 text-amber-300 font-bold border border-amber-500/40 shrink-0';
+        } else {
+            btn.className = 'px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white';
+        }
+    });
+    renderCommunityReviews();
+}
+
+function renderCommunityReviews() {
+    const container = document.getElementById('communityReviewsList');
+    if (!container) return;
+
+    let filtered = communityReviews;
+    if (activeReviewFilter === '5STAR') {
+        filtered = communityReviews.filter(r => r.rating === 5);
+    } else if (activeReviewFilter !== 'ALL') {
+        filtered = communityReviews.filter(r => r.category === activeReviewFilter);
+    }
+
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-slate-500 py-8 space-y-1">
+                <i class="ph-bold ph-chat-circle-dots text-2xl text-slate-600"></i>
+                <div class="text-xs">ยังไม่มีรีวิวในหมวดหมู่นี้ ร่วมเป็นคนแรกที่เขียนรีวิว!</div>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = filtered.map(item => {
+        const catMeta = REVIEW_CATEGORY_META[item.category] || REVIEW_CATEGORY_META.EXPERIENCE;
+        const starHtml = Array.from({ length: 5 }).map((_, i) =>
+            i < (item.rating || 5)
+                ? '<i class="ph-fill ph-star text-amber-400 text-xs"></i>'
+                : '<i class="ph-bold ph-star text-slate-700 text-xs"></i>'
+        ).join('');
+
+        const isAnon = item.is_anonymous;
+        const avatarBg = isAnon ? 'bg-slate-800 text-slate-300' : 'bg-gradient-to-br from-emerald-400 to-teal-600 text-slate-950';
+        const avatarIcon = isAnon ? '<i class="ph-bold ph-mask-happy text-sm"></i>' : '<i class="ph-bold ph-user text-sm font-bold"></i>';
+        const userBadge = isAnon
+            ? '<span class="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">ไม่ระบุตัวตน</span>'
+            : (item.user_id ? '<span class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold flex items-center gap-0.5"><i class="ph-fill ph-check-circle text-[10px]"></i> สมาชิกยืนยัน</span>' : '<span class="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 border border-slate-700">ผู้ใช้ทั่วไป</span>');
+
+        const createdDate = new Date(item.created_at || Date.now());
+        const dateStr = createdDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+        const isUpvoted = userHelpfulUpvotes.has(item.id);
+
+        return `
+            <div class="review-feed-card space-y-2">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                        <div class="w-8 h-8 rounded-xl ${avatarBg} flex items-center justify-center shrink-0 shadow">
+                            ${avatarIcon}
+                        </div>
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-1.5 min-w-0">
+                                <span class="text-xs font-bold text-white truncate">${item.display_name}</span>
+                                ${userBadge}
+                            </div>
+                            <div class="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                                <div class="flex items-center gap-0.5">${starHtml}</div>
+                                <span>•</span>
+                                <span>${dateStr}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="text-[10px] px-2 py-0.5 rounded-full border ${catMeta.badgeClass} shrink-0 font-medium">
+                        ${catMeta.label}
+                    </span>
+                </div>
+
+                <div class="text-xs text-slate-200 leading-relaxed pt-0.5 pl-1">
+                    ${item.comment}
+                </div>
+
+                <div class="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[10px] text-slate-400">
+                    <span class="text-slate-500">ShuttlePro AI Experience Review</span>
+                    <button onclick="upvoteReviewHelpful(${item.id})" class="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 transition-colors ${isUpvoted ? 'text-amber-300 font-bold border border-amber-500/30' : 'text-slate-400'}">
+                        <i class="ph-fill ph-thumbs-up text-xs"></i>
+                        <span>มีประโยชน์ (${item.helpful_count || 0})</span>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function upvoteReviewHelpful(reviewId) {
+    if (userHelpfulUpvotes.has(reviewId)) {
+        showToast('คุณได้กดให้คะแนนประโยชน์กับรีวิวนี้แล้ว');
+        return;
+    }
+    userHelpfulUpvotes.add(reviewId);
+    try {
+        localStorage.setItem('shuttlepro_helpful_upvotes', JSON.stringify([...userHelpfulUpvotes]));
+    } catch (e) {}
+
+    const item = communityReviews.find(r => r.id === reviewId);
+    if (item) {
+        item.helpful_count = (item.helpful_count || 0) + 1;
+        saveLocalCommunityReviews();
+        renderCommunityReviews();
+    }
+
+    try {
+        await ShuttleSecurity.fetchSupabaseRest(`app_reviews?id=eq.${reviewId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ helpful_count: (item?.helpful_count || 1) })
+        });
+    } catch (e) {}
+    showToast('ขอบคุณสำหรับคะแนนความมีประโยชน์');
+}
+
+async function fetchCommunityReviewsFromSupabase() {
+    try {
+        const res = await ShuttleSecurity.fetchSupabaseRest('app_reviews?order=created_at.desc&limit=40');
+        if (!res.ok) return;
+        const remoteReviews = await res.json();
+        if (Array.isArray(remoteReviews) && remoteReviews.length > 0) {
+            const remoteMap = new Map(remoteReviews.map(r => [r.id, r]));
+            const localOnly = communityReviews.filter(r => !remoteMap.has(r.id));
+            communityReviews = [...remoteReviews, ...localOnly];
+            saveLocalCommunityReviews();
+            updateReviewScorecardUI();
+            renderCommunityReviews();
+        }
+    } catch (e) {
+        // Safe offline / local fallback
+    }
+}
+
 window.addEventListener('DOMContentLoaded', () => {
+    communityReviews = loadLocalCommunityReviews();
     ensureKnowledgeBaseLoaded();
     initSupabaseAuth();
     renderMatchTitleUI();

@@ -304,3 +304,43 @@ canvas {
 ::-webkit-scrollbar-thumb:hover {
     background: #10b981;
 }
+
+/* App Store / Play Store Style Reviews & Community Feedback */
+.star-rating-btn {
+    transition: transform 0.12s ease, color 0.15s ease;
+}
+.star-rating-btn:hover,
+.star-rating-btn:active {
+    transform: scale(1.22);
+}
+
+.review-category-chip {
+    padding: 5px 10px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(15, 23, 42, 0.6);
+    color: #94a3b8;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.review-category-chip.active {
+    background: rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.5);
+    color: #fde68a;
+    font-weight: 700;
+}
+
+.review-feed-card {
+    background: rgba(15, 23, 42, 0.78);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    padding: 14px;
+    transition: border-color 0.15s ease;
+}
+.review-feed-card:hover {
+    border-color: rgba(245, 158, 11, 0.25);
+}
