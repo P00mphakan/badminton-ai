@@ -25,6 +25,14 @@ let availableCameraLenses = [];
 let activeVideoDeviceId = null;
 let activeVideoTrack = null;
 let currentNativePixels = { width: 0, height: 0, fps: 60 };
+let calibPausedVideo = false;
+
+function getSafeVideoDuration() {
+    if (!webcamVideo || !isFinite(webcamVideo.duration) || webcamVideo.duration <= 0 || webcamVideo.duration > 36000) {
+        return 0;
+    }
+    return webcamVideo.duration;
+}
 
 function detectAutoPortraitState() {
     if ((isUploadedVideoActive || isWebcamActive) && webcamVideo.videoWidth > 0 && webcamVideo.videoHeight > 0) {
@@ -846,6 +854,9 @@ function toggleCourtCalibrationMode() {
     const label = document.getElementById('calibLabel');
     const floatSaveBtn = document.getElementById('floatingSaveCalibBtn');
     if (isCalibratingCourt) {
+        // Freeze the clip while dragging so the handles stay on the same frame
+        calibPausedVideo = isUploadedVideoActive && !webcamVideo.paused;
+        if (calibPausedVideo) webcamVideo.pause();
         if (icon) icon.className = 'ph-fill ph-check-fat text-emerald-400 text-lg shrink-0';
         if (label) label.textContent = 'บันทึกเส้นสนาม';
         if (floatSaveBtn) floatSaveBtn.classList.remove('hidden');
@@ -855,6 +866,10 @@ function toggleCourtCalibrationMode() {
             ShuttleCV.updateHomography();
         }
         ShuttleCV.setCourtLocked(true);
+        ShuttleCV.setCourtTrusted(true);
+        if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
+        if (calibPausedVideo && isUploadedVideoActive && !isTrackingPaused) webcamVideo.play();
+        calibPausedVideo = false;
         if (icon) icon.className = 'ph-bold ph-crosshair text-amber-300 text-lg shrink-0';
         if (label) label.textContent = 'ตั้งเส้นสนาม';
         if (floatSaveBtn) floatSaveBtn.classList.add('hidden');
@@ -1820,6 +1835,8 @@ function toggleTrackingPause() {
 }
 
 function animateLoop() {
+    // Schedule the next frame FIRST so a single rendering error can never kill the loop (was freezing the screen)
+    requestAnimationFrame(animateLoop);
     frameCount++;
     const now = performance.now();
     if (now - lastFpsUpdate >= 1000) {
@@ -1830,18 +1847,25 @@ function animateLoop() {
         if (fpsEl) fpsEl.textContent = currentFps;
     }
 
-    if (isUploadedVideoActive && webcamVideo.duration) {
-        const pct = (webcamVideo.currentTime / webcamVideo.duration) * 100;
-        const slider = document.getElementById('videoSeekSlider');
-        const curTimeEl = document.getElementById('videoCurTime');
-        if (slider) slider.value = pct;
-        if (curTimeEl) curTimeEl.textContent = formatTimeSec(webcamVideo.currentTime);
-    }
+    try {
+        const safeDur = getSafeVideoDuration();
+        if (isUploadedVideoActive) {
+            const slider = document.getElementById('videoSeekSlider');
+            const curTimeEl = document.getElementById('videoCurTime');
+            if (slider && safeDur > 0) slider.value = (webcamVideo.currentTime / safeDur) * 100;
+            if (curTimeEl) curTimeEl.textContent = formatTimeSec(webcamVideo.currentTime);
+        }
 
-    if (activeTab === 'live') {
-        renderLiveScene();
+        if (typeof expireStaleCallChip === 'function') expireStaleCallChip();
+
+        if (activeTab === 'live') {
+            renderLiveScene();
+        }
+    } catch (err) {
+        console.error('[animateLoop] frame render error (loop kept alive):', err);
+        try { liveCtx.restore(); } catch (e) {}
+        liveCtx.setTransform(1, 0, 0, 1, 0, 0);
     }
-    requestAnimationFrame(animateLoop);
 }
 
 setInterval(() => {
