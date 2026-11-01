@@ -306,11 +306,15 @@
                         </div>
                     </div>
 
-                    <!-- Main 5-button dock -->
-                    <div class="hud-glass rounded-[22px] px-1 py-1.5 grid grid-cols-5 pointer-events-auto max-w-md mx-auto">
+                    <!-- Main 6-button dock (includes Raw Video Recorder) -->
+                    <div class="hud-glass rounded-[22px] px-1 py-1.5 grid grid-cols-6 pointer-events-auto max-w-md mx-auto">
                         <button id="btnToggleCamera" onclick="toggleWebcam()" class="dock-btn">
                             <span class="dock-icon bg-emerald-500 text-slate-950"><i class="ph-bold ph-camera"></i></span>
                             <span id="cameraBtnText" class="dock-label">กล้องสด</span>
+                        </button>
+                        <button id="btnRecordRawVideo" onclick="toggleRawVideoRecording()" class="dock-btn">
+                            <span id="recRawIconWrap" class="dock-icon"><i id="recRawIcon" class="ph-fill ph-record text-rose-400"></i></span>
+                            <span id="recRawLabel" class="dock-label">อัดคลิป</span>
                         </button>
                         <button onclick="triggerVideoUploadSelect()" class="dock-btn">
                             <span class="dock-icon"><i class="ph-bold ph-upload-simple text-cyan-300"></i></span>
@@ -367,10 +371,10 @@
                         <button onclick="undoLastPoint()" class="sheet-btn !px-3"><i class="ph-bold ph-arrow-u-up-left text-amber-300"></i><span>Undo</span></button>
                     </div>
 
-                    <div class="sheet-title">สนาม &amp; กรรมการ AI</div>
+                    <div class="sheet-title">สนาม &amp; กรรมการ</div>
                     <div class="grid grid-cols-4 gap-2 mb-4">
                         <button onclick="toggleMoreSheet(); triggerAutoSnapCourtCV()" class="sheet-btn"><i class="ph-bold ph-scan text-emerald-300"></i><span>สแกนเส้น</span></button>
-                        <button onclick="toggleMoreSheet(); verifyFrameWithGeminiAI()" class="sheet-btn"><i class="ph-fill ph-sparkle text-purple-300"></i><span>AI Vision</span></button>
+                        <button onclick="toggleMoreSheet(); toggleRawVideoRecording()" class="sheet-btn"><i class="ph-fill ph-record text-rose-400"></i><span id="sheetRecRawLabel">อัดคลิปสด</span></button>
                         <button onclick="toggleMatchTypeSinglesDoubles()" class="sheet-btn"><i class="ph-bold ph-users text-cyan-300"></i><span id="btnMatchFormat">คู่ 6.10m</span></button>
                         <button id="btnVoiceReferee" onclick="toggleVoiceReferee()" class="sheet-btn"><i class="ph-fill ph-speaker-high text-emerald-300"></i><span>เสียงขาน</span></button>
                     </div>
@@ -546,11 +550,12 @@
             <div class="glass-panel rounded-2xl p-5 space-y-4">
                 <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
                     <div>
-                        <h2 class="text-base font-bold text-white">วิเคราะห์แมตช์จริงด้วย Gemini Badminton Coach</h2>
-                        <p class="text-xs text-slate-400">ประมวลผลจากสกอร์จริง ความเร็วลูกตบ และระยะวิ่งที่ตรวจพบ</p>
+                        <h2 class="text-base font-bold text-white">วิเคราะห์แมตช์จริงหลังจบเกมด้วย AI Coach</h2>
+                        <p class="text-xs text-slate-400">ประหยัดโควตาอัจฉริยะ: วิเคราะห์เฉพาะที่หน้านี้เมื่อกดปุ่มสรุปผล และสลับโมเดล AI ที่พร้อมใช้งานให้อัตโนมัติ</p>
                     </div>
-                    <button onclick="generateAICoachAdvice('full')" class="px-3.5 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">
-                        วิเคราะห์ข้อมูลปัจจุบัน
+                    <button id="btnRunAICoach" onclick="generateAICoachAdvice('full', true)" class="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5">
+                        <i class="ph-fill ph-sparkle"></i>
+                        <span>วิเคราะห์ผลเกมนี้ด้วย AI</span>
                     </button>
                 </div>
                 <div id="aiCoachOutput" class="text-xs md:text-sm text-slate-200 leading-relaxed"></div>
@@ -580,12 +585,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261101f" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261101f"></script>
-    <script src="js/cv-court.js?v=20261101f"></script>
-    <script src="js/pose-tracker.js?v=20261101f"></script>
-    <script src="js/scoreboard.js?v=20261101f"></script>
-    <script src="js/live-view.js?v=20261101f"></script>
-    <script src="js/analytics-coach.js?v=20261101f"></script>
+    <script src="js/env.local.js?v=20261101g" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261101g"></script>
+    <script src="js/cv-court.js?v=20261101g"></script>
+    <script src="js/pose-tracker.js?v=20261101g"></script>
+    <script src="js/scoreboard.js?v=20261101g"></script>
+    <script src="js/live-view.js?v=20261101g"></script>
+    <script src="js/analytics-coach.js?v=20261101g"></script>
 </body>
 </html>

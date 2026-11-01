@@ -122,38 +122,63 @@ function resizeCanvases() {
 window.addEventListener('resize', resizeCanvases);
 window.addEventListener('orientationchange', () => setTimeout(resizeCanvases, 150));
 
+let rawMediaRecorder = null;
+let rawRecordedChunks = [];
+let rawRecStartTime = 0;
+let rawRecTimerInterval = null;
+let isRecordingRawVideo = false;
+
 async function toggleWebcam() {
     const btnText = document.getElementById('cameraBtnText');
     if (isUploadedVideoActive) exitUploadedVideoMode();
 
     if (!isWebcamActive) {
         try {
-            // Standard sensor resolution: iOS Safari automatically rotates the video track to Portrait
-            // when the phone is held vertically (1080x1920) and Landscape when held horizontally (1920x1080).
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: { ideal: 'environment' },
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                    frameRate: { ideal: 60 }
-                },
-                audio: false
-            });
+            // Request both video and audio (with fallback to video-only if mic permission is declined)
+            let stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: 'environment' },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 60 }
+                    },
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+            } catch (micErr) {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: { ideal: 'environment' },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 60 }
+                    },
+                    audio: false
+                });
+            }
             webcamVideo.srcObject = stream;
+            webcamVideo.muted = true; // Prevent speaker feedback loop while recording mic audio
             webcamVideo.loop = false;
             await webcamVideo.play();
             isWebcamActive = true;
-            // Do NOT lock fake court overlay before a real court is detected or calibrated by the user
             ShuttleCV.setCourtLocked(false);
             if (btnText) btnText.textContent = 'ปิดกล้อง';
             initPoseDetectionModel();
             applyOrientationLayout();
             resizeCanvases();
-            showToast('เปิดกล้องสดแล้ว • เล็งไปที่คอร์ทจริงแล้วกด "ตั้งเส้น" หรือ "สแกนเส้น"');
+            showToast('เปิดกล้องสดพร้อมเสียงแล้ว • กด "อัดคลิป" เพื่อบันทึกวิดีโอต้นฉบับ (ไร้กราฟิกทับ)');
         } catch (err) {
             showToast('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตสิทธิ์กล้อง หรืออัปโหลดคลิปสนามจริง');
         }
     } else {
+        if (isRecordingRawVideo) {
+            stopRawVideoRecording();
+        }
         if (webcamVideo.srcObject) {
             webcamVideo.srcObject.getTracks().forEach(t => t.stop());
             webcamVideo.srcObject = null;
@@ -162,6 +187,141 @@ async function toggleWebcam() {
         if (btnText) btnText.textContent = 'กล้องสด';
         showToast('ปิดกล้องสดแล้ว');
     }
+}
+
+function getSupportedRecorderMimeType() {
+    const candidates = [
+        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+        'video/mp4',
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
+    ];
+    if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+    return candidates.find(type => MediaRecorder.isTypeSupported(type)) || '';
+}
+
+function updateRawRecordUI(recording) {
+    const iconWrap = document.getElementById('recRawIconWrap');
+    const icon = document.getElementById('recRawIcon');
+    const label = document.getElementById('recRawLabel');
+    const sheetLabel = document.getElementById('sheetRecRawLabel');
+    const topDot = document.getElementById('recDot');
+
+    if (recording) {
+        if (iconWrap) iconWrap.className = 'dock-icon bg-rose-500 text-white animate-pulse';
+        if (icon) icon.className = 'ph-fill ph-stop text-white';
+        if (label) label.textContent = '00:00';
+        if (sheetLabel) sheetLabel.textContent = 'หยุดอัดคลิป';
+        if (topDot) topDot.className = 'w-2 h-2 rounded-full bg-rose-500 animate-ping';
+    } else {
+        if (iconWrap) iconWrap.className = 'dock-icon';
+        if (icon) icon.className = 'ph-fill ph-record text-rose-400';
+        if (label) label.textContent = 'อัดคลิป';
+        if (sheetLabel) sheetLabel.textContent = 'อัดคลิปสด';
+        if (topDot) topDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+    }
+}
+
+async function toggleRawVideoRecording() {
+    if (isRecordingRawVideo) {
+        stopRawVideoRecording();
+        return;
+    }
+    if (!isWebcamActive || !webcamVideo.srcObject) {
+        showToast('กรุณากดปุ่ม "กล้องสด" ก่อนเริ่มอัดคลิปวิดีโอต้นฉบับ');
+        return;
+    }
+    if (typeof MediaRecorder === 'undefined') {
+        showToast('เบราว์เซอร์ของคุณไม่รองรับการอัดวิดีโอโดยตรง');
+        return;
+    }
+
+    try {
+        rawRecordedChunks = [];
+        const mimeType = getSupportedRecorderMimeType();
+        // Space-saving compressed bitrates: ~1.8 Mbps video + 64 kbps audio (~13 MB per minute, sharp 720p, zero graphic overlay)
+        const options = {
+            videoBitsPerSecond: 1800000,
+            audioBitsPerSecond: 64000
+        };
+        if (mimeType) options.mimeType = mimeType;
+
+        rawMediaRecorder = new MediaRecorder(webcamVideo.srcObject, options);
+        rawMediaRecorder.ondataavailable = (evt) => {
+            if (evt.data && evt.data.size > 0) {
+                rawRecordedChunks.push(evt.data);
+            }
+        };
+        rawMediaRecorder.onstop = () => {
+            finalizeAndSaveRawVideo(mimeType);
+        };
+
+        rawMediaRecorder.start(1000);
+        isRecordingRawVideo = true;
+        rawRecStartTime = Date.now();
+        updateRawRecordUI(true);
+
+        clearInterval(rawRecTimerInterval);
+        rawRecTimerInterval = setInterval(() => {
+            const elapsedSec = Math.floor((Date.now() - rawRecStartTime) / 1000);
+            const label = document.getElementById('recRawLabel');
+            if (label) label.textContent = formatTimeSec(elapsedSec);
+        }, 500);
+
+        showToast('เริ่มอัดวิดีโอต้นฉบับ (ภาพ+เสียง ไม่มีกราฟิกทับ บีบอัดขนาดประหยัดพื้นที่)');
+    } catch (err) {
+        console.error('MediaRecorder start error:', err);
+        showToast('ไม่สามารถเริ่มอัดวิดีโอได้บนอุปกรณ์นี้');
+    }
+}
+
+function stopRawVideoRecording() {
+    clearInterval(rawRecTimerInterval);
+    isRecordingRawVideo = false;
+    updateRawRecordUI(false);
+    if (rawMediaRecorder && rawMediaRecorder.state !== 'inactive') {
+        rawMediaRecorder.stop();
+    }
+}
+
+async function finalizeAndSaveRawVideo(mimeType) {
+    if (!rawRecordedChunks.length) return;
+    const isMp4 = (mimeType || '').includes('mp4');
+    const ext = isMp4 ? 'mp4' : 'webm';
+    const blobType = mimeType || (isMp4 ? 'video/mp4' : 'video/webm');
+    const blob = new Blob(rawRecordedChunks, { type: blobType });
+    rawRecordedChunks = [];
+
+    const sizeMB = (blob.size / (1024 * 1024)).toFixed(1);
+    const safeTitle = (matchTitle || 'badminton-raw').replace(/[^a-zA-Z0-9ก-๙_-]/g, '_');
+    const fileName = `${safeTitle}-${Date.now().toString().slice(-5)}.${ext}`;
+
+    // On iPhone/Android mobile browsers supporting Web Share API with files, offer native "Save Video" sheet
+    try {
+        const file = new File([blob], fileName, { type: blobType });
+        if (navigator.canShare && navigator.canShare({ files: [file] }) && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+            await navigator.share({
+                files: [file],
+                title: matchTitle || 'Badminton Raw Video',
+                text: `คลิปต้นฉบับ (${sizeMB} MB) ไม่มีกราฟิกทับ`
+            });
+            showToast(`บันทึกคลิปต้นฉบับ (${sizeMB} MB) ลงมือถือเรียบร้อย!`);
+            return;
+        }
+    } catch (shareErr) {
+        // If user dismissed share sheet or share failed, fall back to direct download link
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    showToast(`ดาวน์โหลดคลิปต้นฉบับ "${fileName}" (${sizeMB} MB) สำเร็จ!`);
 }
 
 function triggerVideoUploadSelect() {

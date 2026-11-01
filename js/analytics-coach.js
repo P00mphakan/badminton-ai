@@ -266,26 +266,37 @@ function setAnalyticsFilter(filter) {
     drawAnalyticsCourt();
 }
 
+// Multi-model automatic failover chain (prioritizes high-quota Lite & Gemma 4 models, skips exhausted models automatically)
 const GEMINI_FALLBACK_MODELS = [
+    'gemini-3.5-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3.1-flash-lite',
+    'gemma-4-31b-it',
+    'gemma-4-26b-a4b-it',
+    'gemini-2.5-flash-lite',
     'gemini-3.5-flash',
-    'gemini-flash-latest',
-    'gemini-3.6-flash'
+    'gemini-flash-latest'
 ];
+const exhaustedModelsUntil = {}; // { modelName: timestampMs }
+let lastAnalyzedSnapshotKey = '';
 
 async function callGeminiAPIWithFallback(parts, expectJson = false) {
-    let lastError = 'ไม่สามารถเชื่อมต่อ Gemini API ได้';
+    let lastError = 'ไม่สามารถเชื่อมต่อ AI ได้';
+    const now = Date.now();
+
     for (const modelName of GEMINI_FALLBACK_MODELS) {
+        if (exhaustedModelsUntil[modelName] && now < exhaustedModelsUntil[modelName]) {
+            continue; // Skip model currently in rate-limit cooldown
+        }
         try {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
-            const body = {
-                contents: [{ parts }],
-                generationConfig: {
-                    thinkingConfig: { thinkingBudget: 0 }
-                }
-            };
-            if (expectJson) {
-                body.generationConfig.responseMimeType = 'application/json';
+            const isGemma = modelName.startsWith('gemma-');
+            const body = { contents: [{ parts }] };
+            if (!isGemma) {
+                body.generationConfig = { thinkingConfig: { thinkingBudget: 0 } };
+                if (expectJson) body.generationConfig.responseMimeType = 'application/json';
             }
+
             const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -293,7 +304,14 @@ async function callGeminiAPIWithFallback(parts, expectJson = false) {
             });
             const data = await res.json();
             if (!res.ok) {
-                lastError = data?.error?.message || `HTTP ${res.status}`;
+                const msg = data?.error?.message || `HTTP ${res.status}`;
+                lastError = msg;
+                // If quota/rate-limit (429) or unavailable (404/503), mark cooldown and switch to next model immediately
+                if (res.status === 429 || msg.includes('quota') || msg.includes('Quota')) {
+                    exhaustedModelsUntil[modelName] = now + 15 * 60 * 1000;
+                } else if (res.status === 404) {
+                    exhaustedModelsUntil[modelName] = now + 24 * 60 * 60 * 1000;
+                }
                 continue;
             }
             const text = data?.candidates?.[0]?.content?.parts?.find(p => p.text)?.text || '';
@@ -305,93 +323,108 @@ async function callGeminiAPIWithFallback(parts, expectJson = false) {
     return { ok: false, error: lastError };
 }
 
-async function verifyFrameWithGeminiAI() {
-    const videoEl = document.getElementById('webcamVideo');
-    if ((!isWebcamActive && !isUploadedVideoActive) || !videoEl || videoEl.readyState < 2) {
-        showToast('กรุณาเปิดกล้องสดหรือเปิดคลิปวิดีโอเพื่อส่งภาพให้ AI ตรวจสอบ');
-        return;
-    }
+function buildLocalTacticalCoachReport() {
+    const pList = Object.values(players);
+    const teamADist = +(players.A1.distanceMeters + players.A2.distanceMeters).toFixed(1);
+    const teamBDist = +(players.B1.distanceMeters + players.B2.distanceMeters).toFixed(1);
+    const avgSmash = allSmashSpeeds.length > 0
+        ? Math.round(allSmashSpeeds.reduce((a, b) => a + b, 0) / allSmashSpeeds.length)
+        : 0;
+    const topRunner = [...pList].sort((a, b) => b.distanceMeters - a.distanceMeters)[0];
+    const topHitter = [...pList].sort((a, b) => b.shotsCount - a.shotsCount)[0];
 
-    showToast('กำลังส่งภาพเฟรมสนามจริงให้ Gemini Vision AI ตรวจสอบเส้นคอร์ท เน็ท และขานแต้ม...');
-    try {
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = 640;
-        tempCanvas.height = 360;
-        tempCanvas.getContext('2d').drawImage(videoEl, 0, 0, 640, 360);
-        const base64Jpeg = tempCanvas.toDataURL('image/jpeg', 0.82).split(',')[1];
+    const leadText = scoreboard.scoreA === scoreboard.scoreB
+        ? `สกอร์สูสีกันที่ ${scoreboard.scoreA}-${scoreboard.scoreB} แต้ม`
+        : (scoreboard.scoreA > scoreboard.scoreB
+            ? `ทีม A นำอยู่ ${scoreboard.scoreA}-${scoreboard.scoreB} แต้ม`
+            : `ทีม B นำอยู่ ${scoreboard.scoreB}-${scoreboard.scoreA} แต้ม`);
 
-        const prompt = `คุณคือกรรมการแบดมินตัน BWF AI วิเคราะห์ภาพสนามแบดมินตันนี้และตอบเป็น JSON เท่านั้น:
-{
-  "courtDetected": true หรือ false,
-  "tl": {"x": 0.0-1.0, "y": 0.0-1.0},
-  "tr": {"x": 0.0-1.0, "y": 0.0-1.0},
-  "br": {"x": 0.0-1.0, "y": 0.0-1.0},
-  "bl": {"x": 0.0-1.0, "y": 0.0-1.0},
-  "netY": 0.0-1.0,
-  "playersCount": จำนวนผู้เล่นในสนาม,
-  "refereeSummary": "สรุปสิ่งที่เห็นในสนาม ตำแหน่งผู้เล่น และคำแนะนำกรรมการสั้นๆ ภาษาไทย"
-}`;
-        const result = await callGeminiAPIWithFallback([
-            { text: prompt },
-            { inlineData: { mimeType: 'image/jpeg', data: base64Jpeg } }
-        ], true);
-
-        if (!result.ok) throw new Error(result.error);
-        const cleanedJson = result.text.replace(/```json|```/g, '').trim();
-        const parsed = JSON.parse(cleanedJson);
-
-        if (parsed.courtDetected && parsed.tl && parsed.tr && parsed.br && parsed.bl) {
-            ShuttleCV.setCorner('tl', parsed.tl.x, parsed.tl.y);
-            ShuttleCV.setCorner('tr', parsed.tr.x, parsed.tr.y);
-            ShuttleCV.setCorner('br', parsed.br.x, parsed.br.y);
-            ShuttleCV.setCorner('bl', parsed.bl.x, parsed.bl.y);
-            if (parsed.netY) {
-                ShuttleCV.setCorner('netL', parsed.tl.x * 0.6 + parsed.bl.x * 0.4, parsed.netY);
-                ShuttleCV.setCorner('netR', parsed.tr.x * 0.6 + parsed.br.x * 0.4, parsed.netY);
-            }
-            ShuttleCV.setCourtLocked(true);
-            showToast(`Gemini Vision (${result.model}) ล็อกพิกัดเส้นสนามสำเร็จ! ${parsed.refereeSummary || ''}`);
-        } else {
-            showToast(parsed.refereeSummary || 'Gemini Vision ไม่พบเส้นคอร์ทแบดมินตันที่ชัดเจนในเฟรมนี้');
-        }
-    } catch (e) {
-        showToast(`Gemini Vision Error: ${e.message || 'กรุณาตรวจสอบ API Key'}`);
-    }
+    return [
+        `**1. 📊 ภาพรวมรูปเกมและการเคลื่อนที่ (Footwork & Coverage)**`,
+        `- สถานการณ์ปัจจุบัน: ${leadText} (เซต ${scoreboard.setsA}-${scoreboard.setsB}) รูปแบบ ${isDoublesMatch ? 'ประเภทคู่ (6.10m)' : 'ประเภทเดี่ยว (5.18m)'}`,
+        `- ระยะวิ่งสะสม: ทีม A รวม ${teamADist} ม. vs ทีม B รวม ${teamBDist} ม. (${topRunner && topRunner.distanceMeters > 0 ? `${topRunner.name} เคลื่อนที่เยอะที่สุด ${topRunner.distanceMeters.toFixed(1)} ม.` : 'รอสะสมระยะวิ่งจากแรลลี่จริง'})`,
+        ``,
+        `**2. 🏸 วิเคราะห์เกมรุก-เกมรับ และจังหวะตบ (Shot Selection & Smash Power)**`,
+        `- ความเร็วลูกตบสูงสุดของเกม: **${maxRecordedSpeed} km/h** (โดย ${maxSpeedHolder}) • ค่าเฉลี่ยลูกตบ **${avgSmash} km/h** จากทั้งหมด ${allSmashSpeeds.length} ลูกตบ`,
+        `- ผู้เล่นที่ออกลูกมากที่สุด: ${topHitter && topHitter.shotsCount > 0 ? `${topHitter.name} (${topHitter.shotsCount} ลูก)` : 'ยังไม่มีจังหวะตีที่บันทึกไว้'}`,
+        ``,
+        `**3. 🎯 แผนกลยุทธ์แก้เกมหลังจบเกม**`,
+        `- **ทีม A:** เน้นวางลูกตัดหยอดสลับโยนลึกไปมุมหลังเพื่อดึงจังหวะ แล้วรอเข้าทำด้วยลูกตบเมื่อฝ่ายตรงข้ามงัดลูกสั้น`,
+        `- **ทีม B:** กระชับพื้นที่หน้าเน็ต บีบจังหวะดาดเร็ว (Drive) และยืนคุมโซนรับลูกตบคู่ขนานเส้นข้าง`
+    ].join('\n');
 }
 
-async function generateAICoachAdvice(focusTopic = 'full') {
+function renderCoachPreviewStandby() {
     const outputBox = document.getElementById('aiCoachOutput');
     if (!outputBox) return;
+    const localReport = buildLocalTacticalCoachReport();
+    const formatted = localReport
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="text-emerald-300">$1</strong>')
+        .replace(/\n/g, '<br>');
+
+    outputBox.innerHTML = `
+        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3 text-xs leading-relaxed">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                <span class="font-bold text-cyan-300 flex items-center gap-1.5">
+                    <i class="ph-fill ph-chart-polar"></i> สรุปสถิติแมตช์อัตโนมัติ (โหมดประหยัดโควตา AI)
+                </span>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">พร้อมเรียก AI หลังจบเกม</span>
+            </div>
+            <div class="text-slate-200">${formatted}</div>
+            <div class="pt-1 text-[11px] text-amber-300/90 flex items-center gap-1.5">
+                <i class="ph-fill ph-info"></i>
+                <span>เมื่อจบเกมแล้ว กดปุ่ม <b>"วิเคราะห์ผลเกมนี้ด้วย AI"</b> ด้านบนเพื่อใช้ AI วิเคราะห์เชิงลึก (ระบบจะสลับโมเดลที่พร้อมใช้งานให้อัตโนมัติ)</span>
+            </div>
+        </div>
+    `;
+}
+
+async function generateAICoachAdvice(focusTopic = 'full', userTriggered = false) {
+    const outputBox = document.getElementById('aiCoachOutput');
+    if (!outputBox) return;
+
+    // Only invoke external AI when the user explicitly clicks the button on the AI Coach tab (Tab 4)
+    if (!userTriggered) {
+        renderCoachPreviewStandby();
+        return;
+    }
 
     const statsSnapshot = Object.values(players).map(p =>
         `- ${p.name} (ทีม ${p.team}): วิ่งสะสม ${p.distanceMeters.toFixed(1)} ม., ความเร็ววิ่งสูงสุด ${p.maxSpeedKmh} km/h, ตบสูงสุด ${p.maxSmashKmh} km/h, ตบเฉลี่ย ${p.avgSmashKmh} km/h, ตีทั้งหมด ${p.shotsCount} ลูก`
     ).join('\n');
 
-    const recentShotsText = shotHistory.length > 0
-        ? shotHistory.slice(0, 8).map(s => `[${s.time}] ${s.player} (ทีม ${s.team}): ${s.type} ความเร็ว ${s.speed} km/h`).join('\n')
-        : 'ยังไม่มีประวัติช็อตในแรลลี่นี้ (สามารถวิเคราะห์แผนการเล่นเริ่มต้นและการยืนตำแหน่งคู่/เดี่ยวได้)';
-
-    if (!geminiApiKey) {
+    const snapshotKey = `${scoreboard.scoreA}-${scoreboard.scoreB}-${maxRecordedSpeed}-${shotHistory.length}-${focusTopic}`;
+    if (snapshotKey === lastAnalyzedSnapshotKey && latestAICoachReportText) {
+        const cachedHtml = latestAICoachReportText
+            .replace(/\*\*(.*?)\*\*/g, '<strong class="text-emerald-300">$1</strong>')
+            .replace(/\n/g, '<br>');
         outputBox.innerHTML = `
-            <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-2 text-xs">
-                <div class="font-bold text-emerald-400">สรุปสถิติจริงจากสนามปัจจุบัน (สกอร์ ${scoreboard.scoreA} - ${scoreboard.scoreB})</div>
-                <pre class="text-slate-300 whitespace-pre-wrap font-sans">${statsSnapshot}</pre>
-                <p class="text-amber-300 pt-2">💡 หากต้องการให้ Gemini AI วิเคราะห์เชิงลึกเพิ่มเติม กดปุ่มรูปกุญแจด้านบนเพื่อเชื่อมต่อ API Key ของคุณ</p>
+            <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 space-y-3 text-xs leading-relaxed">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span class="font-bold text-emerald-400 flex items-center gap-1.5">
+                        <i class="ph-fill ph-sparkle"></i> บทวิเคราะห์หลังจบเกมจาก AI Coach
+                    </span>
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono">Cached (ประหยัดโควตา)</span>
+                </div>
+                <div class="text-slate-200">${cachedHtml}</div>
             </div>
         `;
         return;
     }
 
+    const recentShotsText = shotHistory.length > 0
+        ? shotHistory.slice(0, 8).map(s => `[${s.time}] ${s.player} (ทีม ${s.team}): ${s.type} ความเร็ว ${s.speed} km/h`).join('\n')
+        : 'ยังไม่มีประวัติช็อตที่บันทึกไว้';
+
     outputBox.innerHTML = `
         <div class="py-8 text-center text-xs text-emerald-300 flex flex-col items-center gap-2">
             <i class="ph-bold ph-spinner animate-spin text-2xl text-emerald-400"></i>
-            <span>กำลังวิเคราะห์กลยุทธ์และสถิติสนามจริงด้วย Gemini AI Coach...</span>
+            <span>กำลังเลือกโมเดล AI ที่พร้อมใช้งานและวิเคราะห์สรุปผลเกม...</span>
         </div>
     `;
     try {
-        const prompt = `คุณคือโค้ชแบดมินตันระดับโลก (BWF Pro Coach) วิเคราะห์แมตช์ "${matchTitle}" รูปแบบ ${isDoublesMatch ? 'ประเภทคู่ (Doubles)' : 'ประเภทเดี่ยว (Singles)'}
-สกอร์ปัจจุบัน: ทีม A ${scoreboard.scoreA} - ${scoreboard.scoreB} ทีม B (เซต ${scoreboard.setsA}-${scoreboard.setsB})
-หัวข้อที่เน้น: ${focusTopic}
+        const prompt = `คุณคือโค้ชแบดมินตันระดับโลก (BWF Pro Coach) วิเคราะห์สรุปผลแมตช์ "${matchTitle}" รูปแบบ ${isDoublesMatch ? 'ประเภทคู่ (Doubles)' : 'ประเภทเดี่ยว (Singles)'}
+สกอร์: ทีม A ${scoreboard.scoreA} - ${scoreboard.scoreB} ทีม B (เซต ${scoreboard.setsA}-${scoreboard.setsB})
 
 สถิติผู้เล่นรายบุคคล:
 ${statsSnapshot}
@@ -399,16 +432,19 @@ ${statsSnapshot}
 บันทึกช็อตล่าสุด:
 ${recentShotsText}
 
-กรุณาสรุปเป็นภาษาไทยที่อ่านง่าย แบ่งเป็น 3 หัวข้อสั้นๆ:
+กรุณาสรุปเป็นภาษาไทยที่อ่านง่าย กระชับ แบ่งเป็น 3 หัวข้อ:
 1. 📊 ภาพรวมรูปเกมและการเคลื่อนที่ (Footwork & Coverage)
 2. 🏸 วิเคราะห์เกมรุก-เกมรับ และจังหวะตบ (Shot Selection & Smash Power)
-3. 🎯 แผนกลยุทธ์แก้เกมในแต้มถัดไปสำหรับทีม A และทีม B`;
+3. 🎯 แผนกลยุทธ์แก้เกมสำหรับทีม A และทีม B`;
 
         const result = await callGeminiAPIWithFallback([{ text: prompt }], false);
-        if (!result.ok) throw new Error(result.error);
+        const finalReportText = result.ok ? result.text.trim() : buildLocalTacticalCoachReport();
+        const badgeLabel = result.ok ? `AI: ${result.model}` : 'On-Device Tactical AI (สลับอัตโนมัติ)';
 
-        latestAICoachReportText = result.text.trim();
-        const formattedHtml = result.text
+        latestAICoachReportText = finalReportText;
+        lastAnalyzedSnapshotKey = snapshotKey;
+
+        const formattedHtml = finalReportText
             .replace(/\*\*(.*?)\*\*/g, '<strong class="text-emerald-300">$1</strong>')
             .replace(/\n/g, '<br>');
 
@@ -416,20 +452,15 @@ ${recentShotsText}
             <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 space-y-3 text-xs leading-relaxed">
                 <div class="flex items-center justify-between border-b border-slate-800 pb-2">
                     <span class="font-bold text-emerald-400 flex items-center gap-1.5">
-                        <i class="ph-fill ph-sparkle"></i> คำแนะนำกลยุทธ์จาก Gemini AI Coach
+                        <i class="ph-fill ph-sparkle"></i> คำแนะนำกลยุทธ์หลังจบเกมจาก AI Coach
                     </span>
-                    <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono">${result.model}</span>
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono">${badgeLabel}</span>
                 </div>
                 <div class="text-slate-200">${formattedHtml}</div>
             </div>
         `;
     } catch (e) {
-        outputBox.innerHTML = `
-            <div class="bg-rose-950/40 border border-rose-500/40 rounded-xl p-4 text-rose-300 text-xs space-y-1">
-                <div class="font-bold">เกิดข้อผิดพลาดในการเชื่อมต่อ Gemini API</div>
-                <div class="text-[11px] text-rose-400/90">${e.message || 'กรุณาตรวจสอบ Gemini API Key หรือการเชื่อมต่ออินเทอร์เน็ต'}</div>
-            </div>
-        `;
+        renderCoachPreviewStandby();
     }
 }
 
@@ -455,6 +486,8 @@ function resetMatchData(silent = false) {
     maxSpeedHolder = '-';
     minRecordedSmashSpeed = 0;
     minSmashHolder = '-';
+    latestAICoachReportText = '';
+    lastAnalyzedSnapshotKey = '';
 
     Object.values(players).forEach(p => {
         p.detected = false;
@@ -497,6 +530,8 @@ function switchTab(tabId) {
             resizeCanvases();
             if (tabId === 'analytics') drawAnalyticsCourt();
         }, 40);
+    } else if (tabId === 'coach' && !latestAICoachReportText) {
+        renderCoachPreviewStandby();
     }
 }
 
@@ -929,12 +964,9 @@ async function saveCurrentMatchRecord() {
         ? Math.round(allSmashSpeeds.reduce((a, b) => a + b, 0) / allSmashSpeeds.length)
         : 0;
 
-    // Ensure we have an AI text summary for the match (never store video files, only text analysis + metrics)
+    // Ensure we have a tactical text summary for the match (never store video files, only text analysis + metrics)
     if (!latestAICoachReportText) {
-        const statsBrief = Object.values(players).map(p =>
-            `${p.name}: วิ่ง ${p.distanceMeters.toFixed(1)} ม., ตบสูงสุด ${p.maxSmashKmh} km/h (${p.shotsCount} ลูก)`
-        ).join(' | ');
-        latestAICoachReportText = `สรุปผลแมตช์ (A ${scoreboard.scoreA}-${scoreboard.scoreB} B): ตบสูงสุด ${maxRecordedSpeed} km/h เฉลี่ย ${avgSmash} km/h • ${statsBrief}`;
+        latestAICoachReportText = buildLocalTacticalCoachReport();
     }
 
     const record = {
@@ -1107,6 +1139,10 @@ window.addEventListener('DOMContentLoaded', () => {
     updateScoreboardUI();
     updateLiveHUD();
     renderShotHistoryList();
-    generateAICoachAdvice('full');
+    renderCoachStandbyInitial();
     animateLoop();
 });
+
+function renderCoachStandbyInitial() {
+    renderCoachPreviewStandby();
+}
