@@ -295,14 +295,13 @@ async function runRealPoseEstimation(videoEl) {
 
 /* ================================================================
  * 2. SHUTTLE TRACKER + INPAINT TRAJECTORY BRIDGE + PHYSICS SPEED
- *    Upgraded with TrackNetV3 + InpaintNet concepts:
+ *    Upgraded with TrackNetV3 + InpaintNet + Dual-Cross-Validated Speed:
  *    - 2nd-order Ballistic Trajectory Predictor & Inpaint Gap Filler
- *      (bridges up to 5 missing/occluded frames at 60fps ~ 180ms)
- *    - Inflection Turn-Score Hit Detector: |v2 - v1| / (|v1| + |v2|) >= 0.55
- *      detects mid-rally direction reversals near a player's racket reach
- *    - Aerodynamic drag time-of-flight speed: v0 = L (e^(x/L) - 1) / t
+ *    - Inflection Turn-Score Hit Detector: |v2 - v1| / (|v1| + |v2|) >= 0.58
+ *    - Cross-validated Initial Speed (Screen-Space Metric Velocity + Drag Model)
+ *      Prevents perspective/exponential blow-up (no fake 300-400 km/h spikes!)
  * ================================================================ */
-const SHUTTLE_DRAG_LENGTH_M = 4.7;
+const SHUTTLE_DRAG_LENGTH_M = 5.4;
 const INPAINT_MAX_GAP_MS = 210; // Bridge up to ~5-6 frames of occlusion/blur like InpaintNet
 let shuttleTrack = [];          // [{ sx, sy, t, inpainted }]
 let activeShot = null;          // { hitter, tHit, startU, startV }
@@ -399,18 +398,57 @@ function onTrackConfirmed(now) {
     startShotFromContact(first, second, now);
 }
 
+function measureTrackInitialSpeedMps(track, hitterV) {
+    const realPts = track.filter(pt => !pt.inpainted);
+    if (realPts.length < 2) return 0;
+    const scale = ShuttleCV.metersPerScreenUnit(hitterV ?? 0.5);
+    const speeds = [];
+    // Measure frame-to-frame metric velocity across the first 4 segments right after racket contact
+    const limit = Math.min(realPts.length - 1, 4);
+    for (let i = 0; i < limit; i++) {
+        const a = realPts[i], b = realPts[i + 1];
+        const dt = (b.t - a.t) / 1000;
+        if (dt < 0.008 || dt > 0.12) continue;
+        const dxM = (b.sx - a.sx) * scale.x;
+        const dyM = (b.sy - a.sy) * scale.y;
+        // Compensate foreshortening along depth axis (camera viewing angle ~25-35 deg)
+        const vSeg = Math.hypot(dxM, dyM * 1.35) / dt;
+        if (vSeg >= 4 && vSeg <= 80) speeds.push(vSeg);
+    }
+    if (!speeds.length) return 0;
+    speeds.sort((a, b) => a - b);
+    // 75th percentile of early flight segments = initial release speed after impact
+    return speeds[Math.min(speeds.length - 1, Math.floor(speeds.length * 0.75))];
+}
+
 function finalizeShot(shot, endU, endV, tEnd, isLanding) {
     if (!shot || !shot.hitter || shot.startU === null) return;
     const dH = Math.hypot((endU - shot.startU) * ShuttleCV.COURT_WIDTH_M, (endV - shot.startV) * ShuttleCV.COURT_LENGTH_M);
-    const dz = isLanding ? 2.3 : 1.2; // contact height drop (overhead → floor / → receiver contact)
+    const dz = isLanding ? 1.8 : 0.9; // realistic contact height difference
     const x = Math.hypot(dH, dz);
     const tf = (tEnd - shot.tHit) / 1000;
-    if (tf < 0.14 || tf > 3.2 || dH < 1.0) return;
 
+    // Require minimum flight duration (0.24s) and court travel (1.8m) so partial tracks never inflate v0
+    if (tf < 0.24 || tf > 3.2 || dH < 1.8) return;
+
+    // 1. Mean chord speed & conservative aerodynamic drag estimate
+    const vMean = x / tf; // m/s
     const L = SHUTTLE_DRAG_LENGTH_M;
-    const v0 = (L * (Math.exp(x / L) - 1)) / tf; // m/s
-    const kmh = Math.round(v0 * 3.6);
-    if (kmh < 15 || kmh > 430) return; // physically implausible -> discard
+    // Cap exponential drag amplification factor to at most 2.15x mean speed (prevents e^(x/L) blow-up!)
+    const vDrag = Math.min(vMean * 2.15, (L * (Math.exp(Math.min(x, 9.5) / L) - 1)) / tf);
+
+    // 2. Direct pixel-to-meter velocity from early shuttle track at hitter's depth plane
+    const vTrack = measureTrackInitialSpeedMps(shuttleTrack, shot.startV);
+
+    // 3. Cross-validate both measurements (blends time-of-flight with actual observed pixel velocity)
+    let v0 = vTrack > 0 ? (vDrag * 0.55 + vTrack * 0.45) : (vDrag * 0.85);
+
+    // Boost slightly if wrist swing velocity at impact was explosive (jump smash / full smash)
+    const wristBoost = Math.min(1.12, 1.0 + Math.max(0, (shot.hitter.wristSpeedPx || 0) - 1.2) * 0.06);
+    let kmh = Math.round(v0 * 3.6 * wristBoost);
+
+    // Realistic club / competitive single-camera bounds (rejects physically impossible > 265 km/h spikes)
+    if (kmh < 22 || kmh > 265) return;
 
     shuttle.speedKmh = kmh;
     classifyRealStroke(shot.hitter, kmh, dH, shot.startV, endV, tf);
@@ -525,8 +563,9 @@ function processRealShuttleAndRally(cvResult) {
 
             if (turnScore >= 0.58) {
                 const nearPlayer = nearestPlayerToPoint(b.sx, b.sy);
-                if (nearPlayer && nearPlayer.d < 1.95) {
-                    if (activeShot && activeShot.hitter && b.t - activeShot.tHit >= 160) {
+                const isDiffPlayer = !activeShot || !activeShot.hitter || nearPlayer?.p?.id !== activeShot.hitter.id;
+                if (nearPlayer && nearPlayer.d < 1.95 && isDiffPlayer) {
+                    if (activeShot && activeShot.hitter && b.t - activeShot.tHit >= 260) {
                         finalizeShot(activeShot, nearPlayer.p.u, nearPlayer.p.v, b.t, false);
                     }
                     const nextPt = { sx: chosen.x, sy: chosen.y, t: now, inpainted: false };
@@ -589,17 +628,17 @@ function classifyRealStroke(hitter, speedKmh, distM, startV = null, endV = null,
 
     let typeName;
     let isSmash = false;
-    if (speedKmh >= 225) {
+    if (speedKmh >= 185) {
         typeName = 'Jump Smash (ตบกระโดด)';
         isSmash = true;
-    } else if (speedKmh >= 165 || (hitDepthM >= 3.2 && landDepthM <= 4.4 && flightSec < 0.48 && speedKmh >= 135)) {
+    } else if (speedKmh >= 130 || (hitDepthM >= 3.2 && landDepthM <= 4.4 && flightSec < 0.52 && speedKmh >= 115)) {
         typeName = 'Smash (ลูกตบ)';
         isSmash = true;
     } else if (hitDepthM < 2.6 && landDepthM < 2.8) {
         typeName = 'Net Shot (ลูกหน้าเน็ต)';
     } else if (hitDepthM < 3.2 && landDepthM >= 3.8) {
         typeName = flightSec >= 0.68 ? 'Lift (งัดโด่งหลัง)' : 'Push / Drive (ผลักดาด)';
-    } else if (speedKmh >= 110) {
+    } else if (speedKmh >= 95) {
         typeName = (distM >= 7.5 || flightSec >= 0.72) ? 'Clear (โยนลึก)' : 'Drive (ดาดเร็ว)';
     } else {
         typeName = landDepthM <= 3.6 ? 'Drop Shot (หยอด)' : 'Clear / Lift (โยนหลัง)';
