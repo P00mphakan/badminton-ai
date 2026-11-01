@@ -362,13 +362,9 @@ function renderLiveScene() {
         videoRenderRect = { x: 0, y: 0, w, h };
         liveCtx.drawImage(webcamVideo, 0, 0, w, h);
     } else {
-        // Draw full-bleed ambient stadium background across entire screen
-        liveCtx.save();
-        liveCtx.globalAlpha = 0.32;
-        liveCtx.drawImage(webcamVideo, 0, 0, w, h);
-        liveCtx.fillStyle = 'rgba(5, 8, 17, 0.55)';
+        // Fill with clean web app background (#090d16) — no duplicate video backdrop
+        liveCtx.fillStyle = '#090d16';
         liveCtx.fillRect(0, 0, w, h);
-        liveCtx.restore();
 
         let rw = w;
         let rh = h;
@@ -395,11 +391,14 @@ function renderLiveScene() {
     const chkCourtLines = document.getElementById('chkShowCourtLines')?.checked ?? true;
     const showCourtOverlay = isCalibratingCourt || (chkCourtLines && ShuttleCV.isCourtValidOrLocked());
 
-    // Render all court, net, player, and shuttle graphics on top of the active camera/video frame
+    // Render all court, net, player, and shuttle graphics clipped strictly inside the video frame
     liveCtx.save();
     liveCtx.translate(videoRenderRect.x, videoRenderRect.y);
     const rw = videoRenderRect.w;
     const rh = videoRenderRect.h;
+    liveCtx.beginPath();
+    liveCtx.rect(0, 0, rw, rh);
+    liveCtx.clip();
 
     if (showCourtOverlay) {
         drawHomographyCourtAndNet(liveCtx, rw, rh);
