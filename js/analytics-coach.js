@@ -519,7 +519,6 @@ function retrieveMasterKnowledgeContext(matchData) {
     return extracted.join('\n\n---\n\n');
 }
 
-const LOCAL_AI_BASE_URL = 'https://touched-orleans-treating-pack.trycloudflare.com';
 const LOCAL_AI_FALLBACK_MODELS = [
     'qwen2.5:7b',
     'hermes3:latest',
@@ -527,7 +526,7 @@ const LOCAL_AI_FALLBACK_MODELS = [
     'qwen2.5-coder:7b'
 ];
 
-async function callLocalAIFallback(parts, systemPromptText = '') {
+async function callLocalAIFallback(parts, systemPromptText = '', actionToken = '') {
     const userPrompt = (parts || []).map(p => p.text || '').filter(Boolean).join('\n\n');
     if (!userPrompt) return { ok: false, error: 'ไม่มีข้อความส่งให้ Local AI' };
 
@@ -539,38 +538,16 @@ async function callLocalAIFallback(parts, systemPromptText = '') {
 
     let lastErr = 'Local AI ไม่ตอบสนอง';
     for (const localModel of LOCAL_AI_FALLBACK_MODELS) {
-        try {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 28000);
-            const res = await fetch(`${LOCAL_AI_BASE_URL}/api/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    model: localModel,
-                    stream: false,
-                    options: { temperature: 0.2 },
-                    messages
-                }),
-                signal: controller.signal
-            });
-            clearTimeout(timer);
-            if (!res.ok) {
-                lastErr = `Local AI HTTP ${res.status}`;
-                continue;
-            }
-            const data = await res.json();
-            const replyText = data?.message?.content || data?.response || '';
-            if (replyText && replyText.trim()) {
-                return { ok: true, text: replyText.trim(), model: `Local AI (${localModel})` };
-            }
-        } catch (err) {
-            lastErr = err.message || String(err);
+        const res = await ShuttleSecurity.fetchLocalAITunnel(localModel, messages, actionToken);
+        if (res.ok && res.text) {
+            return { ok: true, text: res.text, model: `Local AI (${localModel})` };
         }
+        lastErr = res.error || lastErr;
     }
     return { ok: false, error: lastErr };
 }
 
-async function callGeminiAPIWithFallback(parts, expectJson = false, systemPromptText = '') {
+async function callGeminiAPIWithFallback(parts, expectJson = false, systemPromptText = '', actionToken = '') {
     let lastError = 'ไม่สามารถเชื่อมต่อ AI ได้';
     const now = Date.now();
 
@@ -578,49 +555,44 @@ async function callGeminiAPIWithFallback(parts, expectJson = false, systemPrompt
         if (exhaustedModelsUntil[modelName] && now < exhaustedModelsUntil[modelName]) {
             continue; // Skip model currently in rate-limit cooldown
         }
-        try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
-            const isGemma = modelName.startsWith('gemma-');
-            const effectiveParts = (isGemma && systemPromptText)
-                ? [{ text: `[SYSTEM INSTRUCTION - STRICT BWF KNOWLEDGE BASE]\n${systemPromptText}\n\n---\n` }, ...parts]
-                : parts;
+        const isGemma = modelName.startsWith('gemma-');
+        const effectiveParts = (isGemma && systemPromptText)
+            ? [{ text: `[SYSTEM INSTRUCTION - STRICT BWF KNOWLEDGE BASE]\n${systemPromptText}\n\n---\n` }, ...parts]
+            : parts;
 
-            const body = { contents: [{ parts: effectiveParts }] };
-            if (!isGemma) {
-                if (systemPromptText) {
-                    body.systemInstruction = { parts: [{ text: systemPromptText }] };
-                }
-                body.generationConfig = { thinkingConfig: { thinkingBudget: 0 }, temperature: 0.2 };
-                if (expectJson) body.generationConfig.responseMimeType = 'application/json';
+        const body = { contents: [{ parts: effectiveParts }] };
+        if (!isGemma) {
+            if (systemPromptText) {
+                body.systemInstruction = { parts: [{ text: systemPromptText }] };
             }
+            body.generationConfig = { thinkingConfig: { thinkingBudget: 0 }, temperature: 0.2 };
+            if (expectJson) body.generationConfig.responseMimeType = 'application/json';
+        }
 
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                const msg = data?.error?.message || `HTTP ${res.status}`;
-                lastError = msg;
-                // If quota/rate-limit (429) or unavailable (404/503), mark cooldown and switch to next model immediately
-                if (res.status === 429 || msg.includes('quota') || msg.includes('Quota')) {
-                    exhaustedModelsUntil[modelName] = now + 15 * 60 * 1000;
-                } else if (res.status === 404) {
-                    exhaustedModelsUntil[modelName] = now + 24 * 60 * 60 * 1000;
-                }
-                continue;
+        const res = await ShuttleSecurity.fetchGeminiModel(modelName, body, actionToken);
+        if (!res.ok) {
+            const msg = res.error || `HTTP ${res.status}`;
+            lastError = msg;
+            if (res.status === 403) {
+                return { ok: false, error: msg };
             }
-            const text = data?.candidates?.[0]?.content?.parts?.find(p => p.text)?.text || '';
-            if (text) return { ok: true, text, model: modelName };
-        } catch (err) {
-            lastError = err.message || String(err);
+            if (res.status === 429 || msg.includes('quota') || msg.includes('Quota')) {
+                exhaustedModelsUntil[modelName] = now + 15 * 60 * 1000;
+            } else if (res.status === 404) {
+                exhaustedModelsUntil[modelName] = now + 24 * 60 * 60 * 1000;
+            }
+            continue;
+        }
+        if (res.text) {
+            ShuttleSecurity.consumeActionToken();
+            return { ok: true, text: res.text, model: modelName };
         }
     }
 
-    // Automatic Fallback to Local AI Server (Cloudflare Tunnel Ollama) when Gemini token/quota is exhausted
-    const localRes = await callLocalAIFallback(parts, systemPromptText);
+    // Automatic Fallback to Protected Local AI Tunnel when Gemini token/quota is exhausted
+    const localRes = await callLocalAIFallback(parts, systemPromptText, actionToken);
     if (localRes.ok) {
+        ShuttleSecurity.consumeActionToken();
         return localRes;
     }
 
@@ -691,8 +663,8 @@ async function generateAICoachAdvice(focusTopic = 'full', userTriggered = false)
     const outputBox = document.getElementById('aiCoachOutput');
     if (!outputBox) return;
 
-    // Only invoke external AI when the user explicitly clicks the button on the AI Coach tab (Tab 4)
-    if (!userTriggered) {
+    // Strictly restrict external AI & Tunnel execution to genuine user clicks on the AI Coach tab (Tab 4)
+    if (!userTriggered || activeTab !== 'coach') {
         renderCoachPreviewStandby();
         return;
     }
@@ -716,6 +688,13 @@ async function generateAICoachAdvice(focusTopic = 'full', userTriggered = false)
                 <div class="text-slate-200">${cachedHtml}</div>
             </div>
         `;
+        return;
+    }
+
+    // Issue one-time security token & enforce rate-limit guard before contacting API / Tunnel
+    const tokenRes = ShuttleSecurity.issueActionToken();
+    if (!tokenRes.ok) {
+        showToast(tokenRes.error);
         return;
     }
 
@@ -743,7 +722,8 @@ async function generateAICoachAdvice(focusTopic = 'full', userTriggered = false)
         const result = await callGeminiAPIWithFallback(
             [{ text: userPrompt }],
             false,
-            ShuttleKB.systemPrompt
+            ShuttleKB.systemPrompt,
+            tokenRes.token
         );
         const finalReportText = result.ok ? result.text.trim() : buildLocalTacticalCoachReport();
         const badgeLabel = result.ok ? `BWF Knowledge AI (${result.model})` : 'On-Device BWF Knowledge AI';
@@ -1136,7 +1116,6 @@ function updateCloudSyncBadge(text, isOk = true) {
 }
 
 async function syncMatchRecordToSupabase(record) {
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
     try {
         // Store AI text summary inside players_summary JSONB or as a dedicated metadata entry (NEVER upload video files)
         const playersPayload = (record.playersSummary || []).map((p, idx) =>
@@ -1173,11 +1152,9 @@ async function syncMatchRecordToSupabase(record) {
                 renderSavedMatchesList();
             }
         } else {
-            const res = await fetch(`${SUPABASE_URL}/rest/v1/matches`, {
+            const res = await ShuttleSecurity.fetchSupabaseRest('matches', {
                 method: 'POST',
                 headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
                     'Content-Type': 'application/json',
                     'Prefer': 'return=representation,resolution=merge-duplicates'
                 },
@@ -1195,14 +1172,12 @@ async function syncMatchRecordToSupabase(record) {
         updateCloudSyncBadge('ซิงค์บทวิเคราะห์ขึ้น Cloud แล้ว (ไม่เก็บไฟล์คลิป)', true);
         return true;
     } catch (e) {
-        console.warn('Supabase sync warning:', e);
         updateCloudSyncBadge('บันทึกในเครื่องแล้ว', false);
         return false;
     }
 }
 
 async function fetchCloudMatches(showNotification = false) {
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
     try {
         updateCloudSyncBadge('กำลังซิงค์...', true);
         let rows = [];
@@ -1222,13 +1197,7 @@ async function fetchCloudMatches(showNotification = false) {
             rows = data || [];
         } else {
             const code = encodeURIComponent(clubCode || 'PUBLIC');
-            const url = `${SUPABASE_URL}/rest/v1/matches?club_code=eq.${code}&order=created_at.desc&limit=30`;
-            const res = await fetch(url, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                }
-            });
+            const res = await ShuttleSecurity.fetchSupabaseRest(`matches?club_code=eq.${code}&order=created_at.desc&limit=30`);
             if (!res.ok) throw new Error('HTTP ' + res.status);
             rows = await res.json();
         }
@@ -1400,14 +1369,10 @@ async function deleteSavedMatchById(idx) {
     } catch (e) {}
     renderSavedMatchesList();
 
-    if (rec && (rec.cloudId || rec.id) && SUPABASE_URL && SUPABASE_ANON_KEY) {
+    if (rec && (rec.cloudId || rec.id)) {
         const query = rec.cloudId ? `id=eq.${rec.cloudId}` : `client_match_id=eq.${rec.id}`;
-        fetch(`${SUPABASE_URL}/rest/v1/matches?${query}`, {
-            method: 'DELETE',
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            }
+        ShuttleSecurity.fetchSupabaseRest(`matches?${query}`, {
+            method: 'DELETE'
         }).catch(() => {});
     }
     showToast('ลบประวัติแมตช์แล้ว');

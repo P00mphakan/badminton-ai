@@ -3,11 +3,28 @@ html, body {
     background-color: #090d16;
     color: #f8fafc;
     -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    overscroll-behavior-y: none;
     overflow-x: hidden;
     max-width: 100vw;
     width: 100%;
     padding-top: env(safe-area-inset-top);
     padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+button, a, label, .dock-btn, .sheet-btn, .score-adj {
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+input, textarea {
+    -webkit-user-select: text;
+    user-select: text;
+    touch-action: manipulation;
 }
 
 .glass-panel {
