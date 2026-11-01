@@ -71,16 +71,56 @@ webcamVideo.addEventListener('resize', () => {
 });
 
 function toggleBottomDockVisibility() {
-    isBottomDockHidden = !isBottomDockHidden;
-    const dock = document.getElementById('floatingBottomDock');
-    const lbl = document.getElementById('lblToggleHudDock');
-    if (dock) {
-        dock.classList.toggle('hidden', isBottomDockHidden);
-    }
-    if (lbl) {
-        lbl.textContent = isBottomDockHidden ? 'แสดงปุ่ม' : 'ซ่อนปุ่ม';
+    toggleVerticalDockCollapse();
+}
+
+function toggleVerticalDockCollapse(forceCollapse) {
+    const card = document.getElementById('verticalDockCard');
+    const expandTab = document.getElementById('btnExpandVerticalDock');
+    if (!card || !expandTab) return;
+
+    isBottomDockHidden = typeof forceCollapse === 'boolean' ? forceCollapse : !isBottomDockHidden;
+    if (isBottomDockHidden) {
+        card.classList.add('is-collapsed');
+        expandTab.classList.remove('hidden');
+    } else {
+        card.classList.remove('is-collapsed');
+        expandTab.classList.add('hidden');
     }
 }
+
+(function initVerticalDockSwipeGesture() {
+    let startX = 0;
+    let startY = 0;
+    window.addEventListener('DOMContentLoaded', () => {
+        const card = document.getElementById('verticalDockCard');
+        const expandTab = document.getElementById('btnExpandVerticalDock');
+        if (card) {
+            card.addEventListener('touchstart', (e) => {
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+            }, { passive: true });
+            card.addEventListener('touchend', (e) => {
+                const dx = (e.changedTouches[0]?.clientX || 0) - startX;
+                const dy = Math.abs((e.changedTouches[0]?.clientY || 0) - startY);
+                if (dx < -35 && dy < 45) {
+                    toggleVerticalDockCollapse(true);
+                }
+            }, { passive: true });
+        }
+        if (expandTab) {
+            expandTab.addEventListener('touchstart', (e) => {
+                startX = e.touches[0].clientX;
+            }, { passive: true });
+            expandTab.addEventListener('touchend', (e) => {
+                const dx = (e.changedTouches[0]?.clientX || 0) - startX;
+                if (dx > 25) {
+                    toggleVerticalDockCollapse(false);
+                }
+            }, { passive: true });
+        }
+    });
+})();
 
 function toggleBrowserFullscreen() {
     const icon = document.getElementById('fullscreenIcon');
@@ -207,6 +247,7 @@ function updateRawRecordUI(recording) {
     const label = document.getElementById('recRawLabel');
     const sheetLabel = document.getElementById('sheetRecRawLabel');
     const topDot = document.getElementById('recDot');
+    const collapsedDot = document.getElementById('collapsedDockRecDot');
 
     if (recording) {
         if (iconWrap) iconWrap.className = 'dock-icon !bg-rose-500 text-white animate-pulse';
@@ -214,12 +255,14 @@ function updateRawRecordUI(recording) {
         if (label) label.textContent = '00:00';
         if (sheetLabel) sheetLabel.textContent = 'หยุดอัดคลิป';
         if (topDot) topDot.className = 'w-2 h-2 rounded-full bg-rose-500 animate-ping';
+        if (collapsedDot) collapsedDot.classList.remove('hidden');
     } else {
         if (iconWrap) iconWrap.className = 'dock-icon';
         if (icon) icon.className = 'ph-fill ph-record text-rose-400';
         if (label) label.textContent = 'Record';
         if (sheetLabel) sheetLabel.textContent = 'อัดคลิปสด';
         if (topDot) topDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        if (collapsedDot) collapsedDot.classList.add('hidden');
     }
 }
 
@@ -680,22 +723,22 @@ function renderLiveScene() {
         drawHomographyCourtAndNet(liveCtx, rw, rh);
     } else if (!ShuttleCV.isCourtValidOrLocked()) {
         liveCtx.save();
-        const boxW = Math.min(rw - 24, 420);
-        const boxH = 36;
+        const boxW = Math.min(rw - 28, 360);
+        const boxH = 32;
         const bx = (rw - boxW) / 2;
-        const by = rh - 140;
-        liveCtx.fillStyle = 'rgba(9, 13, 22, 0.85)';
+        const by = rh - 82;
+        liveCtx.fillStyle = 'rgba(9, 13, 22, 0.72)';
         liveCtx.beginPath();
         liveCtx.roundRect(bx, by, boxW, boxH, 10);
         liveCtx.fill();
-        liveCtx.strokeStyle = 'rgba(251, 191, 36, 0.5)';
-        liveCtx.lineWidth = 1.2;
+        liveCtx.strokeStyle = 'rgba(251, 191, 36, 0.45)';
+        liveCtx.lineWidth = 1;
         liveCtx.stroke();
 
         liveCtx.fillStyle = '#fbbf24';
-        liveCtx.font = '600 11px Prompt, sans-serif';
+        liveCtx.font = '600 10.5px Prompt, sans-serif';
         liveCtx.textAlign = 'center';
-        liveCtx.fillText('กดปุ่ม "ล็อกเส้น & เน็ท" เพื่อทาบเส้นคอร์ทให้ตรงกับมุมกล้องของคุณ', rw / 2, by + 22);
+        liveCtx.fillText('เปิดเมนู ☰ > กด "ตั้งเส้นสนาม" เพื่อทาบเส้นคอร์ทให้ตรงมุมกล้อง', rw / 2, by + 20);
         liveCtx.restore();
     }
 

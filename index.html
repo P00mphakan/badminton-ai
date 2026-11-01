@@ -29,7 +29,7 @@
             }
         }
     </script>
-    <link rel="stylesheet" href="css/styles.css?v=20261101i">
+    <link rel="stylesheet" href="css/styles.css?v=20261101j">
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
 
@@ -292,10 +292,20 @@
                     </div>
                 </div>
 
-                <!-- ===== BOTTOM-LEFT VERTICAL DOCK (Live • Record • Upload • Hamburger Menu) ===== -->
+                <!-- ===== BOTTOM-LEFT VERTICAL DOCK (Live • Record • Upload • Hamburger Menu + Collapse/Expand Arrow) ===== -->
                 <div id="floatingBottomDock" class="hud-bottom absolute inset-x-0 z-20 px-2.5 pointer-events-none flex items-end justify-between gap-2">
-                    <!-- Left Vertical 4-Button Column with Low-Opacity Translucent Card -->
-                    <div class="dock-vertical-card rounded-[22px] p-1.5 flex flex-col items-center gap-1 pointer-events-auto">
+                    <!-- Left Edge Expand Arrow Tab (Visible when .dock-vertical-card is collapsed) -->
+                    <button id="btnExpandVerticalDock" onclick="toggleVerticalDockCollapse(false)" class="hidden dock-expand-tab pointer-events-auto" title="แสดงแถบปุ่มควบคุม" aria-label="แสดงแถบปุ่มควบคุม">
+                        <span id="collapsedDockRecDot" class="hidden w-2 h-2 rounded-full bg-rose-500 animate-ping mb-1"></span>
+                        <i class="ph-bold ph-caret-right text-base text-emerald-300"></i>
+                    </button>
+
+                    <!-- Left Vertical 4-Button Column with Low-Opacity Translucent Card + Collapse Arrow -->
+                    <div id="verticalDockCard" class="dock-vertical-card rounded-[22px] p-1.5 flex flex-col items-center gap-1 pointer-events-auto relative">
+                        <button onclick="toggleVerticalDockCollapse(true)" class="dock-collapse-btn" title="ซ่อนแถบปุ่มด้านซ้าย" aria-label="ซ่อนแถบปุ่มด้านซ้าย">
+                            <i class="ph-bold ph-caret-left text-xs"></i>
+                            <span class="text-[8.5px] font-semibold">ซ่อน</span>
+                        </button>
                         <button id="btnToggleCamera" onclick="toggleWebcam()" class="dock-btn">
                             <span class="dock-icon !bg-emerald-500/85 !border-emerald-300/40 text-slate-950"><i class="ph-bold ph-video-camera"></i></span>
                             <span id="cameraBtnText" class="dock-label">Live</span>
@@ -686,12 +696,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261101i" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261101i"></script>
-    <script src="js/cv-court.js?v=20261101i"></script>
-    <script src="js/pose-tracker.js?v=20261101i"></script>
-    <script src="js/scoreboard.js?v=20261101i"></script>
-    <script src="js/live-view.js?v=20261101i"></script>
-    <script src="js/analytics-coach.js?v=20261101i"></script>
+    <script src="js/env.local.js?v=20261101j" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261101j"></script>
+    <script src="js/cv-court.js?v=20261101j"></script>
+    <script src="js/pose-tracker.js?v=20261101j"></script>
+    <script src="js/scoreboard.js?v=20261101j"></script>
+    <script src="js/live-view.js?v=20261101j"></script>
+    <script src="js/analytics-coach.js?v=20261101j"></script>
 </body>
 </html>
