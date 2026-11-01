@@ -55,9 +55,10 @@ window.ShuttleCV = (function () {
     // Detected raw white line segments & net candidates in normalized [0..1] image coords
     let detectedLineSegments = [];
     let detectedNetSegment = null;
-    let courtConfidence = 92; // 0..100%
-    let netConfidence = 95;   // 0..100%
-    let isCourtLocked = true;
+    let courtConfidence = 0; // 0..100%
+    let netConfidence = 0;   // 0..100%
+    let isCourtLocked = false;
+    let isManuallyEdited = false;
     let autoLockEnabled = true;
 
     // Calibrated / Detected Court Keypoints in normalized screen coordinates [0..1]
@@ -866,24 +867,30 @@ window.ShuttleCV = (function () {
             if (courtCorners[key]) {
                 courtCorners[key].x = Math.max(0.01, Math.min(0.99, x));
                 courtCorners[key].y = Math.max(0.01, Math.min(0.99, y));
+                isManuallyEdited = true;
                 if (key === 'netL' || key === 'netR') {
                     courtCorners._customNet = true;
                 }
                 updateHomographyFromCorners();
             }
         },
-        resetCornersDefault: (isPortrait = false) => {
-            courtCorners._customNet = false;
+        resetCornersDefault: (isPortrait = true) => {
+            if (isManuallyEdited) return;
+            courtCorners._customNet = true;
             if (isPortrait) {
-                courtCorners.tl = { x: 0.19, y: 0.16 };
-                courtCorners.tr = { x: 0.81, y: 0.16 };
-                courtCorners.br = { x: 0.96, y: 0.88 };
-                courtCorners.bl = { x: 0.04, y: 0.88 };
+                courtCorners.tl = { x: 0.355, y: 0.613 };
+                courtCorners.tr = { x: 0.715, y: 0.615 };
+                courtCorners.br = { x: 0.932, y: 0.688 };
+                courtCorners.bl = { x: 0.142, y: 0.684 };
+                courtCorners.netL = { x: 0.248, y: 0.569 };
+                courtCorners.netR = { x: 0.822, y: 0.571 };
             } else {
-                courtCorners.tl = { x: 0.24, y: 0.18 };
-                courtCorners.tr = { x: 0.76, y: 0.18 };
-                courtCorners.br = { x: 0.93, y: 0.89 };
-                courtCorners.bl = { x: 0.07, y: 0.89 };
+                courtCorners.tl = { x: 0.310, y: 0.500 };
+                courtCorners.tr = { x: 0.690, y: 0.500 };
+                courtCorners.br = { x: 0.850, y: 0.675 };
+                courtCorners.bl = { x: 0.150, y: 0.675 };
+                courtCorners.netL = { x: 0.235, y: 0.425 };
+                courtCorners.netR = { x: 0.765, y: 0.425 };
             }
             updateHomographyFromCorners();
         },

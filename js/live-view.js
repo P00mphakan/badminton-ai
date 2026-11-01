@@ -15,6 +15,17 @@ let currentFps = 0;
 
 let videoRenderRect = { x: 0, y: 0, w: 800, h: 450 };
 let isBottomDockHidden = false;
+let lastAppliedPortraitState = null;
+
+function detectAutoPortraitState() {
+    if ((isUploadedVideoActive || isWebcamActive) && webcamVideo.videoWidth > 0 && webcamVideo.videoHeight > 0) {
+        return webcamVideo.videoHeight >= webcamVideo.videoWidth;
+    }
+    if (window.matchMedia) {
+        return window.matchMedia('(orientation: portrait)').matches;
+    }
+    return window.innerHeight >= window.innerWidth;
+}
 
 function applyOrientationLayout() {
     const badgeText = document.getElementById('orientationBadgeText');
@@ -22,21 +33,18 @@ function applyOrientationLayout() {
     const btnLabel = document.getElementById('btnOrientationLabel');
 
     if (orientationSetting === 'auto') {
-        if ((isUploadedVideoActive || isWebcamActive) && webcamVideo.videoWidth && webcamVideo.videoHeight) {
-            isPortraitViewport = webcamVideo.videoHeight > webcamVideo.videoWidth;
-        } else {
-            isPortraitViewport = window.innerHeight > window.innerWidth;
-        }
-        if (btnLabel) btnLabel.textContent = 'เต็มจอ: Auto';
-        if (badgeText) badgeText.textContent = 'Full Screen Auto';
+        isPortraitViewport = detectAutoPortraitState();
+        const modeTxt = isPortraitViewport ? 'แนวตั้ง Auto' : 'แนวนอน Auto';
+        if (btnLabel) btnLabel.textContent = `มุมมอง: ${modeTxt}`;
+        if (badgeText) badgeText.textContent = modeTxt;
     } else if (orientationSetting === 'portrait') {
         isPortraitViewport = true;
-        if (btnLabel) btnLabel.textContent = 'เต็มจอ: Fit';
-        if (badgeText) badgeText.textContent = 'Full Screen Fit';
+        if (btnLabel) btnLabel.textContent = 'มุมมอง: แนวตั้ง';
+        if (badgeText) badgeText.textContent = 'แนวตั้ง';
     } else {
         isPortraitViewport = false;
-        if (btnLabel) btnLabel.textContent = 'เต็มจอ: Stretch';
-        if (badgeText) badgeText.textContent = 'Full Screen Stretch';
+        if (btnLabel) btnLabel.textContent = 'มุมมอง: แนวนอน';
+        if (badgeText) badgeText.textContent = 'แนวนอน';
     }
 
     if (icon) {
@@ -44,7 +52,23 @@ function applyOrientationLayout() {
             ? 'ph-bold ph-device-mobile-camera'
             : 'ph-bold ph-device-mobile-camera rotate-90';
     }
+
+    if (lastAppliedPortraitState !== isPortraitViewport) {
+        lastAppliedPortraitState = isPortraitViewport;
+        if (window.ShuttleCV && ShuttleCV.resetCornersDefault) {
+            ShuttleCV.resetCornersDefault(isPortraitViewport);
+        }
+    }
 }
+
+if (window.matchMedia) {
+    window.matchMedia('(orientation: portrait)').addEventListener?.('change', () => {
+        setTimeout(resizeCanvases, 80);
+    });
+}
+webcamVideo.addEventListener('resize', () => {
+    applyOrientationLayout();
+});
 
 function toggleBottomDockVisibility() {
     isBottomDockHidden = !isBottomDockHidden;
@@ -74,9 +98,11 @@ function cycleCameraOrientation() {
     else if (orientationSetting === 'portrait') orientationSetting = 'landscape';
     else orientationSetting = 'auto';
 
+    lastAppliedPortraitState = null;
     applyOrientationLayout();
     resizeCanvases();
-    showToast(`ปรับมุมมองกล้องเป็น: ${orientationSetting}`);
+    const labelMap = { auto: 'Auto (ตรวจจับอัตโนมัติ)', portrait: 'แนวตั้ง (Portrait)', landscape: 'แนวนอน (Landscape)' };
+    showToast(`สลับโหมดมุมมองเป็น: ${labelMap[orientationSetting]}`);
 }
 
 function resizeCanvases() {
@@ -102,12 +128,13 @@ async function toggleWebcam() {
 
     if (!isWebcamActive) {
         try {
-            const isPort = window.innerHeight > window.innerWidth;
+            // Standard sensor resolution: iOS Safari automatically rotates the video track to Portrait
+            // when the phone is held vertically (1080x1920) and Landscape when held horizontally (1920x1080).
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     facingMode: { ideal: 'environment' },
-                    width: { ideal: isPort ? 1080 : 1920 },
-                    height: { ideal: isPort ? 1920 : 1080 },
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
                     frameRate: { ideal: 60 }
                 },
                 audio: false
@@ -116,11 +143,13 @@ async function toggleWebcam() {
             webcamVideo.loop = false;
             await webcamVideo.play();
             isWebcamActive = true;
-            ShuttleCV.setCourtLocked(true);
+            // Do NOT lock fake court overlay before a real court is detected or calibrated by the user
+            ShuttleCV.setCourtLocked(false);
             if (btnText) btnText.textContent = 'ปิดกล้อง';
             initPoseDetectionModel();
+            applyOrientationLayout();
             resizeCanvases();
-            showToast('เปิดกล้องสดเต็มจอแล้ว • ตรวจจับเฉพาะผู้เล่นและลูกในเขตสนาม');
+            showToast('เปิดกล้องสดแล้ว • เล็งไปที่คอร์ทจริงแล้วกด "ตั้งเส้น" หรือ "สแกนเส้น"');
         } catch (err) {
             showToast('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตสิทธิ์กล้อง หรืออัปโหลดคลิปสนามจริง');
         }
@@ -351,35 +380,33 @@ function renderLiveScene() {
         return;
     }
 
-    // Compute full-screen render area: Realtime Camera always fills 100% of screen;
-    // Uploaded portrait video on wide desktop fills 100% height with ambient blurred wings unless Stretch mode is selected.
+    // Keep orientation badge & court preset synced if stream dimensions changed
     const vW = webcamVideo.videoWidth || w;
     const vH = webcamVideo.videoHeight || h;
-    const videoAspect = vW / vH;
-    const screenAspect = w / h;
-
-    if (isWebcamActive || orientationSetting === 'landscape' || Math.abs(videoAspect - screenAspect) < 0.38) {
-        videoRenderRect = { x: 0, y: 0, w, h };
-        liveCtx.drawImage(webcamVideo, 0, 0, w, h);
-    } else {
-        // Fill with clean web app background (#090d16) — no duplicate video backdrop
-        liveCtx.fillStyle = '#090d16';
-        liveCtx.fillRect(0, 0, w, h);
-
-        let rw = w;
-        let rh = h;
-        if (screenAspect > videoAspect) {
-            rh = h;
-            rw = Math.round(h * videoAspect);
-        } else {
-            rw = w;
-            rh = Math.round(w / videoAspect);
-        }
-        const rx = Math.round((w - rw) / 2);
-        const ry = Math.round((h - rh) / 2);
-        videoRenderRect = { x: rx, y: ry, w: rw, h: rh };
-        liveCtx.drawImage(webcamVideo, rx, ry, rw, rh);
+    if (orientationSetting === 'auto' && ((vH >= vW) !== isPortraitViewport)) {
+        applyOrientationLayout();
     }
+
+    // Fill background with clean web background (#090d16)
+    liveCtx.fillStyle = '#090d16';
+    liveCtx.fillRect(0, 0, w, h);
+
+    // 100% Aspect-Ratio-Preserving Render (NEVER stretches vertically or horizontally):
+    // - When camera orientation matches screen orientation in Live Camera mode: use cover scale so camera fills screen naturally.
+    // - When video/camera orientation differs from screen, or in Uploaded Video mode: use contain scale so 100% of frame & court lines fit without distortion.
+    const videoIsPortrait = vH >= vW;
+    const screenIsPortrait = h >= w;
+    const useCoverScale = isWebcamActive && !isCalibratingCourt && (videoIsPortrait === screenIsPortrait);
+    const scale = useCoverScale
+        ? Math.max(w / vW, h / vH)
+        : Math.min(w / vW, h / vH);
+
+    const rw = Math.round(vW * scale);
+    const rh = Math.round(vH * scale);
+    const rx = Math.round((w - rw) / 2);
+    const ry = Math.round((h - rh) / 2);
+    videoRenderRect = { x: rx, y: ry, w: rw, h: rh };
+    liveCtx.drawImage(webcamVideo, rx, ry, rw, rh);
 
     if (!isTrackingPaused) {
         runRealPoseEstimation(webcamVideo);
@@ -394,8 +421,6 @@ function renderLiveScene() {
     // Render all court, net, player, and shuttle graphics clipped strictly inside the video frame
     liveCtx.save();
     liveCtx.translate(videoRenderRect.x, videoRenderRect.y);
-    const rw = videoRenderRect.w;
-    const rh = videoRenderRect.h;
     liveCtx.beginPath();
     liveCtx.rect(0, 0, rw, rh);
     liveCtx.clip();

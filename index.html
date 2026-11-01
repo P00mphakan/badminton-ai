@@ -205,7 +205,7 @@
                         </div>
                     </div>
 
-                    <!-- Status line: AI • Court • FPS • Last call -->
+                    <!-- Status line: AI • Court • Orientation • FPS • Last call -->
                     <div class="mt-1.5 flex items-center gap-1.5 min-w-0">
                         <div class="hud-glass rounded-full px-2 py-[3px] flex items-center gap-1.5 shrink-0 text-[10px]">
                             <span id="recDot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
@@ -216,6 +216,10 @@
                             <span class="font-mono text-emerald-300"><span id="fpsCounter">0</span>fps</span>
                             <span id="cvNetConfText" class="hidden"></span>
                         </div>
+                        <button onclick="cycleCameraOrientation()" class="hud-glass rounded-full px-2 py-[3px] flex items-center gap-1 shrink-0 text-[10px] text-cyan-300 font-semibold pointer-events-auto">
+                            <i id="orientationIcon" class="ph-bold ph-device-mobile-camera"></i>
+                            <span id="orientationBadgeText">แนวตั้ง Auto</span>
+                        </button>
                         <span id="boardLastCallBadge" class="call-chip">พร้อมตรวจจับ</span>
                     </div>
                 </div>
