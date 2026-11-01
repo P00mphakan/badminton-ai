@@ -316,6 +316,8 @@ const scoreboard = {
     lastCallText: 'รอเริ่มแรลลี่ (พร้อมตรวจจับอัตโนมัติ)',
     lastCallType: 'IDLE', // 'IN' | 'OUT' | 'NET' | 'IDLE'
     lastLandingSpot: null,// { u, v, isIn, marginCm, closestLineName, winner, time }
+    lastAutoCallMs: 0,
+    lastCallAtMs: 0,
     historyStack: [],
     pointLog: []
 };

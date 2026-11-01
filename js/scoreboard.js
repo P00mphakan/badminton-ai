@@ -6,27 +6,49 @@
  ********************************************************************/
 
 function evaluateRallyEndAndAutoScore() {
-    if (shuttle.trail.length < 3) return;
-    const lastPt = shuttle.trail[shuttle.trail.length - 1];
-    const firstPt = shuttle.trail[0];
+    if (shuttle.trail.length < 4) return;
+    const nowMs = performance.now();
 
-    const u = lastPt.u;
-    const v = lastPt.v;
-    const hitterTeam = shuttle.lastHitterTeam || (firstPt.v < 0.5 ? 'A' : 'B');
-
-    const landedSide = v < 0.5 ? 'A' : 'B';
-    const isNearNet = Math.abs(v - 0.5) < 0.045;
-
-    if (isNearNet || landedSide === hitterTeam) {
-        const winnerTeam = hitterTeam === 'A' ? 'B' : 'A';
-        const reason = isNearNet ? 'NET FAULT (ลูกติดเน็ท)' : 'NOT OVER NET (ลูกไม่ข้ามเน็ท)';
-        awardPointBWF(winnerTeam, 'NET', `${reason} • แต้มทีม ${winnerTeam}`, {
-            u, v, isIn: false, marginCm: 0, closestLineName: 'ตาข่าย (Net)', winner: winnerTeam
-        });
+    // 1. Strict Court Trust Gate: Never auto-score against an uncalibrated / unverified court geometry
+    if (!ShuttleCV.isCourtTrusted()) {
+        showToast('ตรวจพบจังหวะลูกลงพื้น (สนามยังไม่ได้ตั้งเส้น) • กรุณาตั้งเส้นสนามก่อน หรือกด +/- เพื่อปรับแต้ม');
         return;
     }
 
+    // 2. Cooldown Gate: Prevent rapid duplicate auto-calls within 5.0 seconds
+    if (scoreboard.lastAutoCallMs && (nowMs - scoreboard.lastAutoCallMs < 5000)) {
+        return;
+    }
+
+    const lastPt = shuttle.trail[shuttle.trail.length - 1];
+    const u = lastPt.u;
+    const v = lastPt.v;
+
+    // 3. Strict Hitter Gate: Must have an identified hitter team (never guess from firstPt.v)
+    const hitterTeam = shuttle.lastHitterTeam;
+    if (!hitterTeam) return;
+
+    const landedSide = v < 0.5 ? 'A' : 'B';
+    const distFromNetM = Math.abs(v - 0.5) * ShuttleCV.COURT_LENGTH_M;
+
+    // 4. Net Fault Gate: Only call NET if landing on hitter's side within 1.5m of net
+    if (landedSide === hitterTeam) {
+        if (distFromNetM <= 1.5) {
+            scoreboard.lastAutoCallMs = nowMs;
+            const winnerTeam = hitterTeam === 'A' ? 'B' : 'A';
+            const reason = distFromNetM <= 0.6 ? 'NET FAULT (ลูกติดเน็ท)' : 'NOT OVER NET (ลูกไม่ข้ามเน็ท)';
+            awardPointBWF(winnerTeam, 'NET', `${reason} • แต้มทีม ${winnerTeam}`, {
+                u, v, isIn: false, marginCm: 0, closestLineName: 'ตาข่าย (Net)', winner: winnerTeam
+            });
+        }
+        // If landing on hitter's side > 1.5m away, it's inconclusive (e.g. racket pickup / floor bounce) -> do not auto-score
+        return;
+    }
+
+    // 5. Line Call (Opponent's side)
     const lineCall = ShuttleCV.evaluateLineCall(u, v, isDoublesMatch);
+    scoreboard.lastAutoCallMs = nowMs;
+
     if (lineCall.isIn) {
         const winnerTeam = hitterTeam;
         const callMsg = `IN (ลูกดี +${Math.abs(lineCall.marginCm)} ซม. ใน${lineCall.closestLineName}) • แต้มทีม ${winnerTeam}`;
@@ -66,6 +88,7 @@ function awardPointBWF(winnerTeam, callType, callDescription, landingSpot = null
     scoreboard.rallyState = 'POINT_CALL';
     scoreboard.lastCallType = callType;
     scoreboard.lastCallText = callDescription;
+    scoreboard.lastCallAtMs = performance.now();
     if (landingSpot) {
         scoreboard.lastLandingSpot = { ...landingSpot, time: performance.now() };
     }
@@ -237,5 +260,14 @@ function updateScoreboardUI() {
         } else {
             callBadge.className = 'call-chip';
         }
+    }
+}
+
+function expireStaleCallChip() {
+    if (scoreboard.rallyState === 'POINT_CALL' && (performance.now() - (scoreboard.lastCallAtMs || 0) > 6000)) {
+        scoreboard.rallyState = 'WAITING';
+        scoreboard.lastCallType = 'IDLE';
+        scoreboard.lastCallText = 'รอเริ่มแรลลี่ (พร้อมตรวจจับอัตโนมัติ)';
+        updateScoreboardUI();
     }
 }

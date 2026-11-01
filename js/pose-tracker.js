@@ -476,7 +476,7 @@ function handleTrackEnd(now) {
         } else {
             const descending = last.sy > prev.sy;
             const floorUV = descending ? isPointOnCourtFloor(last.sx, last.sy) : null;
-            if (floorUV) {
+            if (floorUV && realPts.length >= 6 && activeShot.hitter) {
                 finalizeShot(activeShot, Math.max(-0.2, Math.min(1.2, floorUV.x)), Math.max(-0.1, Math.min(1.1, floorUV.y)), last.t, true);
                 pendingRallyEnd = { t: now };
             }
