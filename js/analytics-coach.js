@@ -506,7 +506,32 @@ function toggleAuthModal() {
     modal.classList.toggle('hidden');
     const msg = document.getElementById('authStatusMsg');
     if (msg) msg.classList.add('hidden');
+    loadRememberedCredentials();
     updateAuthUI();
+}
+
+function togglePasswordVisibility() {
+    const passInput = document.getElementById('authPasswordInput');
+    const eyeIcon = document.getElementById('authPasswordEyeIcon');
+    if (!passInput) return;
+    const isHidden = passInput.type === 'password';
+    passInput.type = isHidden ? 'text' : 'password';
+    if (eyeIcon) {
+        eyeIcon.className = isHidden ? 'ph-bold ph-eye-slash text-base text-emerald-400' : 'ph-bold ph-eye text-base';
+    }
+}
+
+function loadRememberedCredentials() {
+    try {
+        const savedRemember = localStorage.getItem('shuttlepro_remember_me');
+        const rememberChk = document.getElementById('authRememberMe');
+        const emailInput = document.getElementById('authEmailInput');
+        if (rememberChk) rememberChk.checked = savedRemember !== 'false';
+        if (savedRemember !== 'false' && emailInput && !emailInput.value) {
+            const savedEmail = localStorage.getItem('shuttlepro_remember_email') || '';
+            if (savedEmail) emailInput.value = savedEmail;
+        }
+    } catch (e) {}
 }
 
 function switchAuthMode(mode) {
@@ -568,15 +593,31 @@ function updateAuthUI() {
 }
 
 async function initSupabaseAuth() {
+    loadRememberedCredentials();
     if (!supabaseClient) return;
     try {
+        const savedRemember = localStorage.getItem('shuttlepro_remember_me');
+        const isSessionStillActive = sessionStorage.getItem('shuttlepro_active_session') === '1';
+        if (savedRemember === 'false' && !isSessionStillActive) {
+            await supabaseClient.auth.signOut();
+            currentAuthUser = null;
+            updateAuthUI();
+            return;
+        }
+
         const { data } = await supabaseClient.auth.getSession();
         currentAuthUser = data?.session?.user || null;
+        if (currentAuthUser) {
+            sessionStorage.setItem('shuttlepro_active_session', '1');
+        }
         updateAuthUI();
 
         supabaseClient.auth.onAuthStateChange((_event, session) => {
             const prevUser = currentAuthUser?.id;
             currentAuthUser = session?.user || null;
+            if (currentAuthUser) {
+                sessionStorage.setItem('shuttlepro_active_session', '1');
+            }
             updateAuthUI();
             if (prevUser !== currentAuthUser?.id) {
                 fetchCloudMatches(false);
@@ -594,6 +635,7 @@ async function handleEmailAuthSubmit() {
     }
     const email = document.getElementById('authEmailInput')?.value.trim();
     const password = document.getElementById('authPasswordInput')?.value;
+    const rememberMe = document.getElementById('authRememberMe')?.checked ?? true;
     if (!email || !password) {
         showAuthMessage('กรุณากรอกอีเมลและรหัสผ่านให้ครบถ้วน');
         return;
@@ -602,6 +644,16 @@ async function handleEmailAuthSubmit() {
         showAuthMessage('รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
         return;
     }
+
+    try {
+        localStorage.setItem('shuttlepro_remember_me', rememberMe ? 'true' : 'false');
+        if (rememberMe) {
+            localStorage.setItem('shuttlepro_remember_email', email);
+        } else {
+            localStorage.removeItem('shuttlepro_remember_email');
+        }
+        sessionStorage.setItem('shuttlepro_active_session', '1');
+    } catch (e) {}
 
     const btnTxt = document.getElementById('btnSubmitEmailAuthText');
     const origText = btnTxt ? btnTxt.textContent : '';

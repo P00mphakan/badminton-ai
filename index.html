@@ -153,11 +153,22 @@
                 <div class="space-y-2.5">
                     <div>
                         <label class="text-[11px] text-slate-300 block mb-1">อีเมล (Email):</label>
-                        <input type="email" id="authEmailInput" placeholder="you@example.com" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-400">
+                        <input type="email" id="authEmailInput" autocomplete="email" placeholder="you@example.com" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-400">
                     </div>
                     <div>
                         <label class="text-[11px] text-slate-300 block mb-1">รหัสผ่าน (Password อย่างน้อย 6 ตัวอักษร):</label>
-                        <input type="password" id="authPasswordInput" placeholder="••••••••" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-400">
+                        <div class="relative">
+                            <input type="password" id="authPasswordInput" autocomplete="current-password" placeholder="••••••••" class="w-full bg-slate-900 border border-slate-700 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-400">
+                            <button type="button" onclick="togglePasswordVisibility()" class="absolute inset-y-0 right-0 px-3 flex items-center text-slate-400 hover:text-emerald-400 transition-colors" title="แสดง/ซ่อนรหัสผ่าน" aria-label="แสดงหรือซ่อนรหัสผ่าน">
+                                <i id="authPasswordEyeIcon" class="ph-bold ph-eye text-base"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between pt-0.5">
+                        <label class="flex items-center gap-2 cursor-pointer select-none text-[11px] text-slate-300 hover:text-white">
+                            <input type="checkbox" id="authRememberMe" checked class="w-3.5 h-3.5 rounded accent-emerald-500">
+                            <span>จดจำฉันไว้ในระบบ (Remember me)</span>
+                        </label>
                     </div>
                 </div>
 
@@ -569,12 +580,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261101e" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261101e"></script>
-    <script src="js/cv-court.js?v=20261101e"></script>
-    <script src="js/pose-tracker.js?v=20261101e"></script>
-    <script src="js/scoreboard.js?v=20261101e"></script>
-    <script src="js/live-view.js?v=20261101e"></script>
-    <script src="js/analytics-coach.js?v=20261101e"></script>
+    <script src="js/env.local.js?v=20261101f" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261101f"></script>
+    <script src="js/cv-court.js?v=20261101f"></script>
+    <script src="js/pose-tracker.js?v=20261101f"></script>
+    <script src="js/scoreboard.js?v=20261101f"></script>
+    <script src="js/live-view.js?v=20261101f"></script>
+    <script src="js/analytics-coach.js?v=20261101f"></script>
 </body>
 </html>
