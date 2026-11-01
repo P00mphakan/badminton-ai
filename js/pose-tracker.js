@@ -128,8 +128,18 @@ function evaluatePoseCandidate(pose, crop) {
     }
 
     const uv = ShuttleCV.screenToCourtNormalized(footX, footY);
-    // Assign team based on court Y or screen vertical division (Far court = A, Near court = B)
-    const team = (uv.y <= 0.5 || footY <= 0.5) ? 'A' : 'B';
+
+    // In-court gating: When court calibration is verified/trusted, people outside court boundaries
+    // (such as spectators sitting on benches or players on neighboring courts) are masked out but NOT tracked as players.
+    if (ShuttleCV.isCourtTrusted()) {
+        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, IN_COURT_TOL_U + 0.08, IN_COURT_TOL_V + 0.05);
+        if (!inCourt) {
+            return { mask: box, player: null };
+        }
+    }
+
+    // Assign team strictly based on net boundary in court space (Far court v <= 0.5 = A, Near court v > 0.5 = B)
+    const team = uv.y <= 0.5 ? 'A' : 'B';
     const ankleConf = ankles.length ? Math.max(...ankles.map(k => k.score)) : 0.35;
 
     return {
@@ -157,7 +167,10 @@ function assignCandidatesToSlots(team, cands, now) {
     const slotCost = (slot, idx, c) => {
         const recent = now - slot.lastSeenMs < 2000;
         if (recent) {
-            return Math.hypot((slot.u - c.u) * ShuttleCV.COURT_WIDTH_M, (slot.v - c.v) * ShuttleCV.COURT_LENGTH_M);
+            const distM = Math.hypot((slot.u - c.u) * ShuttleCV.COURT_WIDTH_M, (slot.v - c.v) * ShuttleCV.COURT_LENGTH_M);
+            // Large distance penalty if candidate jumps > 3.0m in < 300ms (prevents ID flipping between doubles partners)
+            if (now - slot.lastSeenMs < 300 && distM > 3.0) return distM + 12.0;
+            return distM;
         }
         // Not tracked yet: slot 1 = left side of screen, slot 2 = right side
         const priorU = slotIds.length === 1 ? 0.5 : (idx === 0 ? 0.25 : 0.75);
