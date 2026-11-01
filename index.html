@@ -29,7 +29,7 @@
             }
         }
     </script>
-    <link rel="stylesheet" href="css/styles.css?v=20261101m">
+    <link rel="stylesheet" href="css/styles.css?v=20261101n">
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
 
@@ -62,10 +62,10 @@
 
             <!-- Compact Icon Action Buttons -->
             <div class="flex items-center gap-1 shrink-0">
-                <button onclick="openCommunityReviewModal()" class="h-8 px-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 text-[11px] font-semibold" title="รีวิว &amp; ความคิดเห็นผู้ใช้งาน (App Store Style)">
-                    <i class="ph-fill ph-star text-amber-400 text-sm"></i>
-                    <span class="hidden sm:inline">รีวิว &amp; ความคิดเห็น</span>
-                    <span class="sm:hidden font-bold">4.9 ★</span>
+                <button onclick="switchTab('reviews')" class="h-8 px-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 text-[11px] font-semibold" title="รีวิว &amp; ข้อเสนอแนะผู้ใช้งาน">
+                    <i class="ph-bold ph-chat-teardrop-dots text-amber-400 text-sm"></i>
+                    <span class="hidden sm:inline">รีวิว &amp; ข้อเสนอแนะ</span>
+                    <span class="sm:hidden font-bold">รีวิว</span>
                 </button>
                 <button onclick="saveCurrentMatchRecord()" class="w-8 h-8 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 flex items-center justify-center" title="บันทึกแมตช์นี้">
                     <i class="ph-bold ph-floppy-disk text-sm"></i>
@@ -213,207 +213,6 @@
                 <p>3. เลือก <b>"เพิ่มไปยังหน้าจอโฮม" (Add to Home Screen)</b></p>
             </div>
             <button onclick="toggleIOSGuideModal()" class="w-full py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">เข้าใจแล้ว</button>
-        </div>
-    </div>
-
-    <!-- Community Reviews & Feedback Modal (App Store / Play Store Style) -->
-    <div id="communityReviewModal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
-        <div class="glass-panel rounded-3xl max-w-xl w-full max-h-[90dvh] flex flex-col border border-amber-500/30 shadow-2xl overflow-hidden">
-            <!-- Modal Header -->
-            <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between gap-3 bg-slate-900/90 shrink-0">
-                <div class="flex items-center gap-2.5 min-w-0">
-                    <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-md shadow-amber-500/20 text-slate-950 shrink-0">
-                        <i class="ph-fill ph-star text-xl"></i>
-                    </div>
-                    <div class="min-w-0">
-                        <div class="flex items-center gap-1.5 min-w-0">
-                            <h3 class="text-sm sm:text-base font-bold text-white truncate">คะแนนรีวิว &amp; ความคิดเห็น</h3>
-                            <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-bold shrink-0">App Community</span>
-                        </div>
-                        <p class="text-[11px] text-slate-400 truncate">Respond for Best Experience • รีวิวสาธารณะทุกคนมองเห็นได้</p>
-                    </div>
-                </div>
-                <button onclick="closeCommunityReviewModal()" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center shrink-0" aria-label="ปิดหน้ารีวิว">
-                    <i class="ph-bold ph-x text-base"></i>
-                </button>
-            </div>
-
-            <!-- Modal Scrollable Content -->
-            <div class="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs">
-                <!-- App Store Rating Summary Scorecard -->
-                <div class="bg-gradient-to-br from-slate-900/95 to-slate-950/95 border border-slate-800 rounded-2xl p-4 sm:p-5">
-                    <div class="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 sm:gap-6 items-center">
-                        <div class="text-center sm:text-left sm:pr-4 sm:border-r sm:border-slate-800 shrink-0">
-                            <div class="text-4xl sm:text-5xl font-extrabold text-white font-mono tracking-tight" id="reviewAvgScoreText">4.9</div>
-                            <div class="flex items-center justify-center sm:justify-start gap-1 my-1 text-amber-400 text-base" id="reviewAvgStarsContainer">
-                                <i class="ph-fill ph-star"></i><i class="ph-fill ph-star"></i><i class="ph-fill ph-star"></i><i class="ph-fill ph-star"></i><i class="ph-fill ph-star"></i>
-                            </div>
-                            <div class="text-[11px] text-slate-400">จากทั้งหมด <b id="reviewTotalCountText" class="text-slate-200">28</b> รีวิวผู้ใช้งาน</div>
-                        </div>
-
-                        <!-- Rating Bars (5, 4, 3, 2, 1) -->
-                        <div class="space-y-1.5 flex-1 min-w-0 text-[11px]" id="reviewBreakdownBars">
-                            <div class="flex items-center gap-2">
-                                <span class="w-6 text-slate-400 text-right font-mono">5★</span>
-                                <div class="flex-1 bg-slate-800/80 rounded-full h-2 overflow-hidden">
-                                    <div class="bg-amber-400 h-full rounded-full" id="reviewBar5" style="width: 89%;"></div>
-                                </div>
-                                <span class="w-8 text-slate-400 font-mono text-right" id="reviewPct5">89%</span>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <span class="w-6 text-slate-400 text-right font-mono">4★</span>
-                                <div class="flex-1 bg-slate-800/80 rounded-full h-2 overflow-hidden">
-                                    <div class="bg-amber-400/80 h-full rounded-full" id="reviewBar4" style="width: 8%;"></div>
-                                </div>
-                                <span class="w-8 text-slate-400 font-mono text-right" id="reviewPct4">8%</span>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <span class="w-6 text-slate-400 text-right font-mono">3★</span>
-                                <div class="flex-1 bg-slate-800/80 rounded-full h-2 overflow-hidden">
-                                    <div class="bg-amber-400/50 h-full rounded-full" id="reviewBar3" style="width: 3%;"></div>
-                                </div>
-                                <span class="w-8 text-slate-400 font-mono text-right" id="reviewPct3">3%</span>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <span class="w-6 text-slate-400 text-right font-mono">2★</span>
-                                <div class="flex-1 bg-slate-800/80 rounded-full h-2 overflow-hidden">
-                                    <div class="bg-amber-400/20 h-full rounded-full" id="reviewBar2" style="width: 0%;"></div>
-                                </div>
-                                <span class="w-8 text-slate-400 font-mono text-right" id="reviewPct2">0%</span>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <span class="w-6 text-slate-400 text-right font-mono">1★</span>
-                                <div class="flex-1 bg-slate-800/80 rounded-full h-2 overflow-hidden">
-                                    <div class="bg-amber-400/10 h-full rounded-full" id="reviewBar1" style="width: 0%;"></div>
-                                </div>
-                                <span class="w-8 text-slate-400 font-mono text-right" id="reviewPct1">0%</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Quality Badges -->
-                    <div class="mt-3 pt-3 border-t border-slate-800/80 flex flex-wrap items-center gap-2 text-[10px]">
-                        <span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 font-medium">
-                            <i class="ph-fill ph-shield-check"></i> BWF 2026 Engine
-                        </span>
-                        <span class="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 flex items-center gap-1 font-medium">
-                            <i class="ph-fill ph-cpu"></i> On-Device AI 60 FPS
-                        </span>
-                        <span class="px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center gap-1 font-medium">
-                            <i class="ph-fill ph-chat-circle-dots"></i> Public Community Feed
-                        </span>
-                    </div>
-                </div>
-
-                <!-- Review Submission Card -->
-                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3.5">
-                    <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-                        <span class="font-bold text-white text-xs flex items-center gap-1.5">
-                            <i class="ph-bold ph-pencil-simple text-amber-400"></i>
-                            <span>เขียนรีวิว / ส่งข้อเสนอแนะของคุณ</span>
-                        </span>
-                        <span class="text-[10px] text-slate-400">ทุกคนจะเห็นรีวิวนี้ในฟีดสาธารณะ</span>
-                    </div>
-
-                    <!-- 1. Star Rating Picker -->
-                    <div>
-                        <label class="text-[11px] text-slate-300 block mb-1.5 font-medium">ให้คะแนนความพึงพอใจ:</label>
-                        <div class="flex items-center gap-2">
-                            <div class="flex items-center gap-1 text-2xl" id="starInputContainer">
-                                <button type="button" onclick="setReviewRating(1)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
-                                <button type="button" onclick="setReviewRating(2)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
-                                <button type="button" onclick="setReviewRating(3)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
-                                <button type="button" onclick="setReviewRating(4)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
-                                <button type="button" onclick="setReviewRating(5)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
-                            </div>
-                            <span id="starRatingLabel" class="text-xs font-bold text-amber-300 ml-1">5 ดาว - ยอดเยี่ยม ประทับใจมาก</span>
-                        </div>
-                    </div>
-
-                    <!-- 2. Identity Selector: Identified vs Anonymous -->
-                    <div>
-                        <label class="text-[11px] text-slate-300 block mb-1.5 font-medium">รูปแบบการแสดงตัวตน:</label>
-                        <div class="grid grid-cols-2 gap-2">
-                            <button type="button" id="btnIdentityIdentified" onclick="setReviewAnonymous(false)" class="p-2.5 rounded-xl border border-emerald-500/50 bg-emerald-500/15 text-white flex items-center gap-2 text-left transition-all">
-                                <div class="w-7 h-7 rounded-lg bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0">
-                                    <i class="ph-bold ph-user text-sm"></i>
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <div class="text-[11px] font-bold text-emerald-300">ระบุตัวตน (Identified)</div>
-                                    <div class="text-[9.5px] text-slate-300 truncate" id="identityUserPreview">แสดงชื่อ / บัญชีผู้ใช้</div>
-                                </div>
-                            </button>
-
-                            <button type="button" id="btnIdentityAnonymous" onclick="setReviewAnonymous(true)" class="p-2.5 rounded-xl border border-slate-700 bg-slate-950/70 text-slate-400 flex items-center gap-2 text-left transition-all hover:text-white">
-                                <div class="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center shrink-0">
-                                    <i class="ph-bold ph-mask-happy text-sm"></i>
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <div class="text-[11px] font-bold">ไม่ระบุตัวตน (Anonymous)</div>
-                                    <div class="text-[9.5px] text-slate-400 truncate">ปิดบังชื่อผู้ส่งรีวิว</div>
-                                </div>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Custom Nickname Input (Shown when not logged in & Identified) -->
-                    <div id="nicknameInputRow" class="hidden">
-                        <label class="text-[11px] text-slate-300 block mb-1">ชื่อเล่นหรือนามแฝง (Nickname):</label>
-                        <input type="text" id="reviewNicknameInput" maxlength="30" placeholder="เช่น โค้ชบอล คอร์ท 2, ปอนด์ BWF" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400">
-                    </div>
-
-                    <!-- 3. Category Selector -->
-                    <div>
-                        <label class="text-[11px] text-slate-300 block mb-1.5 font-medium">หมวดหมู่ความคิดเห็น:</label>
-                        <div class="flex flex-wrap gap-1.5" id="reviewCategoryChips">
-                            <button type="button" onclick="setReviewCategory('EXPERIENCE')" class="review-category-chip active" data-cat="EXPERIENCE">🌟 ประสบการณ์ใช้งาน</button>
-                            <button type="button" onclick="setReviewCategory('FEATURE')" class="review-category-chip" data-cat="FEATURE">💡 ขอเพิ่มฟีเจอร์</button>
-                            <button type="button" onclick="setReviewCategory('ACCURACY')" class="review-category-chip" data-cat="ACCURACY">⚡ ความแม่นยำ AI/กล้อง</button>
-                            <button type="button" onclick="setReviewCategory('BUG')" class="review-category-chip" data-cat="BUG">🐞 แจ้งปัญหา/บั๊ก</button>
-                        </div>
-                    </div>
-
-                    <!-- 4. Comment Textarea -->
-                    <div>
-                        <div class="flex items-center justify-between mb-1">
-                            <label class="text-[11px] text-slate-300 font-medium">ข้อความรีวิว / ความคิดเห็น:</label>
-                            <span class="text-[10px] text-slate-500 font-mono" id="reviewCharCount">0 / 400</span>
-                        </div>
-                        <textarea id="reviewCommentInput" maxlength="400" rows="3" oninput="updateReviewCharCount(this)" placeholder="แชร์ความรู้สึกจากการใช้งาน เช่น ระบบสายตาเหยี่ยวแม่นยำมาก, อยากให้เพิ่มโหมดสตรีมสด..." class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-400 leading-relaxed resize-none"></textarea>
-                    </div>
-
-                    <div class="flex items-center justify-between gap-2 pt-1">
-                        <span id="reviewFormStatusMsg" class="text-[11px] text-amber-300 truncate"></span>
-                        <button type="button" id="btnSubmitReview" onclick="submitCommunityReview()" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shrink-0 transition-transform active:scale-95 shadow-md shadow-amber-500/20">
-                            <i class="ph-bold ph-paper-plane-right"></i>
-                            <span>ส่งรีวิวสาธารณะ</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Community Reviews Public Feed -->
-                <div class="space-y-3">
-                    <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
-                            <i class="ph-fill ph-chat-circle-dots text-amber-400"></i>
-                            <span>รีวิวจากผู้ใช้งานจริง (Public Community Feed)</span>
-                        </h4>
-                        <!-- Category Filter Pills -->
-                        <div class="flex items-center gap-1 overflow-x-auto pb-1 max-w-full text-[10px]" id="reviewFilterBar">
-                            <button onclick="filterCommunityReviews('ALL')" class="px-2.5 py-1 rounded-lg bg-amber-500/25 text-amber-300 font-bold border border-amber-500/40 shrink-0" data-filter="ALL">ทั้งหมด</button>
-                            <button onclick="filterCommunityReviews('5STAR')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="5STAR">⭐ 5 ดาว</button>
-                            <button onclick="filterCommunityReviews('FEATURE')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="FEATURE">💡 ขอฟีเจอร์</button>
-                            <button onclick="filterCommunityReviews('EXPERIENCE')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="EXPERIENCE">🌟 ประสบการณ์</button>
-                            <button onclick="filterCommunityReviews('ACCURACY')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="ACCURACY">⚡ AI/กล้อง</button>
-                            <button onclick="filterCommunityReviews('BUG')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="BUG">🐞 แจ้งบั๊ก</button>
-                        </div>
-                    </div>
-
-                    <div id="communityReviewsList" class="space-y-2.5">
-                        <!-- Rendered Review Cards -->
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -624,14 +423,14 @@
                             </div>
                             <div class="min-w-0">
                                 <div class="flex items-center gap-1.5">
-                                    <span class="text-xs font-bold text-white">รีวิว &amp; ความคิดเห็นผู้ใช้</span>
-                                    <span class="text-[9.5px] px-1.5 py-0.2 rounded bg-amber-500/25 text-amber-300 font-extrabold border border-amber-500/40">4.9 ★</span>
+                                    <span class="text-xs font-bold text-white">รีวิว &amp; ข้อเสนอแนะ</span>
+                                    <span class="text-[9.5px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30">Community</span>
                                 </div>
-                                <div class="text-[10px] text-slate-400 truncate">App Community Feed • ระบุตัวตน / ไม่ระบุตัวตน</div>
+                                <div class="text-[10px] text-slate-400 truncate">App Community Feed • รีวิวและข้อเสนอแนะจริง</div>
                             </div>
                         </div>
-                        <button onclick="closeMoreSheet(); openCommunityReviewModal()" class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shrink-0 flex items-center gap-1 shadow-md shadow-amber-500/20">
-                            <span>ดูรีวิว</span>
+                        <button onclick="closeMoreSheet(); switchTab('reviews')" class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shrink-0 flex items-center gap-1 shadow-md shadow-amber-500/20">
+                            <span>เปิดดู</span>
                             <i class="ph-bold ph-caret-right text-xs"></i>
                         </button>
                     </div>
@@ -918,36 +717,241 @@
                 <div id="aiCoachOutput" class="text-xs md:text-sm text-slate-200 leading-relaxed"></div>
             </div>
         </section>
+
+        <!-- ==================== PAGE 5: COMMUNITY REVIEWS & FEEDBACK ==================== -->
+        <section id="tab-reviews" class="hidden space-y-4">
+            <div class="glass-panel rounded-3xl p-4 sm:p-5 border border-amber-500/30 space-y-5">
+                <!-- Header -->
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-md shadow-amber-500/20 text-slate-950 shrink-0">
+                            <i class="ph-fill ph-star text-xl"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h2 class="text-sm sm:text-base font-bold text-white">คะแนนรีวิว &amp; ความคิดเห็นผู้ใช้งาน</h2>
+                                <span class="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-bold">Community</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400">Respond for Best Experience • รีวิวและข้อเสนอแนะจริงจากผู้ใช้งาน (ไร้ข้อมูลจำลอง)</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="fetchCommunityReviewsFromSupabase()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5" title="รีเฟรชข้อมูลรีวิวล่าสุด">
+                            <i class="ph-bold ph-arrows-clockwise"></i>
+                            <span>รีเฟรช</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Rating Summary Scorecard (Real Data Only - Zero Mock Simulation) -->
+                <div class="bg-gradient-to-br from-slate-900/95 to-slate-950/95 border border-slate-800 rounded-2xl p-4 sm:p-5">
+                    <div class="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 sm:gap-6 items-center">
+                        <div class="text-center sm:text-left sm:pr-4 sm:border-r sm:border-slate-800 shrink-0">
+                            <div class="text-4xl sm:text-5xl font-extrabold text-white font-mono tracking-tight" id="reviewAvgScoreText">0.0</div>
+                            <div class="flex items-center justify-center sm:justify-start gap-1 my-1 text-slate-600 text-base" id="reviewAvgStarsContainer">
+                                <i class="ph-bold ph-star"></i><i class="ph-bold ph-star"></i><i class="ph-bold ph-star"></i><i class="ph-bold ph-star"></i><i class="ph-bold ph-star"></i>
+                            </div>
+                            <div class="text-[11px] text-slate-400">จากทั้งหมด <b id="reviewTotalCountText" class="text-slate-200">0</b> รีวิวผู้ใช้งาน</div>
+                        </div>
+
+                        <!-- Rating Bars (5, 4, 3, 2, 1) -->
+                        <div class="space-y-1.5 flex-1 min-w-0 text-[11px]" id="reviewBreakdownBars">
+                            <div class="flex items-center gap-2">
+                                <span class="w-6 text-slate-400 text-right font-mono">5★</span>
+                                <div class="flex-1 bg-slate-800/80 rounded-full h-2 overflow-hidden">
+                                    <div class="bg-amber-400 h-full rounded-full transition-all duration-300" id="reviewBar5" style="width: 0%;"></div>
+                                </div>
+                                <span class="w-8 text-slate-400 font-mono text-right" id="reviewPct5">0%</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-6 text-slate-400 text-right font-mono">4★</span>
+                                <div class="flex-1 bg-slate-800/80 rounded-full h-2 overflow-hidden">
+                                    <div class="bg-amber-400/80 h-full rounded-full transition-all duration-300" id="reviewBar4" style="width: 0%;"></div>
+                                </div>
+                                <span class="w-8 text-slate-400 font-mono text-right" id="reviewPct4">0%</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-6 text-slate-400 text-right font-mono">3★</span>
+                                <div class="flex-1 bg-slate-800/80 rounded-full h-2 overflow-hidden">
+                                    <div class="bg-amber-400/50 h-full rounded-full transition-all duration-300" id="reviewBar3" style="width: 0%;"></div>
+                                </div>
+                                <span class="w-8 text-slate-400 font-mono text-right" id="reviewPct3">0%</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-6 text-slate-400 text-right font-mono">2★</span>
+                                <div class="flex-1 bg-slate-800/80 rounded-full h-2 overflow-hidden">
+                                    <div class="bg-amber-400/20 h-full rounded-full transition-all duration-300" id="reviewBar2" style="width: 0%;"></div>
+                                </div>
+                                <span class="w-8 text-slate-400 font-mono text-right" id="reviewPct2">0%</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-6 text-slate-400 text-right font-mono">1★</span>
+                                <div class="flex-1 bg-slate-800/80 rounded-full h-2 overflow-hidden">
+                                    <div class="bg-amber-400/10 h-full rounded-full transition-all duration-300" id="reviewBar1" style="width: 0%;"></div>
+                                </div>
+                                <span class="w-8 text-slate-400 font-mono text-right" id="reviewPct1">0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quality Badges -->
+                    <div class="mt-3 pt-3 border-t border-slate-800/80 flex flex-wrap items-center gap-2 text-[10px]">
+                        <span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 font-medium">
+                            <i class="ph-fill ph-shield-check"></i> BWF 2026 Engine
+                        </span>
+                        <span class="px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 flex items-center gap-1 font-medium">
+                            <i class="ph-fill ph-cpu"></i> On-Device AI 60 FPS
+                        </span>
+                        <span class="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1 font-medium">
+                            <i class="ph-fill ph-chat-circle-dots"></i> Public Community Feed
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Review Submission Card -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3.5">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <span class="font-bold text-white text-xs flex items-center gap-1.5">
+                            <i class="ph-bold ph-pencil-simple text-amber-400"></i>
+                            <span>เขียนรีวิว / ส่งข้อเสนอแนะของคุณ</span>
+                        </span>
+                        <span class="text-[10px] text-slate-400">ทุกคนจะเห็นรีวิวนี้ในฟีดสาธารณะ</span>
+                    </div>
+
+                    <!-- 1. Star Rating Picker -->
+                    <div>
+                        <label class="text-[11px] text-slate-300 block mb-1.5 font-medium">ให้คะแนนความพึงพอใจ:</label>
+                        <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-1 text-2xl" id="starInputContainer">
+                                <button type="button" onclick="setReviewRating(1)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
+                                <button type="button" onclick="setReviewRating(2)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
+                                <button type="button" onclick="setReviewRating(3)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
+                                <button type="button" onclick="setReviewRating(4)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
+                                <button type="button" onclick="setReviewRating(5)" class="star-rating-btn text-amber-400"><i class="ph-fill ph-star"></i></button>
+                            </div>
+                            <span id="starRatingLabel" class="text-xs font-bold text-amber-300 ml-1">5 ดาว - ยอดเยี่ยม ประทับใจมาก</span>
+                        </div>
+                    </div>
+
+                    <!-- 2. Identity Selector: Identified vs Anonymous -->
+                    <div>
+                        <label class="text-[11px] text-slate-300 block mb-1.5 font-medium">รูปแบบการแสดงตัวตน:</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button type="button" id="btnIdentityIdentified" onclick="setReviewAnonymous(false)" class="p-2.5 rounded-xl border border-emerald-500/50 bg-emerald-500/15 text-white flex items-center gap-2 text-left transition-all">
+                                <div class="w-7 h-7 rounded-lg bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0">
+                                    <i class="ph-bold ph-user text-sm"></i>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-[11px] font-bold text-emerald-300">ระบุตัวตน (Identified)</div>
+                                    <div class="text-[9.5px] text-slate-300 truncate" id="identityUserPreview">แสดงชื่อ / บัญชีผู้ใช้</div>
+                                </div>
+                            </button>
+
+                            <button type="button" id="btnIdentityAnonymous" onclick="setReviewAnonymous(true)" class="p-2.5 rounded-xl border border-slate-700 bg-slate-950/70 text-slate-400 flex items-center gap-2 text-left transition-all hover:text-white">
+                                <div class="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center shrink-0">
+                                    <i class="ph-bold ph-mask-happy text-sm"></i>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-[11px] font-bold">ไม่ระบุตัวตน (Anonymous)</div>
+                                    <div class="text-[9.5px] text-slate-400 truncate">ปิดบังชื่อผู้ส่งรีวิว</div>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Custom Nickname Input (Shown when not logged in & Identified) -->
+                    <div id="nicknameInputRow" class="hidden">
+                        <label class="text-[11px] text-slate-300 block mb-1">ชื่อเล่นหรือนามแฝง (Nickname):</label>
+                        <input type="text" id="reviewNicknameInput" maxlength="30" placeholder="เช่น โค้ชบอล คอร์ท 2, ปอนด์ BWF" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400">
+                    </div>
+
+                    <!-- 3. Category Selector -->
+                    <div>
+                        <label class="text-[11px] text-slate-300 block mb-1.5 font-medium">หมวดหมู่ความคิดเห็น:</label>
+                        <div class="flex flex-wrap gap-1.5" id="reviewCategoryChips">
+                            <button type="button" onclick="setReviewCategory('EXPERIENCE')" class="review-category-chip active" data-cat="EXPERIENCE">🌟 ประสบการณ์ใช้งาน</button>
+                            <button type="button" onclick="setReviewCategory('FEATURE')" class="review-category-chip" data-cat="FEATURE">💡 ขอเพิ่มฟีเจอร์</button>
+                            <button type="button" onclick="setReviewCategory('ACCURACY')" class="review-category-chip" data-cat="ACCURACY">⚡ ความแม่นยำ AI/กล้อง</button>
+                            <button type="button" onclick="setReviewCategory('BUG')" class="review-category-chip" data-cat="BUG">🐞 แจ้งปัญหา/บั๊ก</button>
+                        </div>
+                    </div>
+
+                    <!-- 4. Comment Textarea -->
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="text-[11px] text-slate-300 font-medium">ข้อความรีวิว / ความคิดเห็น:</label>
+                            <span class="text-[10px] text-slate-500 font-mono" id="reviewCharCount">0 / 400</span>
+                        </div>
+                        <textarea id="reviewCommentInput" maxlength="400" rows="3" oninput="updateReviewCharCount(this)" placeholder="แชร์ความรู้สึกจากการใช้งาน เช่น ระบบสายตาเหยี่ยวแม่นยำมาก, อยากให้เพิ่มโหมดสตรีมสด..." class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-amber-400 leading-relaxed resize-none"></textarea>
+                    </div>
+
+                    <div class="flex items-center justify-between gap-2 pt-1">
+                        <span id="reviewFormStatusMsg" class="text-[11px] text-amber-300 truncate"></span>
+                        <button type="button" id="btnSubmitReview" onclick="submitCommunityReview()" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shrink-0 transition-transform active:scale-95 shadow-md shadow-amber-500/20">
+                            <i class="ph-bold ph-paper-plane-right"></i>
+                            <span>ส่งรีวิวสาธารณะ</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Community Reviews Public Feed -->
+                <div class="space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h4 class="text-xs font-bold text-white flex items-center gap-1.5">
+                            <i class="ph-fill ph-chat-circle-dots text-amber-400"></i>
+                            <span>รีวิวจากผู้ใช้งานจริง (Public Community Feed)</span>
+                        </h4>
+                        <!-- Category Filter Pills -->
+                        <div class="flex items-center gap-1 overflow-x-auto pb-1 max-w-full text-[10px]" id="reviewFilterBar">
+                            <button onclick="filterCommunityReviews('ALL')" class="px-2.5 py-1 rounded-lg bg-amber-500/25 text-amber-300 font-bold border border-amber-500/40 shrink-0" data-filter="ALL">ทั้งหมด</button>
+                            <button onclick="filterCommunityReviews('5STAR')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="5STAR">⭐ 5 ดาว</button>
+                            <button onclick="filterCommunityReviews('FEATURE')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="FEATURE">💡 ขอฟีเจอร์</button>
+                            <button onclick="filterCommunityReviews('EXPERIENCE')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="EXPERIENCE">🌟 ประสบการณ์</button>
+                            <button onclick="filterCommunityReviews('ACCURACY')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="ACCURACY">⚡ AI/กล้อง</button>
+                            <button onclick="filterCommunityReviews('BUG')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 shrink-0 hover:text-white" data-filter="BUG">🐞 แจ้งบั๊ก</button>
+                        </div>
+                    </div>
+
+                    <div id="communityReviewsList" class="space-y-2.5">
+                        <!-- Rendered Review Cards -->
+                    </div>
+                </div>
+            </div>
+        </section>
     </main>
 
-    <!-- Bottom Tab Navigation -->
-    <nav class="fixed bottom-0 left-0 right-0 z-40 ios-bottom-nav border-t border-slate-800/90 px-2 pt-1.5">
-        <div class="max-w-md mx-auto grid grid-cols-4 gap-1">
+    <!-- Bottom Tab Navigation (5 Tabs: Live, Stats, 2D, AI Coach, Reviews) -->
+    <nav class="fixed bottom-0 left-0 right-0 z-40 ios-bottom-nav border-t border-slate-800/90 px-1 sm:px-2 pt-1.5">
+        <div class="max-w-md mx-auto grid grid-cols-5 gap-0.5 sm:gap-1">
             <button onclick="switchTab('live')" id="tabBtn-live" class="flex flex-col items-center justify-center py-1.5 rounded-2xl text-emerald-400 bg-emerald-500/15 font-semibold transition-all">
-                <i class="ph-fill ph-video-camera text-xl"></i>
-                <span class="text-[10px] mt-0.5">สนามจริง & สกอร์</span>
+                <i class="ph-fill ph-video-camera text-lg sm:text-xl"></i>
+                <span class="text-[9px] sm:text-[10px] mt-0.5 truncate max-w-full">สนามจริง &amp; สกอร์</span>
             </button>
             <button onclick="switchTab('stats')" id="tabBtn-stats" class="flex flex-col items-center justify-center py-1.5 rounded-2xl text-slate-400 hover:text-slate-200 font-medium transition-all">
-                <i class="ph-bold ph-lightning text-xl"></i>
-                <span class="text-[10px] mt-0.5">สถิติตบ & ผู้เล่น</span>
+                <i class="ph-bold ph-lightning text-lg sm:text-xl"></i>
+                <span class="text-[9px] sm:text-[10px] mt-0.5 truncate max-w-full">สถิติตบ &amp; ผู้เล่น</span>
             </button>
             <button onclick="switchTab('analytics')" id="tabBtn-analytics" class="flex flex-col items-center justify-center py-1.5 rounded-2xl text-slate-400 hover:text-slate-200 font-medium transition-all">
-                <i class="ph-bold ph-map-trifold text-xl"></i>
-                <span class="text-[10px] mt-0.5">กราฟิกวิ่ง 2D</span>
+                <i class="ph-bold ph-map-trifold text-lg sm:text-xl"></i>
+                <span class="text-[9px] sm:text-[10px] mt-0.5 truncate max-w-full">กราฟิกวิ่ง 2D</span>
             </button>
             <button onclick="switchTab('coach')" id="tabBtn-coach" class="flex flex-col items-center justify-center py-1.5 rounded-2xl text-slate-400 hover:text-slate-200 font-medium transition-all">
-                <i class="ph-bold ph-robot text-xl"></i>
-                <span class="text-[10px] mt-0.5">โค้ช AI</span>
+                <i class="ph-bold ph-robot text-lg sm:text-xl"></i>
+                <span class="text-[9px] sm:text-[10px] mt-0.5 truncate max-w-full">โค้ช AI</span>
+            </button>
+            <button onclick="switchTab('reviews')" id="tabBtn-reviews" class="flex flex-col items-center justify-center py-1.5 rounded-2xl text-slate-400 hover:text-slate-200 font-medium transition-all">
+                <i class="ph-bold ph-chat-teardrop-dots text-lg sm:text-xl"></i>
+                <span class="text-[9px] sm:text-[10px] mt-0.5 truncate max-w-full">รีวิว / ติชม</span>
             </button>
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261101m" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261101m"></script>
-    <script src="js/cv-court.js?v=20261101m"></script>
-    <script src="js/pose-tracker.js?v=20261101m"></script>
-    <script src="js/scoreboard.js?v=20261101m"></script>
-    <script src="js/live-view.js?v=20261101m"></script>
-    <script src="js/analytics-coach.js?v=20261101m"></script>
+    <script src="js/env.local.js?v=20261101n" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261101n"></script>
+    <script src="js/cv-court.js?v=20261101n"></script>
+    <script src="js/pose-tracker.js?v=20261101n"></script>
+    <script src="js/scoreboard.js?v=20261101n"></script>
+    <script src="js/live-view.js?v=20261101n"></script>
+    <script src="js/analytics-coach.js?v=20261101n"></script>
 </body>
 </html>

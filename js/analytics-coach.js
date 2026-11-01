@@ -800,7 +800,7 @@ function resetMatchData(silent = false) {
 
 function switchTab(tabId) {
     activeTab = tabId;
-    ['live', 'stats', 'analytics', 'coach'].forEach(t => {
+    ['live', 'stats', 'analytics', 'coach', 'reviews'].forEach(t => {
         const section = document.getElementById(`tab-${t}`);
         const btn = document.getElementById(`tabBtn-${t}`);
         if (!section || !btn) return;
@@ -819,6 +819,14 @@ function switchTab(tabId) {
         }, 40);
     } else if (tabId === 'coach' && !latestAICoachReportText) {
         renderCoachPreviewStandby();
+    } else if (tabId === 'reviews') {
+        if (!communityReviews || communityReviews.length === 0) {
+            communityReviews = loadLocalCommunityReviews();
+        }
+        updateReviewIdentityPreview();
+        updateReviewScorecardUI();
+        renderCommunityReviews();
+        fetchCommunityReviewsFromSupabase();
     }
 }
 
@@ -1407,66 +1415,11 @@ function exportReportJSON() {
 
 /********************************************************************
  * APP STORE / PLAY STORE STYLE COMMUNITY REVIEWS & USER FEEDBACK
- * (Identified & Anonymous Modes, Public Community Feed, Cloud Sync)
+ * (Zero Simulated Reviews, Identified & Anonymous Modes, Public Feed)
  ********************************************************************/
 
-const DEFAULT_COMMUNITY_SEED_REVIEWS = [
-    {
-        id: 1730460000001,
-        created_at: new Date(Date.now() - 3600000 * 3).toISOString(),
-        user_id: null,
-        display_name: 'โค้ชธีระ (BWF Certified)',
-        is_anonymous: false,
-        rating: 5,
-        category: 'EXPERIENCE',
-        comment: 'ระบบ 8-DOF Homography คอร์ท 13.40m x 6.10m จับตำแหน่ง rotation ผู้เล่นเกมคู่ได้แม่นยำมาก เอามาเปิดวิเคราะห์แท็กติกหลังแมตช์ซ้อมได้เห็นภาพชัดเจนเลยครับ',
-        helpful_count: 16
-    },
-    {
-        id: 1730460000002,
-        created_at: new Date(Date.now() - 3600000 * 8).toISOString(),
-        user_id: null,
-        display_name: 'นักแบดมินตันนิรนาม #348',
-        is_anonymous: true,
-        rating: 5,
-        category: 'ACCURACY',
-        comment: 'ความเร็วลูกตบวัดได้สมจริงมาก ไม่ดีดเกิน 300-400 km/h เหมือนระบบเดิมแล้ว และเสียงกรรมการภาษาไทยช่วยให้เล่นสนุกขึ้นเยอะ',
-        helpful_count: 11
-    },
-    {
-        id: 1730460000003,
-        created_at: new Date(Date.now() - 3600000 * 16).toISOString(),
-        user_id: null,
-        display_name: 'ปอนด์ ชายคู่วงการแบด',
-        is_anonymous: false,
-        rating: 5,
-        category: 'FEATURE',
-        comment: 'อยากเสนอให้เพิ่มระบบจำแนกลูกหยอด Net Kill กับ Drive เพิ่มเติมด้วยครับ ภาพรวมแอปนี้ลื่นไหลมาก 60fps ไม่มีสะดุด',
-        helpful_count: 8
-    },
-    {
-        id: 1730460000004,
-        created_at: new Date(Date.now() - 3600000 * 26).toISOString(),
-        user_id: null,
-        display_name: 'ผู้ใช้งานนิรนาม (Anonymous) #192',
-        is_anonymous: true,
-        rating: 4,
-        category: 'EXPERIENCE',
-        comment: 'ฟีเจอร์อัดคลิปสดไม่มีกราฟิกทับลงมือถือดีมาก ประหยัดพื้นที่จัดเก็บได้เยอะ เอาไฟล์ไปตัดต่อต่อได้สบาย',
-        helpful_count: 6
-    },
-    {
-        id: 1730460000005,
-        created_at: new Date(Date.now() - 3600000 * 38).toISOString(),
-        user_id: null,
-        display_name: 'ก๊วนแบดวันศุกร์ CMU',
-        is_anonymous: false,
-        rating: 5,
-        category: 'ACCURACY',
-        comment: 'สายตาเหยี่ยว IN/OUT มาร์จิ้นบอกเป็นเซนติเมตรช่วยลดข้อถกเถียงในสนามได้จริง ประทับใจมากครับ',
-        helpful_count: 14
-    }
-];
+// Production Mode: Zero simulated mock reviews or fake scores
+const DEFAULT_COMMUNITY_SEED_REVIEWS = [];
 
 const REVIEW_CATEGORY_META = {
     EXPERIENCE: { label: '🌟 ประสบการณ์ใช้งาน', badgeClass: 'text-amber-300 bg-amber-500/15 border-amber-500/30' },
@@ -1503,11 +1456,13 @@ function loadLocalCommunityReviews() {
         if (stored) {
             const parsed = JSON.parse(stored);
             if (Array.isArray(parsed) && parsed.length > 0) {
-                return parsed;
+                // Remove obsolete mock seed reviews (IDs 1730460000001 - 1730460000010)
+                const realUserReviews = parsed.filter(r => !r || !r.id || (r.id < 1730460000001 || r.id > 1730460000010));
+                return realUserReviews;
             }
         }
     } catch (e) {}
-    return [...DEFAULT_COMMUNITY_SEED_REVIEWS];
+    return [];
 }
 
 function saveLocalCommunityReviews() {
@@ -1517,23 +1472,11 @@ function saveLocalCommunityReviews() {
 }
 
 function openCommunityReviewModal() {
-    const modal = document.getElementById('communityReviewModal');
-    if (!modal) return;
-    modal.classList.remove('hidden');
-
-    if (!communityReviews || communityReviews.length === 0) {
-        communityReviews = loadLocalCommunityReviews();
-    }
-
-    updateReviewIdentityPreview();
-    updateReviewScorecardUI();
-    renderCommunityReviews();
-    fetchCommunityReviewsFromSupabase();
+    switchTab('reviews');
 }
 
 function closeCommunityReviewModal() {
-    const modal = document.getElementById('communityReviewModal');
-    if (modal) modal.classList.add('hidden');
+    switchTab('live');
 }
 
 function setReviewRating(stars) {
@@ -1695,23 +1638,38 @@ async function submitCommunityReview() {
 }
 
 function updateReviewScorecardUI() {
-    const list = communityReviews;
-    if (!list || list.length === 0) return;
+    const list = communityReviews || [];
+    const scoreEl = document.getElementById('reviewAvgScoreText');
+    const totalEl = document.getElementById('reviewTotalCountText');
+    const starsContainer = document.getElementById('reviewAvgStarsContainer');
+
+    if (!list || list.length === 0) {
+        if (scoreEl) scoreEl.textContent = '0.0';
+        if (totalEl) totalEl.textContent = '0';
+        if (starsContainer) {
+            starsContainer.innerHTML = Array.from({ length: 5 }).map(() =>
+                '<i class="ph-bold ph-star text-slate-700"></i>'
+            ).join('');
+        }
+        [5, 4, 3, 2, 1].forEach(star => {
+            const bar = document.getElementById(`reviewBar${star}`);
+            const pctEl = document.getElementById(`reviewPct${star}`);
+            if (bar) bar.style.width = '0%';
+            if (pctEl) pctEl.textContent = '0%';
+        });
+        return;
+    }
 
     const total = list.length;
     const sumRatings = list.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
     const avgScore = (sumRatings / total).toFixed(1);
-
-    const scoreEl = document.getElementById('reviewAvgScoreText');
-    const totalEl = document.getElementById('reviewTotalCountText');
-    const starsContainer = document.getElementById('reviewAvgStarsContainer');
 
     if (scoreEl) scoreEl.textContent = avgScore;
     if (totalEl) totalEl.textContent = total;
     if (starsContainer) {
         const roundedScore = Math.round(Number(avgScore));
         starsContainer.innerHTML = Array.from({ length: 5 }).map((_, i) =>
-            i < roundedScore ? '<i class="ph-fill ph-star"></i>' : '<i class="ph-bold ph-star text-slate-600"></i>'
+            i < roundedScore ? '<i class="ph-fill ph-star text-amber-400"></i>' : '<i class="ph-bold ph-star text-slate-700"></i>'
         ).join('');
     }
 
@@ -1757,9 +1715,12 @@ function renderCommunityReviews() {
 
     if (filtered.length === 0) {
         container.innerHTML = `
-            <div class="text-center text-slate-500 py-8 space-y-1">
-                <i class="ph-bold ph-chat-circle-dots text-2xl text-slate-600"></i>
-                <div class="text-xs">ยังไม่มีรีวิวในหมวดหมู่นี้ ร่วมเป็นคนแรกที่เขียนรีวิว!</div>
+            <div class="text-center text-slate-400 py-10 space-y-2">
+                <div class="w-12 h-12 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-400 text-2xl">
+                    <i class="ph-bold ph-chat-circle-dots"></i>
+                </div>
+                <div class="text-sm font-bold text-white">ยังไม่มีความคิดเห็นหรือรีวิว</div>
+                <div class="text-xs text-slate-400 max-w-xs mx-auto">ร่วมเป็นคนแรกที่ส่งรีวิว ให้คะแนน หรือแนะนำฟีเจอร์ใหม่สำหรับ ShuttlePro AI!</div>
             </div>
         `;
         return;
