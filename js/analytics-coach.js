@@ -311,11 +311,6 @@ async function verifyFrameWithGeminiAI() {
         showToast('กรุณาเปิดกล้องสดหรือเปิดคลิปวิดีโอเพื่อส่งภาพให้ AI ตรวจสอบ');
         return;
     }
-    if (!geminiApiKey) {
-        toggleApiKeyModal();
-        showToast('กรุณาใส่ Gemini API Key เพื่อใช้ฟีเจอร์ส่งภาพเฟรมสนามให้ Gemini Vision ตรวจสอบ');
-        return;
-    }
 
     showToast('กำลังส่งภาพเฟรมสนามจริงให้ Gemini Vision AI ตรวจสอบเส้นคอร์ท เน็ท และขานแต้ม...');
     try {

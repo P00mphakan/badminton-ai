@@ -63,9 +63,6 @@
                 <button onclick="saveCurrentMatchRecord()" class="w-8 h-8 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 flex items-center justify-center" title="บันทึกแมตช์นี้">
                     <i class="ph-bold ph-floppy-disk text-sm"></i>
                 </button>
-                <button onclick="toggleApiKeyModal()" class="w-8 h-8 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-amber-300 border border-slate-700 flex items-center justify-center" title="ตั้งค่า Gemini API Key">
-                    <i class="ph-bold ph-key text-amber-400 text-sm"></i>
-                </button>
                 <button onclick="toggleIOSGuideModal()" class="w-8 h-8 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center" title="วิธีเพิ่มลงหน้าจอโฮม iPhone">
                     <i class="ph-bold ph-device-mobile text-emerald-400 text-sm"></i>
                 </button>
@@ -317,9 +314,8 @@
                         <label class="sheet-toggle"><input type="checkbox" id="chkShowTrails" checked class="accent-emerald-500"><span>เส้นวิ่ง</span></label>
                         <label class="sheet-toggle"><input type="checkbox" id="chkShowSkeleton" class="accent-emerald-500"><span>โครงร่าง</span></label>
                     </div>
-                    <div class="grid grid-cols-2 gap-2">
-                        <button onclick="toggleMoreSheet(); toggleApiKeyModal()" class="sheet-btn !flex-row !justify-start !px-3"><i class="ph-fill ph-key text-amber-300"></i><span>Gemini API Key</span></button>
-                        <button onclick="cycleCameraOrientation()" class="sheet-btn !flex-row !justify-start !px-3"><i class="ph-bold ph-frame-corners text-cyan-300"></i><span id="btnOrientationLabel">ภาพ: Auto</span></button>
+                    <div class="grid grid-cols-1 gap-2">
+                        <button onclick="cycleCameraOrientation()" class="sheet-btn !flex-row !justify-center !px-3"><i class="ph-bold ph-frame-corners text-cyan-300"></i><span id="btnOrientationLabel">ภาพ: Auto</span></button>
                     </div>
                 </div>
             </div>
@@ -507,12 +503,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261101" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261101"></script>
-    <script src="js/cv-court.js?v=20261101"></script>
-    <script src="js/pose-tracker.js?v=20261101"></script>
-    <script src="js/scoreboard.js?v=20261101"></script>
-    <script src="js/live-view.js?v=20261101"></script>
-    <script src="js/analytics-coach.js?v=20261101"></script>
+    <script src="js/env.local.js?v=20261101b" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261101b"></script>
+    <script src="js/cv-court.js?v=20261101b"></script>
+    <script src="js/pose-tracker.js?v=20261101b"></script>
+    <script src="js/scoreboard.js?v=20261101b"></script>
+    <script src="js/live-view.js?v=20261101b"></script>
+    <script src="js/analytics-coach.js?v=20261101b"></script>
 </body>
 </html>
