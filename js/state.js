@@ -364,6 +364,7 @@ const shuttle = {
     vx: 0,
     vy: 0,
     speedKmh: 0,
+    lastSpeedAtMs: 0,
     shotType: 'รอตรวจจับลูกแบด',
     lastHitter: null,
     lastHitterTeam: null,

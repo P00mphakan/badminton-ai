@@ -27,6 +27,8 @@ let activeVideoTrack = null;
 let currentNativePixels = { width: 0, height: 0, fps: 60 };
 let calibPausedVideo = false;
 let uploadedVideoDurationFixed = 0;
+let frameClockMs = 0;
+let lastProcessedMediaTime = -1;
 
 function getSafeVideoDuration() {
     if (!webcamVideo) return 0;
@@ -1437,7 +1439,14 @@ function renderLiveScene() {
         liveCtx.drawImage(webcamVideo, rx, ry, rw, rh);
     }
 
-    if (!isTrackingPaused) {
+    const mt = webcamVideo.currentTime;
+    const isNewFrame = !isUploadedVideoActive || mt !== lastProcessedMediaTime;
+    if (isUploadedVideoActive && (mt < lastProcessedMediaTime || mt - lastProcessedMediaTime > 0.5)) {
+        if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
+    }
+    if (!isTrackingPaused && isNewFrame) {
+        lastProcessedMediaTime = mt;
+        frameClockMs = isUploadedVideoActive ? mt * 1000 : performance.now();
         runRealPoseEstimation(webcamVideo);
         const cvRes = ShuttleCV.analyzeVideoFrameCV(webcamVideo, detectedHumanBoxes);
         processRealShuttleAndRally(cvRes);
@@ -1817,7 +1826,10 @@ function drawRealShuttleAndHawkeye(ctx, w, h) {
         ctx.shadowBlur = 0;
         ctx.font = 'bold 11px monospace';
         ctx.fillStyle = sColor;
-        ctx.fillText(`${shuttle.speedKmh} km/h`, sx + 12, sy + 4);
+        const nowMs = (typeof trackerNow === 'function') ? trackerNow() : performance.now();
+        if (shuttle.speedKmh > 0 && shuttle.lastSpeedAtMs && (nowMs - shuttle.lastSpeedAtMs < 2000)) {
+            ctx.fillText(`${shuttle.speedKmh} km/h`, sx + 12, sy + 4);
+        }
         ctx.restore();
     }
 

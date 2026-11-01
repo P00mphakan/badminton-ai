@@ -64,8 +64,20 @@ function renderShotHistoryList() {
 function updateLiveHUD() {
     const speedEl = document.getElementById('liveSpeedValue');
     const badgeEl = document.getElementById('liveShotTypeBadge');
-    if (speedEl) speedEl.textContent = shuttle.speedKmh;
-    if (badgeEl) badgeEl.textContent = shuttle.shotType;
+    const nowMs = (typeof trackerNow === 'function') ? trackerNow() : performance.now();
+    const isRecent = shuttle.speedKmh > 0 && (nowMs - (shuttle.lastSpeedAtMs || 0) < 5000);
+
+    if (speedEl) {
+        speedEl.textContent = shuttle.speedKmh;
+        if (shuttle.speedKmh > 0 && !isRecent) {
+            speedEl.classList.add('opacity-40');
+        } else {
+            speedEl.classList.remove('opacity-40');
+        }
+    }
+    if (badgeEl) {
+        badgeEl.textContent = (shuttle.speedKmh > 0 && !isRecent) ? `${shuttle.shotType} (ล่าสุด)` : shuttle.shotType;
+    }
 
     document.getElementById('statMaxSpeed').textContent = maxRecordedSpeed;
     document.getElementById('statMaxHolder').textContent = maxSpeedHolder;

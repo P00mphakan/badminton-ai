@@ -7,6 +7,18 @@
  *          time-of-flight speed measurement.
  ********************************************************************/
 
+function trackerNow() {
+    return (typeof frameClockMs === 'number' && frameClockMs > 0) ? frameClockMs : performance.now();
+}
+
+function resetShuttleTracker() {
+    shuttleTrack = [];
+    activeShot = null;
+    pendingRallyEnd = null;
+    shuttle.detected = false;
+    shuttle.trail = [];
+}
+
 async function initPoseDetectionModel() {
     if (poseDetector || isPoseModelLoading) return;
     isPoseModelLoading = true;
@@ -214,7 +226,7 @@ function updatePlayerSlot(slot, c, now) {
 
 async function runRealPoseEstimation(videoEl) {
     if (!videoEl || videoEl.readyState < 2) return;
-    const now = performance.now();
+    const now = trackerNow();
 
     Object.values(players).forEach(p => {
         if (p.detected && now - p.lastSeenMs > 800) {
@@ -425,18 +437,28 @@ function finalizeShot(shot, endU, endV, tEnd, isLanding) {
 
     // 2. Direct pixel-to-meter velocity from early shuttle track at hitter's depth plane
     const vTrack = measureTrackInitialSpeedMps(shuttleTrack, shot.startV);
+    // If no real track speed was observed on camera, DO NOT invent/hallucinate speed from pure time-of-flight
+    if (vTrack <= 0) return;
+
+    // Trajectory consistency check: time-of-flight vs measured metric speed must align within 1.8x
+    const ratio = Math.max(vDrag, vTrack) / Math.max(0.1, Math.min(vDrag, vTrack));
+    if (ratio > 1.8) return;
+
+    const realPts = shuttleTrack.filter(pt => !pt.inpainted);
+    if (realPts.length < 4) return;
 
     // 3. Cross-validate both measurements (blends time-of-flight with actual observed pixel velocity)
-    let v0 = vTrack > 0 ? (vDrag * 0.55 + vTrack * 0.45) : (vDrag * 0.85);
+    let v0 = (vDrag * 0.55 + vTrack * 0.45);
 
-    // Boost slightly if wrist swing velocity at impact was explosive (jump smash / full smash)
-    const wristBoost = Math.min(1.12, 1.0 + Math.max(0, (shot.hitter.wristSpeedPx || 0) - 1.2) * 0.06);
+    // Controlled wrist boost up to 1.05 only on clear explosive swings
+    const wristBoost = Math.min(1.05, 1.0 + Math.max(0, (shot.hitter.wristSpeedPx || 0) - 1.2) * 0.03);
     let kmh = Math.round(v0 * 3.6 * wristBoost);
 
     // Realistic club / competitive single-camera bounds (rejects physically impossible > 265 km/h spikes)
     if (kmh < 22 || kmh > 265) return;
 
     shuttle.speedKmh = kmh;
+    shuttle.lastSpeedAtMs = trackerNow();
     classifyRealStroke(shot.hitter, kmh, dH, shot.startV, endV, tf);
 }
 
@@ -465,7 +487,7 @@ function handleTrackEnd(now) {
 }
 
 function processRealShuttleAndRally(cvResult) {
-    const now = performance.now();
+    const now = trackerNow();
     if (!ShuttleCV.getCourtLocked()) {
         shuttleTrack = [];
         activeShot = null;
