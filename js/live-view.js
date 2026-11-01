@@ -870,17 +870,19 @@ function triggerAutoSnapCourtCV() {
     showToast('กำลังตรวจจับเส้นสนามอัตโนมัติ...');
     setTimeout(() => {
         try {
-            const videoEl = isUploadedVideoActive ? uploadedVideo : webcamVideo;
+            const videoEl = webcamVideo; // uploaded clips & live camera share the same <video> element
             const refineRes = ShuttleCV.refineCourtToLines ? ShuttleCV.refineCourtToLines(videoEl, detectedHumanBoxes) : null;
             ShuttleCV.setCourtLocked(true);
             if (refineRes && refineRes.ok) {
+                ShuttleCV.setCourtTrusted(true);
                 showToast(`ดูดเข้าหาเส้นขาวสนามจริงสำเร็จ! (ความคลาดเคลื่อน ${refineRes.rmsPx} px)`);
             } else {
-                showToast('ล็อกเส้นสนามแล้ว • สามารถกด "ตั้งเส้น" เพื่อปรับแต่งมุมคอร์ท 4 จุดได้');
+                showToast('สแกนเส้นไม่ผ่าน • กด "ตั้งเส้นสนาม" ลาก 4 มุมให้ตรงเส้นจริงก่อน (ระบบจะยังไม่ให้แต้มอัตโนมัติ)');
             }
         } catch (e) {
+            console.warn('Auto court scan failed:', e);
             ShuttleCV.setCourtLocked(true);
-            showToast('ล็อกเส้นสนามตามพิกัดมาตรฐานเรียบร้อย');
+            showToast('สแกนเส้นไม่สำเร็จ • กรุณากด "ตั้งเส้นสนาม" เพื่อทาบเส้นคอร์ทด้วยมือ');
         }
     }, 40);
 }
@@ -1534,8 +1536,9 @@ function drawCalibrationHandlesAndLoupe(ctx, w, h) {
         ctx.restore();
     });
 
-    if (draggingHandleKey && dragPointerPos && (webcamVideo.readyState >= 2 || (isUploadedVideoActive && uploadedVideo.readyState >= 2))) {
-        const activeVideo = isUploadedVideoActive ? uploadedVideo : webcamVideo;
+    // NOTE: uploaded clips play through the same <video id="webcamVideo"> element (there is no separate uploadedVideo element)
+    if (draggingHandleKey && dragPointerPos && webcamVideo.readyState >= 2) {
+        const activeVideo = webcamVideo;
         const loupeRadius = 56;
         const zoom = 3.0;
         const targetX = dragPointerPos.x * w;

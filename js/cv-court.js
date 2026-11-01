@@ -65,6 +65,7 @@ window.ShuttleCV = (function () {
     let netConfidence = 0;   // 0..100%
     let isCourtLocked = true;
     let isManuallyEdited = false;
+    let isCourtTrustedFlag = false; // set true after a successful refineCourtToLines() or explicit calibration save
     let autoLockEnabled = true;
 
     // Calibrated / Detected Court Keypoints in normalized screen coordinates [0..1]
@@ -941,6 +942,10 @@ window.ShuttleCV = (function () {
         getDetectedNet: () => detectedNetSegment,
         setCourtLocked: (locked) => { isCourtLocked = locked; },
         getCourtLocked: () => isCourtLocked,
+        // "Trusted" = court geometry verified by user drag-calibration or a successful line refine.
+        // Auto-scoring / line calls must only run when the court is trusted (default guessed corners are NOT trusted).
+        setCourtTrusted: (trusted) => { isCourtTrustedFlag = !!trusted; },
+        isCourtTrusted: () => isCourtTrustedFlag || isManuallyEdited,
         updateHomography: updateHomographyFromCorners,
         analyzeVideoFrameCV,
         refineCourtToLines,
