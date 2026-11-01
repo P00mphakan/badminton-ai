@@ -8,6 +8,12 @@
 const _DEFAULT_BG_KEY = ["AQ.Ab8RN6K5", "Ux0BYmRTkcp4", "7XatUEEXavlpt", "n5t8uN6_fUJaQyGJg"].join("");
 let geminiApiKey = (window.SHUTTLEPRO_ENV && window.SHUTTLEPRO_ENV.GEMINI_API_KEY) || localStorage.getItem('shuttlepro_gemini_key') || _DEFAULT_BG_KEY;
 
+// Supabase Cloud Configuration (Multi-user Club / Group Sync)
+const SUPABASE_URL = "https://seaimrwaycdqbskkxxtl.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_rxuBc5sOMUAf2TEbd9uJFA_O3H4Gnlf";
+let clubCode = (localStorage.getItem('shuttlepro_club_code') || 'PUBLIC').trim().toUpperCase();
+let isCloudSynced = false;
+
 // Match Title (user-named recording) & saved match history
 function buildDefaultMatchTitle() {
     const d = new Date();

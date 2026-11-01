@@ -524,7 +524,9 @@ function toggleIOSGuideModal() {
 function openMatchTitleModal() {
     const modal = document.getElementById('matchTitleModal');
     const input = document.getElementById('matchTitleInput');
+    const clubInput = document.getElementById('clubCodeInput');
     if (modal) modal.classList.remove('hidden');
+    if (clubInput) clubInput.value = clubCode || 'PUBLIC';
     if (input) {
         input.value = matchTitle;
         setTimeout(() => input.focus(), 50);
@@ -539,31 +541,170 @@ function renderMatchTitleUI() {
     document.querySelectorAll('.js-match-title').forEach(el => {
         el.textContent = matchTitle;
     });
+    document.querySelectorAll('.js-club-code').forEach(el => {
+        el.textContent = clubCode || 'PUBLIC';
+    });
 }
 
 function saveMatchTitleFromModal(alsoSaveRecord = false) {
     const input = document.getElementById('matchTitleInput');
+    const clubInput = document.getElementById('clubCodeInput');
     if (input && input.value.trim()) {
         matchTitle = input.value.trim();
     } else if (!matchTitle) {
         matchTitle = buildDefaultMatchTitle();
     }
+    const prevClub = clubCode;
+    if (clubInput && clubInput.value.trim()) {
+        clubCode = clubInput.value.trim().toUpperCase();
+    } else {
+        clubCode = 'PUBLIC';
+    }
     localStorage.setItem('shuttlepro_match_title', matchTitle);
+    localStorage.setItem('shuttlepro_club_code', clubCode);
     renderMatchTitleUI();
     closeMatchTitleModal();
+
+    if (prevClub !== clubCode) {
+        fetchCloudMatches(false);
+    }
+
     if (alsoSaveRecord) {
         saveCurrentMatchRecord();
     } else {
-        showToast(`ตั้งชื่อแมตช์เป็น "${matchTitle}" เรียบร้อย`);
+        showToast(`ตั้งชื่อแมตช์ "${matchTitle}" (ห้องก๊วน ${clubCode}) เรียบร้อย`);
     }
 }
 
-function saveCurrentMatchRecord() {
+function updateCloudSyncBadge(text, isOk = true) {
+    const badge = document.getElementById('cloudSyncBadge');
+    if (!badge) return;
+    badge.textContent = `• ${text}`;
+    badge.className = isOk ? 'ml-1 text-[10px] text-emerald-400' : 'ml-1 text-[10px] text-amber-400';
+}
+
+async function syncMatchRecordToSupabase(record) {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
+    try {
+        const payload = {
+            client_match_id: record.id,
+            club_code: record.clubCode || clubCode || 'PUBLIC',
+            title: record.title,
+            saved_at_text: record.savedAt,
+            duration_sec: record.durationSec || 0,
+            format: record.format,
+            score_a: record.scoreA || 0,
+            score_b: record.scoreB || 0,
+            sets_a: record.setsA || 0,
+            sets_b: record.setsB || 0,
+            max_smash_kmh: record.maxSmashKmh || 0,
+            avg_smash_kmh: record.avgSmashKmh || 0,
+            total_smashes: record.totalSmashes || 0,
+            players_summary: record.playersSummary || [],
+            recent_shots: record.recentShots || []
+        };
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/matches`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation,resolution=merge-duplicates'
+            },
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.warn('Supabase insert warning:', err);
+            updateCloudSyncBadge('บันทึกในเครื่องแล้ว (รอตั้งค่าสิทธิ์ตาราง Supabase)', false);
+            return false;
+        }
+        const rows = await res.json();
+        if (rows && rows[0] && rows[0].id) {
+            record.cloudId = rows[0].id;
+            localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
+            renderSavedMatchesList();
+        }
+        isCloudSynced = true;
+        updateCloudSyncBadge('ซิงค์ขึ้น Supabase Cloud แล้ว', true);
+        return true;
+    } catch (e) {
+        updateCloudSyncBadge('ออฟไลน์ (เก็บในเครื่องอัตโนมัติ)', false);
+        return false;
+    }
+}
+
+async function fetchCloudMatches(showNotification = false) {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
+    try {
+        updateCloudSyncBadge('กำลังซิงค์...', true);
+        const code = encodeURIComponent(clubCode || 'PUBLIC');
+        const url = `${SUPABASE_URL}/rest/v1/matches?club_code=eq.${code}&order=created_at.desc&limit=30`;
+        const res = await fetch(url, {
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            if (err.code === '42501') {
+                updateCloudSyncBadge('รอเปิดสิทธิ์ GRANT ตารางใน Supabase SQL', false);
+            } else {
+                updateCloudSyncBadge('ใช้ข้อมูลในเครื่อง', false);
+            }
+            if (showNotification) showToast('ยังไม่ได้เปิดสิทธิ์ GRANT SELECT/INSERT บนตาราง matches ใน Supabase');
+            return;
+        }
+        const rows = await res.json();
+        const cloudRecords = (rows || []).map(r => ({
+            id: r.client_match_id || new Date(r.created_at).getTime(),
+            cloudId: r.id,
+            clubCode: r.club_code || 'PUBLIC',
+            title: r.title,
+            savedAt: r.saved_at_text || new Date(r.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }),
+            isoDate: r.created_at,
+            durationSec: r.duration_sec || 0,
+            format: r.format || 'Doubles (6.10m)',
+            scoreA: r.score_a || 0,
+            scoreB: r.score_b || 0,
+            setsA: r.sets_a || 0,
+            setsB: r.sets_b || 0,
+            maxSmashKmh: r.max_smash_kmh || 0,
+            avgSmashKmh: r.avg_smash_kmh || 0,
+            totalSmashes: r.total_smashes || 0,
+            playersSummary: r.players_summary || [],
+            recentShots: r.recent_shots || []
+        }));
+
+        // Merge unsynced local records for the current clubCode with cloud records
+        const cloudIds = new Set(cloudRecords.map(c => c.id));
+        const localUnsynced = matchHistory.filter(m => (!m.clubCode || m.clubCode === clubCode) && !cloudIds.has(m.id));
+        matchHistory = [...localUnsynced, ...cloudRecords].slice(0, 35);
+        try {
+            localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
+        } catch (e) {}
+        renderSavedMatchesList();
+        isCloudSynced = true;
+        updateCloudSyncBadge(`ซิงค์ Cloud ล่าสุด (${cloudRecords.length} แมตช์)`, true);
+
+        // Push any local unsynced matches up to Supabase automatically
+        for (const unsynced of localUnsynced) {
+            syncMatchRecordToSupabase(unsynced);
+        }
+        if (showNotification) showToast(`ซิงค์ข้อมูลห้องก๊วน "${clubCode}" จาก Supabase สำเร็จ (${cloudRecords.length} แมตช์)`);
+    } catch (e) {
+        updateCloudSyncBadge('ออฟไลน์ (ใช้ข้อมูลในเครื่อง)', false);
+    }
+}
+
+async function saveCurrentMatchRecord() {
     const avgSmash = allSmashSpeeds.length > 0
         ? Math.round(allSmashSpeeds.reduce((a, b) => a + b, 0) / allSmashSpeeds.length)
         : 0;
     const record = {
         id: Date.now(),
+        clubCode: clubCode || 'PUBLIC',
         title: matchTitle || buildDefaultMatchTitle(),
         savedAt: new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }),
         isoDate: new Date().toISOString(),
@@ -588,32 +729,43 @@ function saveCurrentMatchRecord() {
         recentShots: shotHistory.slice(0, 20)
     };
     matchHistory.unshift(record);
-    if (matchHistory.length > 25) matchHistory.pop();
+    if (matchHistory.length > 35) matchHistory.pop();
     try {
         localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
     } catch (e) {}
     renderSavedMatchesList();
     document.getElementById('moreSheet')?.classList.add('hidden');
-    showToast(`บันทึกแมตช์ "${record.title}" ลงประวัติเรียบร้อย!`);
+    showToast(`กำลังบันทึกแมตช์ "${record.title}" ขึ้น Supabase Cloud...`);
+    const ok = await syncMatchRecordToSupabase(record);
+    if (ok) {
+        showToast(`บันทึกแมตช์ "${record.title}" ขึ้น Supabase (ก๊วน ${clubCode}) สำเร็จ!`);
+    }
 }
 
 function renderSavedMatchesList() {
     const container = document.getElementById('savedMatchesList');
     if (!container) return;
     if (!matchHistory || matchHistory.length === 0) {
-        container.innerHTML = `<div class="text-center text-xs text-slate-500 py-5">ยังไม่มีแมตช์ที่บันทึกไว้ • กดปุ่ม "ตั้งชื่อ &amp; บันทึก" เพื่อเก็บสถิติแต่ละแมตช์</div>`;
+        container.innerHTML = `<div class="text-center text-xs text-slate-500 py-5">ยังไม่มีแมตช์ในห้องก๊วน "${clubCode}" • กดปุ่ม "บันทึกแมตช์" เพื่อเก็บสถิติขึ้น Supabase Cloud</div>`;
         return;
     }
-    container.innerHTML = matchHistory.map((m, idx) => `
+    container.innerHTML = matchHistory.map((m, idx) => {
+        const cloudIcon = m.cloudId
+            ? `<i class="ph-fill ph-cloud-check text-cyan-400 text-xs shrink-0" title="บันทึกบน Supabase Cloud แล้ว"></i>`
+            : `<i class="ph-bold ph-device-mobile text-slate-500 text-xs shrink-0" title="บันทึกในเครื่อง"></i>`;
+        return `
         <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2">
             <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5 min-w-0">
+                    ${cloudIcon}
                     <span class="text-xs font-bold text-white truncate">${m.title}</span>
                     <span class="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold shrink-0">
                         A ${m.scoreA} - ${m.scoreB} B
                     </span>
                 </div>
                 <div class="text-[10px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
+                    <span class="text-cyan-300/90 font-mono">[${m.clubCode || 'PUBLIC'}]</span>
+                    <span>•</span>
                     <span>${m.savedAt}</span>
                     <span>•</span>
                     <span>เวลา ${formatTimeSec(m.durationSec || 0)}</span>
@@ -630,7 +782,7 @@ function renderSavedMatchesList() {
                 </button>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
 function exportSavedMatchById(idx) {
@@ -647,12 +799,24 @@ function exportSavedMatchById(idx) {
     showToast(`ส่งออกไฟล์ "${rec.title}" สำเร็จ`);
 }
 
-function deleteSavedMatchById(idx) {
+async function deleteSavedMatchById(idx) {
+    const rec = matchHistory[idx];
     matchHistory.splice(idx, 1);
     try {
         localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
     } catch (e) {}
     renderSavedMatchesList();
+
+    if (rec && (rec.cloudId || rec.id) && SUPABASE_URL && SUPABASE_ANON_KEY) {
+        const query = rec.cloudId ? `id=eq.${rec.cloudId}` : `client_match_id=eq.${rec.id}`;
+        fetch(`${SUPABASE_URL}/rest/v1/matches?${query}`, {
+            method: 'DELETE',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            }
+        }).catch(() => {});
+    }
     showToast('ลบประวัติแมตช์แล้ว');
 }
 
@@ -695,6 +859,7 @@ function exportReportJSON() {
 window.addEventListener('DOMContentLoaded', () => {
     renderMatchTitleUI();
     renderSavedMatchesList();
+    fetchCloudMatches(false);
     resizeCanvases();
     updateScoreboardUI();
     updateLiveHUD();
