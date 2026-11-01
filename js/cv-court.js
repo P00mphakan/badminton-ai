@@ -32,6 +32,14 @@ window.ShuttleCV = (function () {
     let cvFrameCounter = 0;
     let lastFloorHorizonRow = 0;
 
+    // Frame buffers for 3-frame temporal difference (TrackNet-style motion filter) + Hot-Cell Static Rejector
+    let prevGray1 = null;
+    let prevGray2 = null;
+    const HOT_GRID_W = 24;
+    const HOT_GRID_H = 16;
+    let hotCellCounts = new Uint16Array(HOT_GRID_W * HOT_GRID_H);
+    let hotCellTotalFrames = 0;
+
     function syncCvResolution(videoEl) {
         const vw = videoEl.videoWidth || 1280;
         const vh = videoEl.videoHeight || 720;
@@ -45,12 +53,10 @@ window.ShuttleCV = (function () {
             cvCanvas.height = h;
             prevGray1 = null;
             prevGray2 = null;
+            hotCellCounts.fill(0);
+            hotCellTotalFrames = 0;
         }
     }
-
-    // Frame buffers for 3-frame temporal difference (TrackNet-style motion filter)
-    let prevGray1 = null;
-    let prevGray2 = null;
 
     // Detected raw white line segments & net candidates in normalized [0..1] image coords
     let detectedLineSegments = [];
@@ -523,10 +529,16 @@ window.ShuttleCV = (function () {
 
     /****************************************************************
      * 3. 3-FRAME TRANSIENT POINT-TARGET SHUTTLECOCK TRACKER
-     *    Eliminates false positives on player shirts, shoes, lines & lights.
+     *    + Sub-pixel Centroid + Hot-Cell Static Rejector (TrackNetV3-style)
      ****************************************************************/
     function detectShuttleCandidates(currGray, humanBoxes) {
         if (!prevGray1 || !prevGray2 || prevGray1.length !== currGray.length || prevGray2.length !== currGray.length) return [];
+
+        hotCellTotalFrames++;
+        if (hotCellTotalFrames > 600) {
+            for (let i = 0; i < hotCellCounts.length; i++) hotCellCounts[i] >>= 1;
+            hotCellTotalFrames = 300;
+        }
 
         // Only search inside the court airspace polygon (never the stands, walls, roof lights or people off-court)
         const air = getCourtAirspacePolygon();
@@ -547,31 +559,39 @@ window.ShuttleCV = (function () {
             for (let x = xStart; x < xEnd; x += 1) {
                 const idx = y * CV_W + x;
                 const lum = currGray[idx];
-                if (lum < 150) continue;
+                if (lum < 140) continue;
 
-                // 1. Newly bright vs BOTH t-1 and t-2
+                // 1. Newly bright vs BOTH t-1 and t-2 (supports fast motion-blurred shuttle streaks)
                 const d1 = lum - prevGray1[idx];
                 const d2 = lum - prevGray2[idx];
-                if (d1 < 28 || d2 < 28) continue;
+                if (d1 < 22 || d2 < 22) continue;
 
                 // 2. Background stable between t-2 and t-1 (rejects flicker, shirts, camera shake)
-                if (Math.abs(prevGray1[idx] - prevGray2[idx]) > 18) continue;
+                if (Math.abs(prevGray1[idx] - prevGray2[idx]) > 20) continue;
 
-                // 3. Compact point target: all 4 neighbours at radius R clearly darker
+                // 3. Compact point/streak target: allow 1 axis to be slightly elongated for fast smash blur
                 const topLum = currGray[idx - R * CV_W];
                 const botLum = currGray[idx + R * CV_W];
                 const leftLum = currGray[idx - R];
                 const rightLum = currGray[idx + R];
-                if (lum - topLum < 20 || lum - botLum < 20 || lum - leftLum < 20 || lum - rightLum < 20) continue;
+                const vContrast = Math.min(lum - topLum, lum - botLum);
+                const hContrast = Math.min(lum - leftLum, lum - rightLum);
+                if (Math.max(vContrast, hContrast) < 18 || Math.min(vContrast, hContrast) < 10) continue;
 
                 const nx = x / CV_W;
                 if (!pointInConvexPolygon(air, nx, ny)) continue;
 
-                // 4. Exclude player bodies + racket reach
+                // 4. Hot-cell filter (rejects static flickering lights/line intersections > 5% occurrence)
+                const gx = Math.min(HOT_GRID_W - 1, Math.floor(nx * HOT_GRID_W));
+                const gy = Math.min(HOT_GRID_H - 1, Math.floor(ny * HOT_GRID_H));
+                const cellIdx = gy * HOT_GRID_W + gx;
+                if (hotCellTotalFrames > 45 && hotCellCounts[cellIdx] > hotCellTotalFrames * 0.06) continue;
+
+                // 5. Exclude player bodies (keep wrist/racket zone open for hit turn-point detection)
                 let insideHuman = false;
                 for (let i = 0; i < humanBoxes.length; i++) {
                     const b = humanBoxes[i];
-                    if (nx >= b.xMin - 0.03 && nx <= b.xMax + 0.03 && ny >= b.yMin - 0.03 && ny <= b.yMax + 0.02) {
+                    if (nx >= b.xMin - 0.015 && nx <= b.xMax + 0.015 && ny >= b.yMin - 0.015 && ny <= b.yMax + 0.01) {
                         insideHuman = true;
                         break;
                     }
@@ -579,18 +599,33 @@ window.ShuttleCV = (function () {
                 if (insideHuman) continue;
 
                 const surroundAvg = (topLum + botLum + leftLum + rightLum) >> 2;
-                const score = (d1 + d2) * 0.5 + (lum - surroundAvg) * 1.5;
-                if (score >= 64) raw.push({ x: nx, y: ny, score });
+                const score = (d1 + d2) * 0.55 + (lum - surroundAvg) * 1.45;
+                if (score >= 56) {
+                    // 3x3 intensity-weighted sub-pixel centroid
+                    let sumW = 0, sumX = 0, sumY = 0;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            const w = Math.max(0, currGray[(y + dy) * CV_W + (x + dx)] - surroundAvg);
+                            sumW += w;
+                            sumX += (x + dx) * w;
+                            sumY += (y + dy) * w;
+                        }
+                    }
+                    const subX = sumW > 0 ? (sumX / sumW) / CV_W : nx;
+                    const subY = sumW > 0 ? (sumY / sumW) / CV_H : ny;
+                    raw.push({ x: subX, y: subY, score, cellIdx });
+                }
             }
         }
 
-        // Non-maximum suppression -> up to 4 distinct candidates (tracker picks the trajectory-consistent one)
+        // Non-maximum suppression -> up to 6 distinct candidates (Kalman + Inpaint tracker picks the trajectory-consistent one)
         raw.sort((a, b) => b.score - a.score);
         const out = [];
         for (const c of raw) {
-            if (out.every(o => Math.hypot(o.x - c.x, o.y - c.y) > 0.025)) {
+            if (out.every(o => Math.hypot(o.x - c.x, o.y - c.y) > 0.022)) {
+                hotCellCounts[c.cellIdx]++;
                 out.push({ x: c.x, y: c.y, confidence: Math.min(99, Math.round(c.score)) });
-                if (out.length >= 4) break;
+                if (out.length >= 6) break;
             }
         }
         return out;

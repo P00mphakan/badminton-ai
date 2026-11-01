@@ -266,8 +266,48 @@ function setAnalyticsFilter(filter) {
     drawAnalyticsCourt();
 }
 
+const GEMINI_FALLBACK_MODELS = [
+    'gemini-3.5-flash',
+    'gemini-flash-latest',
+    'gemini-3.6-flash'
+];
+
+async function callGeminiAPIWithFallback(parts, expectJson = false) {
+    let lastError = 'ไม่สามารถเชื่อมต่อ Gemini API ได้';
+    for (const modelName of GEMINI_FALLBACK_MODELS) {
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
+            const body = {
+                contents: [{ parts }],
+                generationConfig: {
+                    thinkingConfig: { thinkingBudget: 0 }
+                }
+            };
+            if (expectJson) {
+                body.generationConfig.responseMimeType = 'application/json';
+            }
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                lastError = data?.error?.message || `HTTP ${res.status}`;
+                continue;
+            }
+            const text = data?.candidates?.[0]?.content?.parts?.find(p => p.text)?.text || '';
+            if (text) return { ok: true, text, model: modelName };
+        } catch (err) {
+            lastError = err.message || String(err);
+        }
+    }
+    return { ok: false, error: lastError };
+}
+
 async function verifyFrameWithGeminiAI() {
-    if (!isWebcamActive && !isUploadedVideoActive) {
+    const videoEl = document.getElementById('webcamVideo');
+    if ((!isWebcamActive && !isUploadedVideoActive) || !videoEl || videoEl.readyState < 2) {
         showToast('กรุณาเปิดกล้องสดหรือเปิดคลิปวิดีโอเพื่อส่งภาพให้ AI ตรวจสอบ');
         return;
     }
@@ -282,10 +322,9 @@ async function verifyFrameWithGeminiAI() {
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = 640;
         tempCanvas.height = 360;
-        tempCanvas.getContext('2d').drawImage(webcamVideo, 0, 0, 640, 360);
-        const base64Jpeg = tempCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+        tempCanvas.getContext('2d').drawImage(videoEl, 0, 0, 640, 360);
+        const base64Jpeg = tempCanvas.toDataURL('image/jpeg', 0.82).split(',')[1];
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
         const prompt = `คุณคือกรรมการแบดมินตัน BWF AI วิเคราะห์ภาพสนามแบดมินตันนี้และตอบเป็น JSON เท่านั้น:
 {
   "courtDetected": true หรือ false,
@@ -295,25 +334,16 @@ async function verifyFrameWithGeminiAI() {
   "bl": {"x": 0.0-1.0, "y": 0.0-1.0},
   "netY": 0.0-1.0,
   "playersCount": จำนวนผู้เล่นในสนาม,
-  "refereeSummary": "สรุปสิ่งที่เห็นในสนามและตำแหน่งผู้เล่น/ลูกแบดสั้นๆ ภาษาไทย"
+  "refereeSummary": "สรุปสิ่งที่เห็นในสนาม ตำแหน่งผู้เล่น และคำแนะนำกรรมการสั้นๆ ภาษาไทย"
 }`;
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [
-                        { text: prompt },
-                        { inlineData: { mimeType: 'image/jpeg', data: base64Jpeg } }
-                    ]
-                }],
-                generationConfig: { responseMimeType: 'application/json' }
-            })
-        });
-        if (!res.ok) throw new Error('Gemini Vision API Error');
-        const data = await res.json();
-        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-        const parsed = JSON.parse(rawText);
+        const result = await callGeminiAPIWithFallback([
+            { text: prompt },
+            { inlineData: { mimeType: 'image/jpeg', data: base64Jpeg } }
+        ], true);
+
+        if (!result.ok) throw new Error(result.error);
+        const cleanedJson = result.text.replace(/```json|```/g, '').trim();
+        const parsed = JSON.parse(cleanedJson);
 
         if (parsed.courtDetected && parsed.tl && parsed.tr && parsed.br && parsed.bl) {
             ShuttleCV.setCorner('tl', parsed.tl.x, parsed.tl.y);
@@ -325,12 +355,12 @@ async function verifyFrameWithGeminiAI() {
                 ShuttleCV.setCorner('netR', parsed.tr.x * 0.6 + parsed.br.x * 0.4, parsed.netY);
             }
             ShuttleCV.setCourtLocked(true);
-            showToast(`Gemini Vision ล็อกพิกัดเส้นสนามสำเร็จ! ${parsed.refereeSummary || ''}`);
+            showToast(`Gemini Vision (${result.model}) ล็อกพิกัดเส้นสนามสำเร็จ! ${parsed.refereeSummary || ''}`);
         } else {
             showToast(parsed.refereeSummary || 'Gemini Vision ไม่พบเส้นคอร์ทแบดมินตันที่ชัดเจนในเฟรมนี้');
         }
     } catch (e) {
-        showToast('ไม่สามารถเชื่อมต่อ Gemini Vision API ได้ กรุณาตรวจสอบ API Key');
+        showToast(`Gemini Vision Error: ${e.message || 'กรุณาตรวจสอบ API Key'}`);
     }
 }
 
@@ -339,34 +369,71 @@ async function generateAICoachAdvice(focusTopic = 'full') {
     if (!outputBox) return;
 
     const statsSnapshot = Object.values(players).map(p =>
-        `${p.name} (ทีม ${p.team}): วิ่งจริง ${p.distanceMeters.toFixed(1)} ม., ตบสูงสุด ${p.maxSmashKmh} km/h, ตี ${p.shotsCount} ลูก`
+        `- ${p.name} (ทีม ${p.team}): วิ่งสะสม ${p.distanceMeters.toFixed(1)} ม., ความเร็ววิ่งสูงสุด ${p.maxSpeedKmh} km/h, ตบสูงสุด ${p.maxSmashKmh} km/h, ตบเฉลี่ย ${p.avgSmashKmh} km/h, ตีทั้งหมด ${p.shotsCount} ลูก`
     ).join('\n');
+
+    const recentShotsText = shotHistory.length > 0
+        ? shotHistory.slice(0, 8).map(s => `[${s.time}] ${s.player} (ทีม ${s.team}): ${s.type} ความเร็ว ${s.speed} km/h`).join('\n')
+        : 'ยังไม่มีประวัติช็อตในแรลลี่นี้ (สามารถวิเคราะห์แผนการเล่นเริ่มต้นและการยืนตำแหน่งคู่/เดี่ยวได้)';
 
     if (!geminiApiKey) {
         outputBox.innerHTML = `
             <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-2 text-xs">
                 <div class="font-bold text-emerald-400">สรุปสถิติจริงจากสนามปัจจุบัน (สกอร์ ${scoreboard.scoreA} - ${scoreboard.scoreB})</div>
                 <pre class="text-slate-300 whitespace-pre-wrap font-sans">${statsSnapshot}</pre>
-                <p class="text-amber-300 pt-2">💡 หากต้องการให้ Gemini AI วิเคราะห์เชิงลึกเพิ่มเติม กดปุ่ม "ตั้งค่า AI Key" ด้านบนเพื่อเชื่อมต่อ API Key ของคุณ</p>
+                <p class="text-amber-300 pt-2">💡 หากต้องการให้ Gemini AI วิเคราะห์เชิงลึกเพิ่มเติม กดปุ่มรูปกุญแจด้านบนเพื่อเชื่อมต่อ API Key ของคุณ</p>
             </div>
         `;
         return;
     }
 
-    outputBox.innerHTML = `<div class="py-8 text-center text-xs text-emerald-300">กำลังวิเคราะห์สถิติจริงจากสนามด้วย Gemini AI...</div>`;
+    outputBox.innerHTML = `
+        <div class="py-8 text-center text-xs text-emerald-300 flex flex-col items-center gap-2">
+            <i class="ph-bold ph-spinner animate-spin text-2xl text-emerald-400"></i>
+            <span>กำลังวิเคราะห์กลยุทธ์และสถิติสนามจริงด้วย Gemini AI Coach...</span>
+        </div>
+    `;
     try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: `คุณคือโค้ชแบดมินตันอาชีพ วิเคราะห์สถิติสนามจริงนี้ (สกอร์ ${scoreboard.scoreA}-${scoreboard.scoreB}, หัวข้อ ${focusTopic}):\n${statsSnapshot}` }] }]
-            })
-        });
-        const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || 'ไม่สามารถวิเคราะห์ได้';
-        outputBox.innerHTML = `<div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 text-xs leading-relaxed">${text.replace(/\n/g, '<br>')}</div>`;
+        const prompt = `คุณคือโค้ชแบดมินตันระดับโลก (BWF Pro Coach) วิเคราะห์แมตช์ "${matchTitle}" รูปแบบ ${isDoublesMatch ? 'ประเภทคู่ (Doubles)' : 'ประเภทเดี่ยว (Singles)'}
+สกอร์ปัจจุบัน: ทีม A ${scoreboard.scoreA} - ${scoreboard.scoreB} ทีม B (เซต ${scoreboard.setsA}-${scoreboard.setsB})
+หัวข้อที่เน้น: ${focusTopic}
+
+สถิติผู้เล่นรายบุคคล:
+${statsSnapshot}
+
+บันทึกช็อตล่าสุด:
+${recentShotsText}
+
+กรุณาสรุปเป็นภาษาไทยที่อ่านง่าย แบ่งเป็น 3 หัวข้อสั้นๆ:
+1. 📊 ภาพรวมรูปเกมและการเคลื่อนที่ (Footwork & Coverage)
+2. 🏸 วิเคราะห์เกมรุก-เกมรับ และจังหวะตบ (Shot Selection & Smash Power)
+3. 🎯 แผนกลยุทธ์แก้เกมในแต้มถัดไปสำหรับทีม A และทีม B`;
+
+        const result = await callGeminiAPIWithFallback([{ text: prompt }], false);
+        if (!result.ok) throw new Error(result.error);
+
+        const formattedHtml = result.text
+            .replace(/\*\*(.*?)\*\*/g, '<strong class="text-emerald-300">$1</strong>')
+            .replace(/\n/g, '<br>');
+
+        outputBox.innerHTML = `
+            <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 space-y-3 text-xs leading-relaxed">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span class="font-bold text-emerald-400 flex items-center gap-1.5">
+                        <i class="ph-fill ph-sparkle"></i> คำแนะนำกลยุทธ์จาก Gemini AI Coach
+                    </span>
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono">${result.model}</span>
+                </div>
+                <div class="text-slate-200">${formattedHtml}</div>
+            </div>
+        `;
     } catch (e) {
-        outputBox.innerHTML = `<div class="text-rose-400 text-xs p-4">เกิดข้อผิดพลาดในการเชื่อมต่อ Gemini API</div>`;
+        outputBox.innerHTML = `
+            <div class="bg-rose-950/40 border border-rose-500/40 rounded-xl p-4 text-rose-300 text-xs space-y-1">
+                <div class="font-bold">เกิดข้อผิดพลาดในการเชื่อมต่อ Gemini API</div>
+                <div class="text-[11px] text-rose-400/90">${e.message || 'กรุณาตรวจสอบ Gemini API Key หรือการเชื่อมต่ออินเทอร์เน็ต'}</div>
+            </div>
+        `;
     }
 }
 

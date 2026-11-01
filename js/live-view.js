@@ -368,7 +368,7 @@ function renderLiveScene() {
         liveCtx.fillStyle = '#34d399';
         liveCtx.font = 'bold 16px Prompt, sans-serif';
         liveCtx.textAlign = 'center';
-        liveCtx.fillText('โหมดใช้งานจริง 100% (ปิดระบบจำลองแล้ว)', w / 2, h / 2 - 22);
+        liveCtx.fillText('Badminton AI Analysis', w / 2, h / 2 - 22);
 
         liveCtx.fillStyle = '#cbd5e1';
         liveCtx.font = '13px Prompt, sans-serif';
@@ -532,17 +532,6 @@ function drawHomographyCourtAndNet(ctx, w, h) {
     ctx.lineTo(netTopR.x * w, netTopR.y * h);
     ctx.stroke();
     ctx.shadowBlur = 0;
-
-    const netMidX = ((netTopL.x + netTopR.x) * 0.5) * w;
-    const netMidY = ((netTopL.y + netTopR.y) * 0.5) * h - 8;
-    ctx.fillStyle = 'rgba(9, 13, 22, 0.8)';
-    ctx.beginPath();
-    ctx.roundRect(netMidX - 38, netMidY - 12, 76, 16, 6);
-    ctx.fill();
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 9.5px Prompt, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('NET (1.55m)', netMidX, netMidY - 1);
 
     ctx.restore();
 }

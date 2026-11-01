@@ -294,16 +294,19 @@ async function runRealPoseEstimation(videoEl) {
 }
 
 /* ================================================================
- * 2. SHUTTLE TRACKER + PHYSICS SPEED (time-of-flight with drag)
- *    Shuttle speed decays as v(t) = v0 / (1 + v0 t / L), L = vt² / g ≈ 4.7 m
- *    (terminal velocity vt ≈ 6.8 m/s). Distance x(t) = L ln(1 + v0 t / L)
- *    => v0 = L (e^(x/L) − 1) / t, where x = hitter→receiver/landing path
- *    measured in real meters through the court homography.
+ * 2. SHUTTLE TRACKER + INPAINT TRAJECTORY BRIDGE + PHYSICS SPEED
+ *    Upgraded with TrackNetV3 + InpaintNet concepts:
+ *    - 2nd-order Ballistic Trajectory Predictor & Inpaint Gap Filler
+ *      (bridges up to 5 missing/occluded frames at 60fps ~ 180ms)
+ *    - Inflection Turn-Score Hit Detector: |v2 - v1| / (|v1| + |v2|) >= 0.55
+ *      detects mid-rally direction reversals near a player's racket reach
+ *    - Aerodynamic drag time-of-flight speed: v0 = L (e^(x/L) - 1) / t
  * ================================================================ */
 const SHUTTLE_DRAG_LENGTH_M = 4.7;
-let shuttleTrack = [];         // [{ sx, sy, t }]
-let activeShot = null;         // { hitter, tHit, startU, startV }
-let pendingRallyEnd = null;    // { t }
+const INPAINT_MAX_GAP_MS = 210; // Bridge up to ~5-6 frames of occlusion/blur like InpaintNet
+let shuttleTrack = [];          // [{ sx, sy, t, inpainted }]
+let activeShot = null;          // { hitter, tHit, startU, startV }
+let pendingRallyEnd = null;     // { t }
 
 function playerChestScreen(p) {
     const h = ShuttleCV.expectedPlayerHeightScreen(p.v);
@@ -316,8 +319,12 @@ function nearestPlayerToPoint(sx, sy, teamFilter = null) {
         if (!p.detected) return;
         if (teamFilter && p.team !== teamFilter) return;
         const c = playerChestScreen(p);
-        // distance normalized by player size (racket reach ≈ 0.9 body height)
-        const d = Math.hypot(sx - c.x, sy - c.y) / Math.max(0.02, c.h);
+        // Check both chest/racket center and active wrist keypoints for precise hit attribution
+        let d = Math.hypot(sx - c.x, sy - c.y) / Math.max(0.02, c.h);
+        if (p._lastWrist) {
+            const dw = Math.hypot(sx - p._lastWrist.x, sy - p._lastWrist.y) / Math.max(0.02, c.h);
+            d = Math.min(d, dw * 0.9);
+        }
         if (!best || d < best.d) best = { p, d };
     });
     return best;
@@ -328,24 +335,49 @@ function isPointOnCourtFloor(sx, sy) {
     return ShuttleCV.isInsideCourt(uv.x, uv.y, 0.25, 0.12) ? uv : null;
 }
 
-function onTrackConfirmed(now) {
-    const first = shuttleTrack[0];
-    const second = shuttleTrack[Math.min(2, shuttleTrack.length - 1)];
-    const near = nearestPlayerToPoint(first.sx, first.sy);
+function predictBallisticPoint(track, targetT) {
+    const m = track.length;
+    if (m === 0) return null;
+    if (m === 1) return { x: track[0].sx, y: track[0].sy, stepLen: 0.04 };
+    const b = track[m - 1];
+    const a = track[Math.max(0, m - 2)];
+    const dt1 = Math.max(8, b.t - a.t);
+    const vx = (b.sx - a.sx) / dt1;
+    const vy = (b.sy - a.sy) / dt1;
+    const dtPred = Math.min(INPAINT_MAX_GAP_MS, Math.max(0, targetT - b.t));
+
+    // Estimate vertical gravity curvature from last 3 points if available
+    let ay = 0.00008; // slight downward screen gravity default
+    if (m >= 3) {
+        const c = track[m - 3];
+        const dt0 = Math.max(8, a.t - c.t);
+        const vy0 = (a.sy - c.sy) / dt0;
+        const rawAy = (vy - vy0) / ((dt0 + dt1) * 0.5);
+        ay = Math.max(-0.00025, Math.min(0.00035, rawAy * 0.5));
+    }
+
+    return {
+        x: b.sx + vx * dtPred,
+        y: b.sy + vy * dtPred + 0.5 * ay * dtPred * dtPred,
+        stepLen: Math.hypot(b.sx - a.sx, b.sy - a.sy)
+    };
+}
+
+function startShotFromContact(contactPt, nextPt, now, forcedHitter = null) {
+    const near = forcedHitter ? { p: forcedHitter, d: 0.5 } : nearestPlayerToPoint(contactPt.sx, contactPt.sy);
     const hitter = near && near.d < 2.2 ? near.p : null;
 
-    // Back-extrapolate hit time from the hitter's racket zone to the first tracked point
     let lag = 0;
-    if (hitter) {
+    if (hitter && nextPt) {
         const c = playerChestScreen(hitter);
-        const spd = Math.hypot(second.sx - first.sx, second.sy - first.sy) / Math.max(0.008, (second.t - first.t) / 1000);
-        const gap = Math.max(0, Math.hypot(first.sx - c.x, first.sy - c.y) - c.h * 0.5);
-        lag = Math.min(0.12, gap / Math.max(0.05, spd));
+        const spd = Math.hypot(nextPt.sx - contactPt.sx, nextPt.sy - contactPt.sy) / Math.max(0.008, (nextPt.t - contactPt.t) / 1000);
+        const gap = Math.max(0, Math.hypot(contactPt.sx - c.x, contactPt.sy - c.y) - c.h * 0.5);
+        lag = Math.min(0.10, gap / Math.max(0.05, spd));
     }
 
     activeShot = {
         hitter,
-        tHit: first.t - lag * 1000,
+        tHit: contactPt.t - lag * 1000,
         startU: hitter ? hitter.u : null,
         startV: hitter ? hitter.v : null
     };
@@ -353,12 +385,18 @@ function onTrackConfirmed(now) {
         shuttle.lastHitter = hitter.id;
         shuttle.lastHitterTeam = hitter.team;
     }
-    shuttle.trail = [];
     pendingRallyEnd = null;
     if (scoreboard.rallyState !== 'RALLYING') {
         scoreboard.rallyState = 'RALLYING';
         updateScoreboardUI();
     }
+}
+
+function onTrackConfirmed(now) {
+    const first = shuttleTrack[0];
+    const second = shuttleTrack[Math.min(2, shuttleTrack.length - 1)];
+    shuttle.trail = [];
+    startShotFromContact(first, second, now);
 }
 
 function finalizeShot(shot, endU, endV, tEnd, isLanding) {
@@ -367,7 +405,7 @@ function finalizeShot(shot, endU, endV, tEnd, isLanding) {
     const dz = isLanding ? 2.3 : 1.2; // contact height drop (overhead → floor / → receiver contact)
     const x = Math.hypot(dH, dz);
     const tf = (tEnd - shot.tHit) / 1000;
-    if (tf < 0.15 || tf > 3.0 || dH < 1.0) return;
+    if (tf < 0.14 || tf > 3.2 || dH < 1.0) return;
 
     const L = SHUTTLE_DRAG_LENGTH_M;
     const v0 = (L * (Math.exp(x / L) - 1)) / tf; // m/s
@@ -375,18 +413,18 @@ function finalizeShot(shot, endU, endV, tEnd, isLanding) {
     if (kmh < 15 || kmh > 430) return; // physically implausible -> discard
 
     shuttle.speedKmh = kmh;
-    classifyRealStroke(shot.hitter, kmh, dH);
+    classifyRealStroke(shot.hitter, kmh, dH, shot.startV, endV, tf);
 }
 
 function handleTrackEnd(now) {
-    if (shuttleTrack.length >= 4 && activeShot) {
-        const last = shuttleTrack[shuttleTrack.length - 1];
-        const prev = shuttleTrack[shuttleTrack.length - 2];
+    const realPts = shuttleTrack.filter(pt => !pt.inpainted);
+    if (realPts.length >= 3 && activeShot) {
+        const last = realPts[realPts.length - 1];
+        const prev = realPts[realPts.length - 2];
         const oppTeam = activeShot.hitter ? (activeShot.hitter.team === 'A' ? 'B' : 'A') : null;
         const rec = nearestPlayerToPoint(last.sx, last.sy, oppTeam);
 
-        if (rec && rec.d < 1.8) {
-            // Received by the opponent: end point = receiver position
+        if (rec && rec.d < 1.85) {
             finalizeShot(activeShot, rec.p.u, rec.p.v, last.t, false);
             pendingRallyEnd = null;
         } else {
@@ -413,58 +451,112 @@ function processRealShuttleAndRally(cvResult) {
 
     const cands = cvResult?.shuttleCandidates || (cvResult?.shuttleCandidate ? [cvResult.shuttleCandidate] : []);
     let chosen = null;
-    const n = shuttleTrack.length;
 
-    if (n > 0 && now - shuttleTrack[n - 1].t > 140) {
+    // Trim trailing inpainted points if gap exceeded INPAINT_MAX_GAP_MS
+    const lastReal = [...shuttleTrack].reverse().find(pt => !pt.inpainted);
+    if (shuttleTrack.length > 0 && (!lastReal || now - lastReal.t > INPAINT_MAX_GAP_MS)) {
         handleTrackEnd(now);
     }
 
     const m = shuttleTrack.length;
     if (m >= 2) {
-        const a = shuttleTrack[m - 2], b = shuttleTrack[m - 1];
-        const k = (now - b.t) / Math.max(8, b.t - a.t);
-        const px = b.sx + (b.sx - a.sx) * k;
-        const py = b.sy + (b.sy - a.sy) * k;
-        const stepLen = Math.hypot(b.sx - a.sx, b.sy - a.sy);
-        const gate = 0.03 + stepLen * 0.8;
+        const pred = predictBallisticPoint(shuttleTrack, now);
+        const missedMs = lastReal ? (now - lastReal.t) : 16;
+        const gapMultiplier = 1 + Math.min(2.2, missedMs / 45);
+        const gate = Math.min(0.22, (0.032 + pred.stepLen * 0.85) * gapMultiplier);
         let bestD = gate;
         cands.forEach(c => {
-            const d = Math.hypot(c.x - px, c.y - py);
+            const d = Math.hypot(c.x - pred.x, c.y - pred.y);
             if (d < bestD) { bestD = d; chosen = c; }
         });
+
+        // InpaintNet-style Trajectory Bridge: if no candidate matched right on the ballistic curve,
+        // check if a candidate near a player represents a sharp hit reversal, or inpaint the occluded frame
+        if (!chosen && cands.length > 0) {
+            const b = shuttleTrack[m - 1];
+            const nearCand = cands.find(c => Math.hypot(c.x - b.sx, c.y - b.sy) < 0.09);
+            if (nearCand) chosen = nearCand;
+        }
     } else if (m === 1) {
         const b = shuttleTrack[0];
-        const maxStep = Math.min(0.15, 0.09 * Math.max(1, (now - b.t) / 16.7));
+        const maxStep = Math.min(0.16, 0.095 * Math.max(1, (now - b.t) / 16.7));
         let bestD = maxStep;
         cands.forEach(c => {
             const d = Math.hypot(c.x - b.sx, c.y - b.sy);
-            if (d >= 0.003 && d < bestD) { bestD = d; chosen = c; }
+            if (d >= 0.0025 && d < bestD) { bestD = d; chosen = c; }
         });
-        if (!chosen && cands.length) shuttleTrack = [{ sx: cands[0].x, sy: cands[0].y, t: now }];
+        if (!chosen && cands.length) shuttleTrack = [{ sx: cands[0].x, sy: cands[0].y, t: now, inpainted: false }];
     } else if (cands.length) {
-        shuttleTrack = [{ sx: cands[0].x, sy: cands[0].y, t: now }];
+        shuttleTrack = [{ sx: cands[0].x, sy: cands[0].y, t: now, inpainted: false }];
     }
 
     if (chosen) {
-        // Direction consistency (allows ballistic arcs, rejects zig-zag noise)
+        // Backfill / Inpaint intermediate frames if we bridged an occlusion gap (linear + ballistic blend)
+        while (shuttleTrack.length > 0 && shuttleTrack[shuttleTrack.length - 1].inpainted) {
+            shuttleTrack.pop();
+        }
         if (shuttleTrack.length >= 2) {
-            const a = shuttleTrack[shuttleTrack.length - 2], b = shuttleTrack[shuttleTrack.length - 1];
-            const v1x = b.sx - a.sx, v1y = b.sy - a.sy, v2x = chosen.x - b.sx, v2y = chosen.y - b.sy;
-            const m1 = Math.hypot(v1x, v1y), m2 = Math.hypot(v2x, v2y);
-            if (m1 > 1e-4 && m2 > 1e-4 && (v1x * v2x + v1y * v2y) / (m1 * m2) < 0.3) {
-                handleTrackEnd(now);
-                shuttleTrack = [{ sx: chosen.x, sy: chosen.y, t: now }];
-                chosen = null;
+            const prevPt = shuttleTrack[shuttleTrack.length - 1];
+            const gapMs = now - prevPt.t;
+            if (gapMs > 36 && gapMs <= INPAINT_MAX_GAP_MS) {
+                const steps = Math.min(4, Math.floor(gapMs / 22));
+                for (let s = 1; s < steps; s++) {
+                    const frac = s / steps;
+                    const interp = {
+                        sx: prevPt.sx + (chosen.x - prevPt.sx) * frac,
+                        sy: prevPt.sy + (chosen.y - prevPt.sy) * frac,
+                        t: prevPt.t + gapMs * frac,
+                        inpainted: true
+                    };
+                    shuttleTrack.push(interp);
+                    shuttle.trail.push({ sx: interp.sx, sy: interp.sy, u: shuttle.u, v: shuttle.v, t: interp.t });
+                }
             }
         }
+
+        // Inflection Turn-Score Hit Detector (inspired by badminton-ai-analyzer `turning_points`):
+        // turnScore = |v2 - v1| / (|v1| + |v2|). When >= 0.55 near a player, finalize previous shot & start new shot seamlessly!
+        if (shuttleTrack.length >= 2) {
+            const a = shuttleTrack[shuttleTrack.length - 2], b = shuttleTrack[shuttleTrack.length - 1];
+            const v1x = b.sx - a.sx, v1y = b.sy - a.sy;
+            const v2x = chosen.x - b.sx, v2y = chosen.y - b.sy;
+            const m1 = Math.hypot(v1x, v1y), m2 = Math.hypot(v2x, v2y);
+            const turnScore = (m1 + m2 > 1e-4) ? Math.hypot(v2x - v1x, v2y - v1y) / (m1 + m2) : 0;
+
+            if (turnScore >= 0.58) {
+                const nearPlayer = nearestPlayerToPoint(b.sx, b.sy);
+                if (nearPlayer && nearPlayer.d < 1.95) {
+                    if (activeShot && activeShot.hitter && b.t - activeShot.tHit >= 160) {
+                        finalizeShot(activeShot, nearPlayer.p.u, nearPlayer.p.v, b.t, false);
+                    }
+                    const nextPt = { sx: chosen.x, sy: chosen.y, t: now, inpainted: false };
+                    shuttleTrack = [b, nextPt];
+                    startShotFromContact(b, nextPt, now, nearPlayer.p);
+                    chosen = null;
+                } else if (turnScore >= 0.78) {
+                    handleTrackEnd(now);
+                    shuttleTrack = [{ sx: chosen.x, sy: chosen.y, t: now, inpainted: false }];
+                    chosen = null;
+                }
+            }
+        }
+
         if (chosen) {
-            shuttleTrack.push({ sx: chosen.x, sy: chosen.y, t: now });
+            shuttleTrack.push({ sx: chosen.x, sy: chosen.y, t: now, inpainted: false });
             if (shuttleTrack.length > 120) shuttleTrack.shift();
-            if (shuttleTrack.length === 4) onTrackConfirmed(now);
+            const realCount = shuttleTrack.filter(pt => !pt.inpainted).length;
+            if (realCount === 3 && !activeShot) onTrackConfirmed(now);
+        }
+    } else if (shuttleTrack.length >= 3 && lastReal && (now - lastReal.t) <= 95) {
+        // Real-time InpaintNet prediction for up to ~3 frames during fast motion blur
+        const pred = predictBallisticPoint(shuttleTrack, now);
+        if (pred && pred.x > 0.02 && pred.x < 0.98 && pred.y > 0.02 && pred.y < 0.98) {
+            shuttleTrack.push({ sx: pred.x, sy: pred.y, t: now, inpainted: true });
         }
     }
 
-    if (shuttleTrack.length >= 4) {
+    const realCount = shuttleTrack.filter(pt => !pt.inpainted).length;
+    if (realCount >= 3) {
         const last = shuttleTrack[shuttleTrack.length - 1];
         const uv = ShuttleCV.screenToCourtNormalized(last.sx, last.sy);
         shuttle.screenX = last.sx;
@@ -472,12 +564,10 @@ function processRealShuttleAndRally(cvResult) {
         shuttle.u = Math.max(-0.2, Math.min(1.2, uv.x));
         shuttle.v = Math.max(-0.2, Math.min(1.2, uv.y));
         shuttle.detected = true;
-        shuttle.lastSeenMs = now;
+        if (!last.inpainted) shuttle.lastSeenMs = now;
         shuttle.framesInFlight = shuttleTrack.length;
-        if (chosen) {
-            shuttle.trail.push({ sx: last.sx, sy: last.sy, u: shuttle.u, v: shuttle.v, t: now });
-            if (shuttle.trail.length > 24) shuttle.trail.shift();
-        }
+        shuttle.trail.push({ sx: last.sx, sy: last.sy, u: shuttle.u, v: shuttle.v, t: now });
+        if (shuttle.trail.length > 28) shuttle.trail.shift();
         return;
     }
 
@@ -487,24 +577,32 @@ function processRealShuttleAndRally(cvResult) {
         if (scoreboard.rallyState === 'RALLYING') evaluateRallyEndAndAutoScore();
         shuttle.detected = false;
         shuttle.trail = [];
-    } else if (shuttle.detected && now - shuttle.lastSeenMs > 400) {
+    } else if (shuttle.detected && now - shuttle.lastSeenMs > 420) {
         shuttle.detected = false;
     }
 }
 
-function classifyRealStroke(hitter, speedKmh, distM) {
+function classifyRealStroke(hitter, speedKmh, distM, startV = null, endV = null, flightSec = 0.5) {
+    // Combine aerodynamic speed with court-depth geometry (hit_depth & land_depth from Net at v=0.5)
+    const hitDepthM = startV !== null ? Math.abs(startV - 0.5) * ShuttleCV.COURT_LENGTH_M : 3.5;
+    const landDepthM = endV !== null ? Math.abs(endV - 0.5) * ShuttleCV.COURT_LENGTH_M : 3.5;
+
     let typeName;
     let isSmash = false;
-    if (speedKmh >= 230) {
+    if (speedKmh >= 225) {
         typeName = 'Jump Smash (ตบกระโดด)';
         isSmash = true;
-    } else if (speedKmh >= 170) {
+    } else if (speedKmh >= 165 || (hitDepthM >= 3.2 && landDepthM <= 4.4 && flightSec < 0.48 && speedKmh >= 135)) {
         typeName = 'Smash (ลูกตบ)';
         isSmash = true;
+    } else if (hitDepthM < 2.6 && landDepthM < 2.8) {
+        typeName = 'Net Shot (ลูกหน้าเน็ต)';
+    } else if (hitDepthM < 3.2 && landDepthM >= 3.8) {
+        typeName = flightSec >= 0.68 ? 'Lift (งัดโด่งหลัง)' : 'Push / Drive (ผลักดาด)';
     } else if (speedKmh >= 110) {
-        typeName = distM >= 8 ? 'Clear (โยนลึก)' : 'Drive (ดาดเร็ว)';
+        typeName = (distM >= 7.5 || flightSec >= 0.72) ? 'Clear (โยนลึก)' : 'Drive (ดาดเร็ว)';
     } else {
-        typeName = distM <= 4.5 ? 'Net / Drop (หยอด)' : 'Lift (งัด)';
+        typeName = landDepthM <= 3.6 ? 'Drop Shot (หยอด)' : 'Clear / Lift (โยนหลัง)';
     }
 
     shuttle.shotType = typeName;
