@@ -1580,10 +1580,10 @@ function drawHomographyCourtAndNet(ctx, w, h) {
 function drawCalibrationHandlesAndLoupe(ctx, w, h) {
     const corners = ShuttleCV.getCorners();
     const labels = {
-        tl: 'เส้นหลังซ้าย (TL)',
-        tr: 'เส้นหลังขวา (TR)',
-        br: 'เส้นเสิร์ฟขวา (SR)',
-        bl: 'เส้นเสิร์ฟซ้าย (SL)',
+        tl: 'เส้นหลังฝั่งไกล-ซ้าย (TL)',
+        tr: 'เส้นหลังฝั่งไกล-ขวา (TR)',
+        br: 'เส้นเสิร์ฟสั้นฝั่งใกล้-ขวา (SR)',
+        bl: 'เส้นเสิร์ฟสั้นฝั่งใกล้-ซ้าย (SL)',
         netL: 'หัวเน็ทซ้าย (Net-L)',
         netR: 'หัวเน็ทขวา (Net-R)'
     };
@@ -1611,10 +1611,10 @@ function drawCalibrationHandlesAndLoupe(ctx, w, h) {
 
         ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
         ctx.beginPath();
-        ctx.roundRect(px - 44, py - 28, 88, 16, 5);
+        ctx.roundRect(px - 60, py - 28, 120, 16, 5);
         ctx.fill();
         ctx.fillStyle = color;
-        ctx.font = 'bold 9.5px Prompt, sans-serif';
+        ctx.font = 'bold 9px Prompt, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(label, px, py - 17);
         ctx.restore();
