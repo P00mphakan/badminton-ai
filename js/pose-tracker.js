@@ -183,25 +183,54 @@ function assignCandidatesToSlots(team, cands, now) {
 }
 
 function updatePlayerSlot(slot, c, now) {
-    const wasTracked = slot.detected && now - slot.lastSeenMs < 600;
+    const wasTracked = slot.detected && now - slot.lastSeenMs < 700;
     const dt = wasTracked ? (now - slot.lastSeenMs) / 1000 : 0;
-    const alpha = 0.6;
+    const alpha = 0.55;
     const newU = wasTracked ? slot.u * (1 - alpha) + c.u * alpha : c.u;
     const newV = wasTracked ? slot.v * (1 - alpha) + c.v * alpha : c.v;
 
+    // Maintain a rolling 500ms window for noise-resilient speed calculation
+    if (!slot._posWindow) slot._posWindow = [];
+    slot._posWindow.push({ u: newU, v: newV, t: now });
+    // Keep window within 500ms
+    while (slot._posWindow.length > 1 && now - slot._posWindow[0].t > 500) {
+        slot._posWindow.shift();
+    }
+
+    // Depth-adaptive deadband (perspective causes higher meter jitter in far court where 1px = ~40cm)
+    const noiseM = 0.14 + 0.30 * (1 - Math.max(0, Math.min(1, newV)));
+
     if (wasTracked && dt > 0) {
-        const stepM = Math.hypot((newU - slot.u) * ShuttleCV.COURT_WIDTH_M, (newV - slot.v) * ShuttleCV.COURT_LENGTH_M);
-        if (stepM >= 0.03 && stepM < 2.0) {
-            slot.distanceMeters = +(slot.distanceMeters + stepM).toFixed(2);
-            const inst = Math.min(32, (stepM / dt) * 3.6);
-            slot.currentSpeedKmh = +(slot.currentSpeedKmh * 0.6 + inst * 0.4).toFixed(1);
-            slot.maxSpeedKmh = Math.max(slot.maxSpeedKmh, slot.currentSpeedKmh);
-            slot.positions.push({ x: newU, y: newV, t: matchSeconds });
-            if (slot.positions.length > 600) slot.positions.shift();
-        } else {
-            slot.currentSpeedKmh = +(slot.currentSpeedKmh * 0.8).toFixed(1);
+        // 1. Distance accumulation via anchor to eliminate stationary jitter drift
+        if (!slot._anchor) slot._anchor = { u: newU, v: newV };
+        const dAnchor = Math.hypot((newU - slot._anchor.u) * ShuttleCV.COURT_WIDTH_M, (newV - slot._anchor.v) * ShuttleCV.COURT_LENGTH_M);
+        if (dAnchor > noiseM && dAnchor < 2.5) {
+            slot.distanceMeters = +(slot.distanceMeters + dAnchor).toFixed(2);
+            slot._anchor = { u: newU, v: newV };
         }
+
+        // 2. Velocity derived from net displacement over the 500ms window
+        const firstPt = slot._posWindow[0];
+        const dtWindow = (now - firstPt.t) / 1000;
+        const netDisplacementM = Math.hypot((newU - firstPt.u) * ShuttleCV.COURT_WIDTH_M, (newV - firstPt.v) * ShuttleCV.COURT_LENGTH_M);
+
+        let inst = 0;
+        if (netDisplacementM > noiseM && dtWindow >= 0.15) {
+            inst = Math.min(28, (netDisplacementM / dtWindow) * 3.6);
+        }
+
+        if (inst > 0) {
+            slot.currentSpeedKmh = +(slot.currentSpeedKmh * 0.4 + inst * 0.6).toFixed(1);
+        } else {
+            slot.currentSpeedKmh = +(slot.currentSpeedKmh * 0.5).toFixed(1);
+            if (slot.currentSpeedKmh < 0.8) slot.currentSpeedKmh = 0;
+        }
+        slot.maxSpeedKmh = Math.max(slot.maxSpeedKmh, slot.currentSpeedKmh);
+        slot.positions.push({ x: newU, y: newV, t: matchSeconds });
+        if (slot.positions.length > 600) slot.positions.shift();
     } else {
+        slot._anchor = { u: newU, v: newV };
+        slot.currentSpeedKmh = 0;
         slot.positions.push({ x: newU, y: newV, t: matchSeconds });
     }
 
@@ -216,8 +245,9 @@ function updatePlayerSlot(slot, c, now) {
     const ring = ShuttleCV.courtNormalizedToScreen(newU, newV);
     slot.u = newU;
     slot.v = newV;
-    slot.screenX = c.footX !== undefined ? c.footX : ring.x;
-    slot.screenY = c.footY !== undefined ? c.footY : ring.y;
+    // When court is trusted, render foot ring strictly on calibrated court floor to eliminate misalignment
+    slot.screenX = ShuttleCV.isCourtTrusted() ? ring.x : (c.footX !== undefined ? c.footX : ring.x);
+    slot.screenY = ShuttleCV.isCourtTrusted() ? ring.y : (c.footY !== undefined ? c.footY : ring.y);
     slot.box = c.box;
     slot.keypoints = c.kps;
     slot.detected = true;
@@ -232,6 +262,8 @@ async function runRealPoseEstimation(videoEl) {
         if (p.detected && now - p.lastSeenMs > 800) {
             p.detected = false;
             p.currentSpeedKmh = 0;
+            p._posWindow = [];
+            p._anchor = null;
         }
     });
 
