@@ -380,8 +380,16 @@ let minSmashHolder = '-';
 let allSmashSpeeds = [];
 
 function formatTimeSec(sec) {
-    const m = String(Math.floor(sec / 60)).padStart(2, '0');
-    const s = String(Math.floor(sec % 60)).padStart(2, '0');
+    if (!isFinite(sec) || sec < 0) return '00:00';
+    const totalSec = Math.floor(sec);
+    if (totalSec >= 3600) {
+        const h = String(Math.floor(totalSec / 3600));
+        const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+        const s = String(totalSec % 60).padStart(2, '0');
+        return `${h}:${m}:${s}`;
+    }
+    const m = String(Math.floor(totalSec / 60)).padStart(2, '0');
+    const s = String(totalSec % 60).padStart(2, '0');
     return `${m}:${s}`;
 }
 

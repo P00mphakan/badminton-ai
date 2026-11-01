@@ -26,12 +26,17 @@ let activeVideoDeviceId = null;
 let activeVideoTrack = null;
 let currentNativePixels = { width: 0, height: 0, fps: 60 };
 let calibPausedVideo = false;
+let uploadedVideoDurationFixed = 0;
 
 function getSafeVideoDuration() {
-    if (!webcamVideo || !isFinite(webcamVideo.duration) || webcamVideo.duration <= 0 || webcamVideo.duration > 36000) {
-        return 0;
+    if (!webcamVideo) return 0;
+    if (isFinite(webcamVideo.duration) && webcamVideo.duration > 0 && webcamVideo.duration <= 36000) {
+        return webcamVideo.duration;
     }
-    return webcamVideo.duration;
+    if (uploadedVideoDurationFixed > 0) {
+        return uploadedVideoDurationFixed;
+    }
+    return 0;
 }
 
 function detectAutoPortraitState() {
@@ -698,29 +703,80 @@ function handleVideoUpload(event) {
 
     if (uploadedVideoURL) URL.revokeObjectURL(uploadedVideoURL);
     uploadedVideoURL = URL.createObjectURL(file);
+    uploadedVideoDurationFixed = 0;
     webcamVideo.srcObject = null;
     webcamVideo.src = uploadedVideoURL;
     webcamVideo.loop = true;
     webcamVideo.muted = true;
     webcamVideo.playbackRate = 1.0;
 
+    webcamVideo.onended = () => {
+        if (isUploadedVideoActive) {
+            if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
+            webcamVideo.currentTime = 0;
+            webcamVideo.play().catch(() => {});
+        }
+    };
+
     webcamVideo.onloadedmetadata = () => {
         isUploadedVideoActive = true;
         isTrackingPaused = false;
         document.getElementById('videoPlaybackControls').classList.remove('hidden');
         document.getElementById('uploadedFileName').textContent = file.name;
-        document.getElementById('videoDurTime').textContent = formatTimeSec(webcamVideo.duration || 0);
-        ShuttleCV.setCourtLocked(true);
-        initPoseDetectionModel();
-        resetMatchData(true);
-        webcamVideo.play();
-        resizeCanvases();
-        setTimeout(() => {
-            if (ShuttleCV.refineCourtToLines) {
-                ShuttleCV.refineCourtToLines(webcamVideo, detectedHumanBoxes);
+
+        const finishInit = () => {
+            const dur = getSafeVideoDuration();
+            document.getElementById('videoDurTime').textContent = formatTimeSec(dur);
+            ShuttleCV.setCourtLocked(true);
+            ShuttleCV.setCourtTrusted(false); // require calibration or successful refine before auto-scoring
+            initPoseDetectionModel();
+            resetMatchData(true);
+            if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
+            webcamVideo.play().catch(() => {});
+            resizeCanvases();
+            setTimeout(() => {
+                if (ShuttleCV.refineCourtToLines) {
+                    const res = ShuttleCV.refineCourtToLines(webcamVideo, detectedHumanBoxes);
+                    if (res && res.ok) {
+                        ShuttleCV.setCourtTrusted(true);
+                    }
+                }
+            }, 250);
+            showToast(`โหลดคลิป "${file.name}" สำเร็จ! ปรับจูนเส้นสนามอัตโนมัติ`);
+        };
+
+        // Fix MediaRecorder WebM infinite duration issue (shows 119309:13 if not fixed)
+        if (!isFinite(webcamVideo.duration) || webcamVideo.duration > 36000) {
+            let settled = false;
+            const onTimeOrDur = () => {
+                if (settled) return;
+                settled = true;
+                webcamVideo.removeEventListener('seeked', onTimeOrDur);
+                webcamVideo.removeEventListener('timeupdate', onTimeOrDur);
+                webcamVideo.removeEventListener('durationchange', onTimeOrDur);
+                if (isFinite(webcamVideo.duration) && webcamVideo.duration > 0 && webcamVideo.duration <= 36000) {
+                    uploadedVideoDurationFixed = webcamVideo.duration;
+                } else if (webcamVideo.currentTime > 0 && webcamVideo.currentTime < 36000) {
+                    uploadedVideoDurationFixed = webcamVideo.currentTime;
+                }
+                webcamVideo.currentTime = 0;
+                finishInit();
+            };
+            webcamVideo.addEventListener('seeked', onTimeOrDur);
+            webcamVideo.addEventListener('timeupdate', onTimeOrDur);
+            webcamVideo.addEventListener('durationchange', onTimeOrDur);
+            setTimeout(() => {
+                if (!settled) onTimeOrDur();
+            }, 800);
+            try {
+                webcamVideo.currentTime = 1e101;
+            } catch (e) {
+                onTimeOrDur();
             }
-        }, 250);
-        showToast(`โหลดคลิป "${file.name}" สำเร็จ! ล็อกเส้นสนาม & ตรวจจับเฉพาะในคอร์ท`);
+        } else {
+            uploadedVideoDurationFixed = webcamVideo.duration;
+            finishInit();
+        }
     };
 }
 
@@ -830,8 +886,10 @@ function closeMoreSheet() {
 })();
 
 function seekUploadedVideo(percentVal) {
-    if (!isUploadedVideoActive || !webcamVideo.duration) return;
-    webcamVideo.currentTime = (Number(percentVal) / 100) * webcamVideo.duration;
+    const dur = getSafeVideoDuration();
+    if (!isUploadedVideoActive || dur <= 0) return;
+    if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
+    webcamVideo.currentTime = (Number(percentVal) / 100) * dur;
 }
 
 function exitUploadedVideoMode() {
@@ -839,6 +897,8 @@ function exitUploadedVideoMode() {
     webcamVideo.removeAttribute('src');
     webcamVideo.load();
     isUploadedVideoActive = false;
+    uploadedVideoDurationFixed = 0;
+    if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
     document.getElementById('videoPlaybackControls').classList.add('hidden');
     resizeCanvases();
     showToast('ปิดโหมดวิเคราะห์คลิปวิดีโอแล้ว');
