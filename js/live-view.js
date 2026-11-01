@@ -17,6 +17,15 @@ let videoRenderRect = { x: 0, y: 0, w: 800, h: 450 };
 let isBottomDockHidden = false;
 let lastAppliedPortraitState = null;
 
+// Multi-Lens (0.5x, 1x, 2x, 5x) and Native Mobile Sensor Pixels State
+let activeCameraZoom = 1.0;
+let cameraResolutionPreference = 'native'; // 'native' (1080p/4K ideal) | '1080p' | '720p'
+let currentDigitalZoom = 1.0;
+let availableCameraLenses = [];
+let activeVideoDeviceId = null;
+let activeVideoTrack = null;
+let currentNativePixels = { width: 0, height: 0, fps: 60 };
+
 function detectAutoPortraitState() {
     if ((isUploadedVideoActive || isWebcamActive) && webcamVideo.videoWidth > 0 && webcamVideo.videoHeight > 0) {
         return webcamVideo.videoHeight >= webcamVideo.videoWidth;
@@ -168,22 +177,294 @@ let rawRecStartTime = 0;
 let rawRecTimerInterval = null;
 let isRecordingRawVideo = false;
 
+function getResolutionConstraints(resMode) {
+    if (resMode === '720p') {
+        return {
+            width: { ideal: 1280, max: 1280 },
+            height: { ideal: 720, max: 720 },
+            frameRate: { ideal: 60, min: 30 }
+        };
+    }
+    if (resMode === '1080p') {
+        return {
+            width: { ideal: 1920, max: 1920 },
+            height: { ideal: 1080, max: 1080 },
+            frameRate: { ideal: 60, min: 30 }
+        };
+    }
+    // 'native' mode: Request maximum native sensor pixels according to each mobile phone (1080p / 4K)
+    return {
+        width: { ideal: 1920, max: 3840, min: 640 },
+        height: { ideal: 1080, max: 2160, min: 480 },
+        frameRate: { ideal: 60, min: 30 }
+    };
+}
+
+async function detectCameraLenses() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoInputs = devices.filter(d => d.kind === 'videoinput');
+        availableCameraLenses = [];
+
+        videoInputs.forEach((dev, idx) => {
+            const label = (dev.label || '').toLowerCase();
+            const isFront = label.includes('front') || label.includes('face') || label.includes('user');
+            const isUltraWide = label.includes('ultra') || label.includes('0.5') || label.includes('wide-angle') || label.includes('มุมกว้าง');
+            const isTele = label.includes('tele') || label.includes('zoom') || label.includes('2x') || label.includes('3x') || label.includes('5x');
+
+            if (!isFront) {
+                availableCameraLenses.push({
+                    deviceId: dev.deviceId,
+                    label: dev.label || `Camera ${idx + 1}`,
+                    isUltraWide,
+                    isTele,
+                    suggestedZoom: isUltraWide ? 0.5 : (isTele ? 2.0 : 1.0)
+                });
+            }
+        });
+    } catch (e) {
+        console.warn('Camera enumeration error:', e);
+    }
+}
+
+function updateCameraLensUI() {
+    const zoomKeys = [
+        { z: 0.5, id: 'btnLens05', sheetId: 'sheetBtnLens05' },
+        { z: 1.0, id: 'btnLens10', sheetId: 'sheetBtnLens10' },
+        { z: 2.0, id: 'btnLens20', sheetId: 'sheetBtnLens20' },
+        { z: 5.0, id: 'btnLens50', sheetId: 'sheetBtnLens50' }
+    ];
+
+    zoomKeys.forEach(item => {
+        const btn = document.getElementById(item.id);
+        const sBtn = document.getElementById(item.sheetId);
+        const isActive = Math.abs(activeCameraZoom - item.z) < 0.05;
+        if (btn) {
+            if (isActive) btn.classList.add('is-active');
+            else btn.classList.remove('is-active');
+        }
+        if (sBtn) {
+            if (isActive) sBtn.classList.add('is-active');
+            else sBtn.classList.remove('is-active');
+        }
+    });
+
+    let resLabel = 'Auto';
+    const w = currentNativePixels.width || webcamVideo.videoWidth || 0;
+    const h = currentNativePixels.height || webcamVideo.videoHeight || 0;
+    if (w >= 3800 || h >= 2100) resLabel = '4K UHD';
+    else if (w >= 1900 || h >= 1000) resLabel = '1080p FHD';
+    else if (w >= 1200 || h >= 700) resLabel = '720p HD';
+    else if (w > 0) resLabel = `${w}p`;
+
+    const lensText = activeCameraZoom === 0.5 ? '0.5x (Ultra Wide)'
+        : (activeCameraZoom === 1.0 ? '1.0x (Standard)'
+        : (activeCameraZoom === 2.0 ? '2.0x (Telephoto)' : '5.0x (Super Zoom)'));
+
+    const hudCamText = document.getElementById('hudCamInfoText');
+    if (hudCamText) {
+        hudCamText.textContent = `${activeCameraZoom}x • ${resLabel}`;
+    }
+
+    const sheetLensBadge = document.getElementById('sheetActiveLensBadge');
+    if (sheetLensBadge) {
+        sheetLensBadge.textContent = `${activeCameraZoom}x • ${resLabel}`;
+    }
+
+    const sheetLensDesc = document.getElementById('sheetActiveLensDesc');
+    if (sheetLensDesc) {
+        sheetLensDesc.textContent = `${lensText}`;
+    }
+
+    const sheetResText = document.getElementById('sheetNativeResolutionText');
+    if (sheetResText) {
+        sheetResText.textContent = w > 0 ? `${w} × ${h} (${resLabel})` : 'Auto (Native)';
+    }
+
+    const sheetStatus = document.getElementById('sheetCamStatusDetail');
+    if (sheetStatus) {
+        if (w > 0) {
+            sheetStatus.textContent = `ใช้งานเซนเซอร์จริง: ${w} × ${h} @ ${currentNativePixels.fps}fps (${resLabel})`;
+        } else {
+            sheetStatus.textContent = 'พร้อมตรวจจับและใช้ความละเอียดพิกเซลสูงสุดตามสเปกเซนเซอร์ของมือถือ';
+        }
+    }
+}
+
+async function setCameraZoomOrLens(targetZoom) {
+    if (!isWebcamActive || !webcamVideo.srcObject) {
+        showToast('กรุณากดเปิด "กล้องสด" ก่อนเลือกเลนส์กล้อง');
+        return;
+    }
+
+    const track = webcamVideo.srcObject.getVideoTracks()[0];
+    if (!track) return;
+
+    let hardwareApplied = false;
+
+    // 1. Try Hardware Optical/Sensor Zoom via MediaStreamTrack applyConstraints (Chrome Android & modern Safari)
+    if (track.getCapabilities) {
+        const caps = track.getCapabilities();
+        if (caps && caps.zoom) {
+            const minZ = caps.zoom.min || 1;
+            const maxZ = caps.zoom.max || 1;
+            if (targetZoom >= minZ && targetZoom <= maxZ) {
+                try {
+                    await track.applyConstraints({ advanced: [{ zoom: targetZoom }] });
+                    hardwareApplied = true;
+                    currentDigitalZoom = 1.0;
+                } catch (e) {
+                    console.warn('Hardware zoom error:', e);
+                }
+            }
+        }
+    }
+
+    // 2. Physical device switching for 0.5x Ultra Wide or Telephoto (iOS Safari & multi-camera Android)
+    if (!hardwareApplied && targetZoom === 0.5) {
+        const ultraWideDev = availableCameraLenses.find(d => d.isUltraWide);
+        if (ultraWideDev && ultraWideDev.deviceId !== activeVideoDeviceId) {
+            await switchCameraDevice(ultraWideDev.deviceId, 0.5);
+            hardwareApplied = true;
+        }
+    }
+
+    if (!hardwareApplied && targetZoom === 1.0) {
+        const standardDev = availableCameraLenses.find(d => !d.isUltraWide && !d.isTele);
+        if (standardDev && standardDev.deviceId !== activeVideoDeviceId) {
+            await switchCameraDevice(standardDev.deviceId, 1.0);
+            hardwareApplied = true;
+        } else {
+            currentDigitalZoom = 1.0;
+            hardwareApplied = true;
+        }
+    }
+
+    if (!hardwareApplied && (targetZoom === 2.0 || targetZoom === 5.0)) {
+        const teleDev = availableCameraLenses.find(d => d.isTele);
+        if (teleDev && teleDev.deviceId !== activeVideoDeviceId) {
+            await switchCameraDevice(teleDev.deviceId, targetZoom);
+            hardwareApplied = true;
+        }
+    }
+
+    // 3. Fallback to native high-pixel digital crop if hardware optical wasn't applied
+    if (!hardwareApplied) {
+        if (targetZoom === 0.5) {
+            showToast('อุปกรณ์นี้ไม่มีโมดูลกล้อง Ultra Wide (0.5x) ในระดับฮาร์ดแวร์');
+            activeCameraZoom = 1.0;
+            currentDigitalZoom = 1.0;
+        } else {
+            currentDigitalZoom = targetZoom;
+            activeCameraZoom = targetZoom;
+        }
+    } else {
+        activeCameraZoom = targetZoom;
+    }
+
+    updateCameraLensUI();
+    const zoomTitle = activeCameraZoom === 0.5 ? '0.5x (Ultra Wide)'
+        : (activeCameraZoom === 1.0 ? '1.0x (มาตรฐาน)'
+        : (activeCameraZoom === 2.0 ? '2.0x (ซูม)' : '5.0x (ซูมไกล)'));
+    showToast(`สลับเลนส์: ${zoomTitle} • พิกเซล ${currentNativePixels.width || webcamVideo.videoWidth}×${currentNativePixels.height || webcamVideo.videoHeight}`);
+}
+
+async function switchCameraDevice(deviceId, targetZoom) {
+    if (!webcamVideo.srcObject) return;
+    try {
+        webcamVideo.srcObject.getTracks().forEach(t => t.stop());
+
+        const resConstraints = getResolutionConstraints(cameraResolutionPreference);
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    deviceId: { exact: deviceId },
+                    ...resConstraints
+                },
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
+        } catch (e) {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    deviceId: { exact: deviceId },
+                    ...resConstraints
+                },
+                audio: false
+            });
+        }
+
+        webcamVideo.srcObject = stream;
+        await webcamVideo.play();
+        activeVideoDeviceId = deviceId;
+        activeVideoTrack = stream.getVideoTracks()[0];
+        currentDigitalZoom = 1.0;
+
+        const settings = activeVideoTrack.getSettings ? activeVideoTrack.getSettings() : {};
+        currentNativePixels.width = settings.width || webcamVideo.videoWidth || 1920;
+        currentNativePixels.height = settings.height || webcamVideo.videoHeight || 1080;
+        currentNativePixels.fps = settings.frameRate ? Math.round(settings.frameRate) : 60;
+
+        applyOrientationLayout();
+        resizeCanvases();
+    } catch (err) {
+        console.error('switchCameraDevice error:', err);
+        showToast('ไม่สามารถสลับกล้องที่เลือกได้');
+    }
+}
+
+async function setCameraResolutionPreference(mode) {
+    cameraResolutionPreference = mode;
+    ['native', '1080p', '720p'].forEach(m => {
+        const btn = document.getElementById(`btnRes${m === 'native' ? 'Native' : m}`);
+        if (btn) {
+            if (m === mode) btn.classList.add('is-active');
+            else btn.classList.remove('is-active');
+        }
+    });
+
+    if (isWebcamActive && webcamVideo.srcObject && activeVideoTrack) {
+        const resConstraints = getResolutionConstraints(mode);
+        try {
+            await activeVideoTrack.applyConstraints(resConstraints);
+            const settings = activeVideoTrack.getSettings ? activeVideoTrack.getSettings() : {};
+            currentNativePixels.width = settings.width || webcamVideo.videoWidth;
+            currentNativePixels.height = settings.height || webcamVideo.videoHeight;
+            currentNativePixels.fps = settings.frameRate ? Math.round(settings.frameRate) : 60;
+            updateCameraLensUI();
+            showToast(`ปรับความละเอียดกล้องเป็น: ${currentNativePixels.width}×${currentNativePixels.height} @ ${currentNativePixels.fps}fps`);
+        } catch (e) {
+            // Reinitialize webcam stream with new constraints
+            await toggleWebcam();
+            await toggleWebcam();
+        }
+    } else {
+        updateCameraLensUI();
+    }
+}
+
 async function toggleWebcam() {
     const btnText = document.getElementById('cameraBtnText');
     if (isUploadedVideoActive) exitUploadedVideoMode();
 
     if (!isWebcamActive) {
         try {
-            // Request both video and audio (with fallback to video-only if mic permission is declined)
+            const resConstraints = getResolutionConstraints(cameraResolutionPreference);
+            const videoConstraints = {
+                facingMode: { ideal: 'environment' },
+                ...resConstraints
+            };
+
+            // Request video and audio (with fallback to video-only if mic permission is declined)
             let stream;
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: { ideal: 'environment' },
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                        frameRate: { ideal: 60 }
-                    },
+                    video: videoConstraints,
                     audio: {
                         echoCancellation: true,
                         noiseSuppression: true,
@@ -192,12 +473,7 @@ async function toggleWebcam() {
                 });
             } catch (micErr) {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: { ideal: 'environment' },
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                        frameRate: { ideal: 60 }
-                    },
+                    video: videoConstraints,
                     audio: false
                 });
             }
@@ -208,10 +484,31 @@ async function toggleWebcam() {
             isWebcamActive = true;
             ShuttleCV.setCourtLocked(false);
             if (btnText) btnText.textContent = 'ปิดกล้อง';
+
+            const track = stream.getVideoTracks()[0];
+            activeVideoTrack = track;
+            activeVideoDeviceId = track.getSettings?.().deviceId || null;
+            const settings = track.getSettings ? track.getSettings() : {};
+            currentNativePixels.width = settings.width || webcamVideo.videoWidth || 1920;
+            currentNativePixels.height = settings.height || webcamVideo.videoHeight || 1080;
+            currentNativePixels.fps = settings.frameRate ? Math.round(settings.frameRate) : 60;
+
+            await detectCameraLenses();
+            updateCameraLensUI();
+
+            const lensSelector = document.getElementById('cameraLensSelector');
+            if (lensSelector) lensSelector.classList.remove('hidden');
+            const camBadge = document.getElementById('hudCamInfoBadge');
+            if (camBadge) camBadge.classList.remove('hidden');
+
             initPoseDetectionModel();
             applyOrientationLayout();
             resizeCanvases();
-            showToast('เปิดกล้องสดพร้อมเสียงแล้ว • กด "อัดคลิป" เพื่อบันทึกวิดีโอต้นฉบับ (ไร้กราฟิกทับ)');
+
+            let resTitle = '1080p FHD';
+            if (currentNativePixels.width >= 3800) resTitle = '4K UHD';
+            else if (currentNativePixels.width <= 1280) resTitle = '720p HD';
+            showToast(`เปิดกล้องสดแล้ว (${resTitle} • ${currentNativePixels.width}×${currentNativePixels.height}) • เลือกเลนส์ .5x, 1x, 2x, 5x ได้ทันที`);
         } catch (err) {
             showToast('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตสิทธิ์กล้อง หรืออัปโหลดคลิปสนามจริง');
         }
@@ -223,8 +520,16 @@ async function toggleWebcam() {
             webcamVideo.srcObject.getTracks().forEach(t => t.stop());
             webcamVideo.srcObject = null;
         }
+        activeVideoTrack = null;
         isWebcamActive = false;
+        currentDigitalZoom = 1.0;
         if (btnText) btnText.textContent = 'Live';
+
+        const lensSelector = document.getElementById('cameraLensSelector');
+        if (lensSelector) lensSelector.classList.add('hidden');
+        const camBadge = document.getElementById('hudCamInfoBadge');
+        if (camBadge) camBadge.classList.add('hidden');
+
         showToast('ปิดกล้องสดแล้ว');
     }
 }
@@ -1037,7 +1342,15 @@ function renderLiveScene() {
     const rx = Math.round((w - rw) / 2);
     const ry = Math.round((h - rh) / 2);
     videoRenderRect = { x: rx, y: ry, w: rw, h: rh };
-    liveCtx.drawImage(webcamVideo, rx, ry, rw, rh);
+    if (currentDigitalZoom > 1.0) {
+        const sW = Math.round(vW / currentDigitalZoom);
+        const sH = Math.round(vH / currentDigitalZoom);
+        const sx = Math.round((vW - sW) / 2);
+        const sy = Math.round((vH - sH) / 2);
+        liveCtx.drawImage(webcamVideo, sx, sy, sW, sH, rx, ry, rw, rh);
+    } else {
+        liveCtx.drawImage(webcamVideo, rx, ry, rw, rh);
+    }
 
     if (!isTrackingPaused) {
         runRealPoseEstimation(webcamVideo);

@@ -235,6 +235,78 @@ input, textarea {
     background: rgba(51, 65, 85, 0.9);
 }
 
+/* iOS/Android Camera Style Floating Lens Pills (0.5x, 1x, 2x, 5x) */
+.camera-lens-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 5px;
+    border-radius: 9999px;
+    background: rgba(9, 13, 22, 0.76);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+
+.lens-pill {
+    width: 32px;
+    height: 32px;
+    border-radius: 9999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #cbd5e1;
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    transition: transform 0.12s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.lens-pill:active {
+    transform: scale(0.9);
+}
+
+.lens-pill.is-active {
+    background: #10b981;
+    color: #022c22;
+    border-color: #34d399;
+    font-weight: 800;
+    font-size: 11.5px;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.55);
+    transform: scale(1.05);
+}
+
+.sheet-lens-btn, .sheet-res-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 7px 4px;
+    border-radius: 12px;
+    background: rgba(30, 41, 59, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #cbd5e1;
+    cursor: pointer;
+    transition: transform 0.1s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.sheet-lens-btn:active, .sheet-res-btn:active {
+    transform: scale(0.96);
+}
+
+.sheet-lens-btn.is-active, .sheet-res-btn.is-active {
+    background: rgba(16, 185, 129, 0.22);
+    border-color: rgba(52, 211, 153, 0.6);
+    color: #6ee7b7;
+    font-weight: 700;
+}
+
 .sheet-toggle {
     display: flex;
     align-items: center;

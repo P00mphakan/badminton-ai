@@ -29,7 +29,7 @@
             }
         }
     </script>
-    <link rel="stylesheet" href="css/styles.css?v=20261101p">
+    <link rel="stylesheet" href="css/styles.css?v=20261101q">
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
 
@@ -313,6 +313,11 @@
                             <i id="orientationIcon" class="ph-bold ph-device-mobile-camera"></i>
                             <span id="orientationBadgeText">แนวตั้ง Auto</span>
                         </button>
+                        <!-- Camera Lens & Resolution Badge (Real Device Pixels) -->
+                        <button id="hudCamInfoBadge" onclick="toggleMoreSheet()" class="hidden hud-glass rounded-full px-2 py-[3px] flex items-center gap-1 shrink-0 text-[10px] font-mono text-cyan-300 font-semibold pointer-events-auto border border-cyan-500/30" title="แตะเพื่อเลือกเลนส์กล้องหรือความละเอียดพิกเซล">
+                            <i class="ph-bold ph-camera"></i>
+                            <span id="hudCamInfoText">1.0x • 1080p</span>
+                        </button>
                         <span id="boardLastCallBadge" class="call-chip">พร้อมตรวจจับ</span>
                     </div>
                 </div>
@@ -349,8 +354,16 @@
                         </button>
                     </div>
 
-                    <!-- Right / Center Auxiliary Area: Active Calibration Save Pill & Uploaded Video Seek Bar -->
+                    <!-- Right / Center Auxiliary Area: Floating Lens Selector, Active Calibration Save Pill & Uploaded Video Seek Bar -->
                     <div class="flex-1 min-w-0 flex flex-col items-end gap-2">
+                        <!-- Floating Camera Lens / Zoom Selector Pills (0.5x, 1x, 2x, 5x) -->
+                        <div id="cameraLensSelector" class="hidden camera-lens-bar pointer-events-auto">
+                            <button onclick="setCameraZoomOrLens(0.5)" id="btnLens05" class="lens-pill" title="0.5x เลนส์มุมกว้างพิเศษ (Ultra Wide)">.5</button>
+                            <button onclick="setCameraZoomOrLens(1.0)" id="btnLens10" class="lens-pill is-active" title="1x เลนส์มาตรฐาน (Standard Wide)">1x</button>
+                            <button onclick="setCameraZoomOrLens(2.0)" id="btnLens20" class="lens-pill" title="2x ซูม (Telephoto)">2x</button>
+                            <button onclick="setCameraZoomOrLens(5.0)" id="btnLens50" class="lens-pill" title="5x ซูมไกล (Super Zoom)">5x</button>
+                        </div>
+
                         <!-- Quick Save Calibration Button (Visible only while dragging court corners) -->
                         <button id="floatingSaveCalibBtn" onclick="toggleCourtCalibrationMode()" class="hidden pointer-events-auto px-3.5 py-2 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold text-xs shadow-lg shadow-emerald-500/30 flex items-center gap-1.5 animate-bounce">
                             <i class="ph-fill ph-check-fat text-sm"></i>
@@ -433,6 +446,69 @@
                             <span>เปิดดู</span>
                             <i class="ph-bold ph-caret-right text-xs"></i>
                         </button>
+                    </div>
+
+                    <!-- Camera Lens & Native Sensor Pixels Card -->
+                    <div class="sheet-section-card">
+                        <div class="sheet-title justify-between">
+                            <span class="flex items-center gap-1.5">
+                                <i class="ph-bold ph-camera text-emerald-400"></i>
+                                <span>เลนส์กล้อง &amp; ความละเอียดเซนเซอร์</span>
+                            </span>
+                            <span id="sheetActiveLensBadge" class="text-[10px] font-mono font-semibold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full">1.0x • Native</span>
+                        </div>
+
+                        <!-- Lens Selection (0.5x, 1x, 2x, 5x) -->
+                        <div class="mb-3">
+                            <div class="text-[11px] text-slate-300 font-semibold mb-1.5 flex items-center justify-between">
+                                <span>เลนส์ซูม (Camera Lens / Zoom):</span>
+                                <span id="sheetActiveLensDesc" class="text-slate-400 text-[10px]">เลนส์มาตรฐาน (1.0x)</span>
+                            </div>
+                            <div class="grid grid-cols-4 gap-1.5 text-center" id="sheetLensBtnGroup">
+                                <button onclick="setCameraZoomOrLens(0.5)" id="sheetBtnLens05" class="sheet-lens-btn">
+                                    <span class="text-xs font-bold">0.5x</span>
+                                    <span class="text-[9px] opacity-75">Ultra Wide</span>
+                                </button>
+                                <button onclick="setCameraZoomOrLens(1.0)" id="sheetBtnLens10" class="sheet-lens-btn is-active">
+                                    <span class="text-xs font-bold">1.0x</span>
+                                    <span class="text-[9px] opacity-75">Standard</span>
+                                </button>
+                                <button onclick="setCameraZoomOrLens(2.0)" id="sheetBtnLens20" class="sheet-lens-btn">
+                                    <span class="text-xs font-bold">2.0x</span>
+                                    <span class="text-[9px] opacity-75">Telephoto</span>
+                                </button>
+                                <button onclick="setCameraZoomOrLens(5.0)" id="sheetBtnLens50" class="sheet-lens-btn">
+                                    <span class="text-xs font-bold">5.0x</span>
+                                    <span class="text-[9px] opacity-75">Super Zoom</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Resolution Selection (Native, 1080p, 720p) -->
+                        <div>
+                            <div class="text-[11px] text-slate-300 font-semibold mb-1.5 flex items-center justify-between">
+                                <span>พิกเซลเซนเซอร์ (Camera Sensor Pixels):</span>
+                                <span id="sheetNativeResolutionText" class="text-cyan-300 font-mono text-[10px]">Native อัตโนมัติ</span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-1.5 text-center">
+                                <button onclick="setCameraResolutionPreference('native')" id="btnResNative" class="sheet-res-btn is-active">
+                                    <span class="text-[11px] font-bold">Native สูงสุด</span>
+                                    <span class="text-[9px] opacity-75">ตามสเปกมือถือ</span>
+                                </button>
+                                <button onclick="setCameraResolutionPreference('1080p')" id="btnRes1080p" class="sheet-res-btn">
+                                    <span class="text-[11px] font-bold">1080p FHD</span>
+                                    <span class="text-[9px] opacity-75">1920 × 1080</span>
+                                </button>
+                                <button onclick="setCameraResolutionPreference('720p')" id="btnRes720p" class="sheet-res-btn">
+                                    <span class="text-[11px] font-bold">720p HD</span>
+                                    <span class="text-[9px] opacity-75">ประหยัดพลังงาน</span>
+                                </button>
+                            </div>
+                            <div class="mt-2 text-[9.5px] text-slate-400 flex items-center gap-1.5 bg-slate-950/60 p-2 rounded-xl border border-slate-800">
+                                <i class="ph-bold ph-info text-cyan-400 shrink-0"></i>
+                                <span id="sheetCamStatusDetail">พร้อมตรวจจับและใช้ความละเอียดพิกเซลสูงสุดตามสเปกเซนเซอร์ของมือถือ</span>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Card 1: Court Calibration & Tracking Controls (Consolidated from Dock) -->
@@ -947,12 +1023,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261101p" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261101p"></script>
-    <script src="js/cv-court.js?v=20261101p"></script>
-    <script src="js/pose-tracker.js?v=20261101p"></script>
-    <script src="js/scoreboard.js?v=20261101p"></script>
-    <script src="js/live-view.js?v=20261101p"></script>
-    <script src="js/analytics-coach.js?v=20261101p"></script>
+    <script src="js/env.local.js?v=20261101q" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261101q"></script>
+    <script src="js/cv-court.js?v=20261101q"></script>
+    <script src="js/pose-tracker.js?v=20261101q"></script>
+    <script src="js/scoreboard.js?v=20261101q"></script>
+    <script src="js/live-view.js?v=20261101q"></script>
+    <script src="js/analytics-coach.js?v=20261101q"></script>
 </body>
 </html>
