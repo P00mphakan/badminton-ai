@@ -1997,6 +1997,8 @@ function drawRealDetectedPlayers(ctx, w, h) {
 
     Object.values(players).forEach(p => {
         if (!p.detected) return;
+        // Strict guard: In Singles matches, never render A2 or B2
+        if (!isDoublesMatch && (p.id === 'A2' || p.id === 'B2')) return;
 
         const px = p.screenX * w;
         const py = p.screenY * h;

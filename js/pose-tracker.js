@@ -88,6 +88,20 @@ function computeHalfCourtCrop(team) {
     return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
+function getCourtActionCrop(vW, vH) {
+    const corners = ShuttleCV.getCorners();
+    // In low-angle badminton view, players never jump into the upper 30-40% ceiling
+    const minCourtY = Math.min(corners.tl.y, corners.tr.y, corners.netL.y, corners.netR.y);
+    // Allow 24% screen height above far baseline for jump smash and overhead clears
+    const cropY0 = Math.max(0, Math.min(0.40, minCourtY - 0.24));
+    return {
+        x: 0,
+        y: cropY0,
+        w: 1.0,
+        h: 1.0 - cropY0
+    };
+}
+
 function evaluatePoseCandidate(pose, crop) {
     const kps = pose.keypoints.map(k => ({
         name: k.name,
@@ -96,7 +110,7 @@ function evaluatePoseCandidate(pose, crop) {
         score: k.score ?? 0
     }));
     const get = n => kps.find(k => k.name === n);
-    const conf = kps.filter(k => k.score > 0.2);
+    const conf = kps.filter(k => k.score > 0.18);
     if (conf.length < 4) return { mask: null, player: null };
 
     const xs = conf.map(k => k.x), ys = conf.map(k => k.y);
@@ -107,40 +121,67 @@ function evaluatePoseCandidate(pose, crop) {
         yMax: Math.min(1, Math.max(...ys) + 0.015)
     };
 
-    // Foot contact point: ankles first, then knee/hip extrapolation, fallback to bottom of box
-    const ankles = ['left_ankle', 'right_ankle'].map(get).filter(k => k && k.score >= 0.22);
+    // Foot contact point:
+    // 1. Ankles (if visible and confident)
+    const ankles = ['left_ankle', 'right_ankle'].map(get).filter(k => k && k.score >= 0.20);
     let footX, footY;
     if (ankles.length) {
         footX = ankles.reduce((a, k) => a + k.x, 0) / ankles.length;
         footY = Math.max(...ankles.map(k => k.y));
     } else {
-        const knees = ['left_knee', 'right_knee'].map(get).filter(k => k && k.score >= 0.22);
-        const hips = ['left_hip', 'right_hip'].map(get).filter(k => k && k.score >= 0.2);
+        // 2. Knees + Hips extrapolation
+        const knees = ['left_knee', 'right_knee'].map(get).filter(k => k && k.score >= 0.18);
+        const hips = ['left_hip', 'right_hip'].map(get).filter(k => k && k.score >= 0.18);
         if (knees.length && hips.length) {
             const kneeY = knees.reduce((a, k) => a + k.y, 0) / knees.length;
             const hipY = hips.reduce((a, k) => a + k.y, 0) / hips.length;
             footX = knees.reduce((a, k) => a + k.x, 0) / knees.length;
-            footY = Math.min(1, kneeY + (kneeY - hipY) * 0.9);
+            footY = Math.min(1.0, kneeY + (kneeY - hipY) * 0.95);
+        } else if (hips.length) {
+            // 3. Net Occlusion: Far court players behind badminton net tape/mesh
+            // In badminton perspective, net blocks ankles/knees of Team A.
+            // Human anatomy: Hip-to-floor length is approx 1.15 - 1.25x shoulder-to-hip torso length.
+            const shoulders = ['left_shoulder', 'right_shoulder'].map(get).filter(k => k && k.score >= 0.18);
+            const hipY = hips.reduce((a, k) => a + k.y, 0) / hips.length;
+            footX = hips.reduce((a, k) => a + k.x, 0) / hips.length;
+            if (shoulders.length) {
+                const shoulderY = shoulders.reduce((a, k) => a + k.y, 0) / shoulders.length;
+                const torsoH = Math.max(0.025, hipY - shoulderY);
+                footY = Math.min(1.0, hipY + torsoH * 1.20);
+            } else {
+                footY = Math.min(1.0, Math.max(...ys) + 0.08);
+            }
         } else {
             footX = xs.reduce((a, b) => a + b, 0) / xs.length;
-            footY = Math.min(1, Math.max(...ys) + 0.01);
+            footY = Math.min(1.0, Math.max(...ys) + 0.05);
         }
     }
 
     const uv = ShuttleCV.screenToCourtNormalized(footX, footY);
+    const corners = ShuttleCV.getCorners();
+    const netScreenY = (corners.netL.y + corners.netR.y) / 2;
 
-    // In-court gating: When court calibration is verified/trusted, people outside court boundaries
-    // (such as spectators sitting on benches or players on neighboring courts) are masked out but NOT tracked as players.
+    // Team assignment:
+    // Team A = Far Court (v <= 0.52 OR player upper body is above net line in screen space)
+    // Team B = Near Court (v > 0.52 AND player is below net line)
+    const isFarCourt = (uv.y <= 0.52) || (footY < netScreenY);
+    const team = isFarCourt ? 'A' : 'B';
+
+    // In-court gating:
+    // Players regularly jump 1.5 - 2.5m behind baseline and dive into tramlines (BWF run-off area).
+    // Tolerate lateral displacement (tolU = 0.32 ≈ 2.0m) and baseline depth displacement (tolV = 0.35 ≈ 4.7m).
+    // Spectators sitting along distant gymnasium walls are excluded.
     if (ShuttleCV.isCourtTrusted()) {
-        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, IN_COURT_TOL_U + 0.08, IN_COURT_TOL_V + 0.05);
+        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.32, 0.35);
         if (!inCourt) {
             return { mask: box, player: null };
         }
     }
 
-    // Assign team strictly based on net boundary in court space (Far court v <= 0.5 = A, Near court v > 0.5 = B)
-    const team = uv.y <= 0.5 ? 'A' : 'B';
-    const ankleConf = ankles.length ? Math.max(...ankles.map(k => k.score)) : 0.35;
+    // Court proximity score: give higher weight to players within court lines vs distant spectators
+    const lateralDist = Math.abs(uv.x - 0.5);
+    const courtProximity = Math.max(0.4, 1.0 - Math.max(0, lateralDist - 0.5) * 1.2);
+    const ankleConf = ankles.length ? Math.max(...ankles.map(k => k.score)) : 0.40;
 
     return {
         mask: box,
@@ -149,7 +190,7 @@ function evaluatePoseCandidate(pose, crop) {
             u: Math.max(0, Math.min(1, uv.x)),
             v: Math.max(0, Math.min(1, uv.y)),
             footX, footY, box, kps,
-            score: (pose.score ?? 0.5) * (0.6 + 0.4 * ankleConf)
+            score: (pose.score ?? 0.5) * courtProximity * (0.6 + 0.4 * ankleConf)
         }
     };
 }
@@ -159,9 +200,13 @@ function assignCandidatesToSlots(team, cands, now) {
         ? (isDoublesMatch ? ['A1', 'A2'] : ['A1'])
         : (isDoublesMatch ? ['B1', 'B2'] : ['B1']);
     if (!isDoublesMatch) {
-        const unused = players[team === 'A' ? 'A2' : 'B2'];
-        unused.detected = false;
-        unused.currentSpeedKmh = 0;
+        const unusedKey = team === 'A' ? 'A2' : 'B2';
+        if (players[unusedKey]) {
+            players[unusedKey].detected = false;
+            players[unusedKey].currentSpeedKmh = 0;
+            players[unusedKey]._posWindow = [];
+            players[unusedKey]._anchor = null;
+        }
     }
 
     const slotCost = (slot, idx, c) => {
@@ -185,7 +230,7 @@ function assignCandidatesToSlots(team, cands, now) {
     } else if (cands.length >= 2 && slots.length === 2) {
         perms.push([[0, 0], [1, 1]], [[0, 1], [1, 0]]);
     } else if (cands.length >= 2 && slots.length === 1) {
-        perms.push([[0, 0]]);
+        cands.forEach((_, ci) => perms.push([[0, ci]]));
     }
     perms.forEach(p => {
         const cost = p.reduce((a, [si, ci]) => a + slotCost(slots[si], si, cands[ci]), 0);
@@ -272,7 +317,15 @@ async function runRealPoseEstimation(videoEl) {
     const now = trackerNow();
 
     Object.values(players).forEach(p => {
-        if (p.detected && now - p.lastSeenMs > 800) {
+        // Enforce strict Singles vs Doubles slot state
+        if (!isDoublesMatch && (p.id === 'A2' || p.id === 'B2')) {
+            p.detected = false;
+            p.currentSpeedKmh = 0;
+            p._posWindow = [];
+            p._anchor = null;
+            return;
+        }
+        if (p.detected && now - p.lastSeenMs > 900) {
             p.detected = false;
             p.currentSpeedKmh = 0;
             p._posWindow = [];
@@ -281,31 +334,42 @@ async function runRealPoseEstimation(videoEl) {
     });
 
     if (!poseModelReady || !poseDetector || poseInferenceBusy) return;
-    if (now - lastPoseTimestamp < 40) return;
+    if (now - lastPoseTimestamp < 35) return;
     lastPoseTimestamp = now;
 
-    // Full-frame crop so MoveNet MultiPose detects all players across both courts simultaneously
-    const crop = { x: 0, y: 0, w: 1, h: 1 };
     const vW = videoEl.videoWidth || 1280;
     const vH = videoEl.videoHeight || 720;
-    const aspect = vW / vH;
-    const LONG = 384;
-    const cw = aspect >= 1 ? LONG : Math.max(96, Math.round(LONG * aspect));
-    const ch = aspect >= 1 ? Math.max(96, Math.round(LONG / aspect)) : LONG;
+
+    // Active Court Action Zone crop: strips empty ceiling in portrait orientation so far-court players are 2.5x larger
+    const crop = getCourtActionCrop(vW, vH);
+    const cropPixelX = Math.round(crop.x * vW);
+    const cropPixelY = Math.round(crop.y * vH);
+    const cropPixelW = Math.round(crop.w * vW);
+    const cropPixelH = Math.round(crop.h * vH);
+
+    const cropAspect = cropPixelW / cropPixelH;
+    const TARGET_LONG = 448; // Crisp resolution so far players are 55+ px tall for MoveNet MultiPose
+    const cw = cropAspect >= 1 ? TARGET_LONG : Math.max(160, Math.round(TARGET_LONG * cropAspect));
+    const ch = cropAspect >= 1 ? Math.max(160, Math.round(TARGET_LONG / cropAspect)) : TARGET_LONG;
     if (poseCropCanvas.width !== cw) poseCropCanvas.width = cw;
     if (poseCropCanvas.height !== ch) poseCropCanvas.height = ch;
 
     poseInferenceBusy = true;
     try {
-        poseCropCtx.drawImage(videoEl, 0, 0, vW, vH, 0, 0, cw, ch);
-        const poses = await poseDetector.estimatePoses(poseCropCanvas, { maxPoses: 6, flipHorizontal: false });
+        poseCropCtx.drawImage(
+            videoEl,
+            cropPixelX, cropPixelY, cropPixelW, cropPixelH,
+            0, 0, cw, ch
+        );
+        // maxPoses: 8 ensures background gym spectators do not crowd out active Team A / Team B players
+        const poses = await poseDetector.estimatePoses(poseCropCanvas, { maxPoses: 8, flipHorizontal: false });
 
         const masks = [];
         const candsA = [];
         const candsB = [];
 
         poses.forEach(pose => {
-            if ((pose.score ?? 0) < 0.2) return;
+            if ((pose.score ?? 0) < 0.18) return;
             const r = evaluatePoseCandidate(pose, crop);
             if (r.mask) masks.push(r.mask);
             if (r.player) {
@@ -319,7 +383,7 @@ async function runRealPoseEstimation(videoEl) {
             cands.sort((a, b) => b.score - a.score);
             const kept = [];
             cands.forEach(c => {
-                const dup = kept.some(k => Math.hypot((k.u - c.u) * ShuttleCV.COURT_WIDTH_M, (k.v - c.v) * ShuttleCV.COURT_LENGTH_M) < 0.5);
+                const dup = kept.some(k => Math.hypot((k.u - c.u) * ShuttleCV.COURT_WIDTH_M, (k.v - c.v) * ShuttleCV.COURT_LENGTH_M) < 0.65);
                 if (!dup) kept.push(c);
             });
             return kept.slice(0, isDoublesMatch ? 2 : 1);

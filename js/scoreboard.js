@@ -183,11 +183,26 @@ function undoLastPoint() {
 
 function toggleMatchTypeSinglesDoubles() {
     isDoublesMatch = !isDoublesMatch;
+    if (!isDoublesMatch) {
+        // Immediately deactivate A2 & B2 for Singles
+        ['A2', 'B2'].forEach(id => {
+            if (players[id]) {
+                players[id].detected = false;
+                players[id].currentSpeedKmh = 0;
+                players[id]._posWindow = [];
+                players[id]._anchor = null;
+            }
+        });
+    }
     const btn = document.getElementById('btnMatchFormat');
     if (btn) {
         btn.textContent = isDoublesMatch ? 'คู่ 6.10m' : 'เดี่ยว 5.18m';
     }
-    showToast(`เปลี่ยนเส้นเขตสนามตัดสิน IN/OUT เป็น: ${isDoublesMatch ? 'แบดมินตันคู่ (6.10 ม.)' : 'แบดมินตันเดี่ยว (5.18 ม.)'}`);
+    const pill = document.getElementById('hudFormatPillLabel');
+    if (pill) {
+        pill.textContent = isDoublesMatch ? 'ประเภทคู่ (A1,A2/B1,B2)' : 'ประเภทเดี่ยว (A1/B1)';
+    }
+    showToast(`สลับประเภทแมตช์เป็น: ${isDoublesMatch ? 'ประเภทคู่ 6.10m (A1, A2 vs B1, B2)' : 'ประเภทเดี่ยว 5.18m (A1 vs B1)'}`);
 }
 
 function toggleVoiceReferee() {

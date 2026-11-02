@@ -313,6 +313,11 @@
                             <i id="orientationIcon" class="ph-bold ph-device-mobile-camera"></i>
                             <span id="orientationBadgeText">แนวตั้ง Auto</span>
                         </button>
+                        <!-- Match Format Toggle: Doubles (A1,A2/B1,B2) vs Singles (A1/B1) -->
+                        <button id="hudFormatPill" onclick="toggleMatchTypeSinglesDoubles()" class="hud-glass rounded-full px-2 py-[3px] flex items-center gap-1 shrink-0 text-[10px] text-amber-300 font-semibold pointer-events-auto border border-amber-500/30 active:scale-95 transition-all" title="แตะเพื่อสลับ ประเภทคู่ (A1, A2 vs B1, B2) / ประเภทเดี่ยว (A1 vs B1)">
+                            <i class="ph-bold ph-users text-xs"></i>
+                            <span id="hudFormatPillLabel">ประเภทคู่ (A1,A2/B1,B2)</span>
+                        </button>
                         <!-- Camera Lens & Resolution Badge (Real Device Pixels) -->
                         <button id="hudCamInfoBadge" onclick="toggleMoreSheet()" class="hidden hud-glass rounded-full px-2 py-[3px] flex items-center gap-1 shrink-0 text-[10px] font-mono text-cyan-300 font-semibold pointer-events-auto border border-cyan-500/30" title="แตะเพื่อเลือกเลนส์กล้องหรือความละเอียดพิกเซล">
                             <i class="ph-bold ph-camera"></i>
@@ -1115,12 +1120,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261102f" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261102f"></script>
-    <script src="js/cv-court.js?v=20261102f"></script>
-    <script src="js/pose-tracker.js?v=20261102f"></script>
-    <script src="js/scoreboard.js?v=20261102f"></script>
-    <script src="js/live-view.js?v=20261102f"></script>
-    <script src="js/analytics-coach.js?v=20261102f"></script>
+    <script src="js/env.local.js?v=20261102g" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261102g"></script>
+    <script src="js/cv-court.js?v=20261102g"></script>
+    <script src="js/pose-tracker.js?v=20261102g"></script>
+    <script src="js/scoreboard.js?v=20261102g"></script>
+    <script src="js/live-view.js?v=20261102g"></script>
+    <script src="js/analytics-coach.js?v=20261102g"></script>
 </body>
 </html>
