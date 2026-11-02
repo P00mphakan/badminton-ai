@@ -202,6 +202,7 @@ function toggleMatchTypeSinglesDoubles() {
     if (pill) {
         pill.textContent = isDoublesMatch ? 'ประเภทคู่ (A1,A2/B1,B2)' : 'ประเภทเดี่ยว (A1/B1)';
     }
+    if (typeof resetPlayerLockState === 'function') resetPlayerLockState();
     showToast(`สลับประเภทแมตช์เป็น: ${isDoublesMatch ? 'ประเภทคู่ 6.10m (A1, A2 vs B1, B2)' : 'ประเภทเดี่ยว 5.18m (A1 vs B1)'}`);
 }
 

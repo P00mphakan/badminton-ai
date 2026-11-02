@@ -2073,11 +2073,13 @@ function drawRealDetectedPlayers(ctx, w, h) {
         ctx.moveTo(bx + boxW - cLen, by + boxH); ctx.lineTo(bx + boxW, by + boxH); ctx.lineTo(bx + boxW, by + boxH - cLen);
         ctx.stroke();
 
+        const isLocked = p.isLocked || (typeof isPlayersLocked !== 'undefined' && isPlayersLocked);
+
         // Dual concentric glowing floor rings (Pro Hawkeye / Broadcast style)
         ctx.shadowColor = p.color;
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = isLocked ? 16 : 10;
         ctx.strokeStyle = p.color;
-        ctx.lineWidth = 2.4;
+        ctx.lineWidth = isLocked ? 2.8 : 2.4;
         ctx.beginPath();
         ctx.ellipse(px, py, ringRx, ringRy, 0, 0, Math.PI * 2);
         ctx.stroke();
@@ -2089,7 +2091,23 @@ function drawRealDetectedPlayers(ctx, w, h) {
         ctx.ellipse(px, py, ringRx * 0.48, ringRy * 0.48, 0, 0, Math.PI * 2);
         ctx.stroke();
 
-        const label = `${p.id} • ${p.currentSpeedKmh} km/h`;
+        if (isLocked) {
+            // Target Lock Crosshair reticle ticks on floor ring
+            ctx.save();
+            ctx.strokeStyle = p.color;
+            ctx.lineWidth = 2.0;
+            const tick = 6 * depthScale;
+            ctx.beginPath();
+            ctx.moveTo(px, py - ringRy - tick); ctx.lineTo(px, py - ringRy + 2);
+            ctx.moveTo(px, py + ringRy + tick); ctx.lineTo(px, py + ringRy - 2);
+            ctx.moveTo(px - ringRx - tick, py); ctx.lineTo(px - ringRx + 2, py);
+            ctx.moveTo(px + ringRx + tick, py); ctx.lineTo(px + ringRx - 2, py);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        const lockBadge = isLocked ? '🎯 ' : '';
+        const label = `${lockBadge}${p.id} • ${p.currentSpeedKmh} km/h`;
         ctx.font = 'bold 10px Prompt, sans-serif';
         const tw = ctx.measureText(label).width + 12;
         const labelY = py + ringRy + 4;

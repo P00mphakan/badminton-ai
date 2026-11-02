@@ -61,7 +61,76 @@ const poseCropCanvas = document.createElement('canvas');
 const poseCropCtx = poseCropCanvas.getContext('2d');
 let posePassTeam = 'A';
 let poseInferenceBusy = false;
+let isPlayersLocked = false;
+let targetLockTimestamp = 0;
 const maskBoxesByTeam = { A: { boxes: [], t: 0 }, B: { boxes: [], t: 0 } };
+
+function resetPlayerLockState() {
+    isPlayersLocked = false;
+    targetLockTimestamp = 0;
+    Object.values(players).forEach(p => {
+        p.isLocked = false;
+    });
+    updatePlayerLockHUD(0, isDoublesMatch ? 4 : 2);
+}
+
+function checkAndUpdatePlayerLockState(now) {
+    const requiredSlotIds = isDoublesMatch ? ['A1', 'A2', 'B1', 'B2'] : ['A1', 'B1'];
+    const activeDetected = requiredSlotIds.filter(id => {
+        const p = players[id];
+        return p && p.detected && (now - p.lastSeenMs < 1400);
+    });
+
+    const activeCount = activeDetected.length;
+    const requiredCount = requiredSlotIds.length;
+
+    if (!isPlayersLocked) {
+        // เมื่อตรวจจับผู้เล่นได้ครบทั้ง 4 คน (หรือ 2 คนในโหมดเดี่ยว) -> สั่งล็อคเป้าหมายทันที!
+        if (activeCount === requiredCount) {
+            isPlayersLocked = true;
+            targetLockTimestamp = now;
+            requiredSlotIds.forEach(id => {
+                if (players[id]) players[id].isLocked = true;
+            });
+            showToast(`🎯 ล็อคเป้าหมายผู้เล่นครบ ${requiredCount} คนแล้ว! (${isDoublesMatch ? 'A1, A2, B1, B2' : 'A1, B1'})`);
+        }
+    } else {
+        // ขณะอยู่ในสถานะล็อคเป้า: คงสถานะล็อคให้ผู้เล่นทุกคน
+        requiredSlotIds.forEach(id => {
+            if (players[id]) players[id].isLocked = true;
+        });
+
+        // หากหลุดจากจอนานเกิน 6 วินาทีทุกๆ คน (เช่น พักเบรก หรือเดินออกจากคอร์ท) จึงค่อยปลดล็อคเพื่อสแกนใหม่
+        const anyActive = requiredSlotIds.some(id => players[id] && (now - players[id].lastSeenMs < 6000));
+        if (!anyActive) {
+            isPlayersLocked = false;
+            requiredSlotIds.forEach(id => {
+                if (players[id]) players[id].isLocked = false;
+            });
+        }
+    }
+
+    updatePlayerLockHUD(activeCount, requiredCount);
+}
+
+function updatePlayerLockHUD(activeCount, requiredCount) {
+    const statusText = document.getElementById('modeStatusText');
+    const recDot = document.getElementById('recDot');
+    if (!statusText) return;
+
+    if (isPlayersLocked) {
+        statusText.innerHTML = `<span class="text-emerald-400 font-bold">🎯 ล็อคเป้า ${activeCount}/${requiredCount}</span>`;
+        if (recDot) recDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse';
+    } else {
+        if (activeCount > 0) {
+            statusText.textContent = `ค้นหา [${activeCount}/${requiredCount}]`;
+            if (recDot) recDot.className = 'w-1.5 h-1.5 rounded-full bg-amber-400';
+        } else {
+            statusText.textContent = 'AI พร้อม';
+            if (recDot) recDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        }
+    }
+}
 
 // Tolerance outside the painted lines for foot-position noise (15 cm sideways, 25 cm lengthwise)
 const IN_COURT_TOL_U = 0.15 / 6.10;
@@ -206,14 +275,24 @@ function assignCandidatesToSlots(team, cands, now) {
             players[unusedKey].currentSpeedKmh = 0;
             players[unusedKey]._posWindow = [];
             players[unusedKey]._anchor = null;
+            players[unusedKey].isLocked = false;
         }
     }
 
     const slotCost = (slot, idx, c) => {
-        const recent = now - slot.lastSeenMs < 2000;
+        const recent = now - slot.lastSeenMs < (isPlayersLocked ? 2500 : 2000);
         if (recent) {
             const distM = Math.hypot((slot.u - c.u) * ShuttleCV.COURT_WIDTH_M, (slot.v - c.v) * ShuttleCV.COURT_LENGTH_M);
-            // Large distance penalty if candidate jumps > 3.0m in < 300ms (prevents ID flipping between doubles partners)
+            
+            if (isPlayersLocked || slot.isLocked) {
+                // เมื่อเข้าสู่สถานะล็อคเป้า:
+                // 1. ลงโทษอย่างรุนแรงหากพิกัดกระโดดเกิน 2.8 เมตร (ป้องกันการสลับ Slot ID ระหว่างคู่ขา)
+                if (distM > 2.8) return distM * 5.0 + 30.0;
+                // 2. ให้ความสำคัญสูงสุดกับความต่อเนื่องของ Track เดิม
+                return distM * 1.6;
+            }
+
+            // ก่อนล็อคเป้า: ปกป้องการกระโดดฉับพลันปกติ
             if (now - slot.lastSeenMs < 300 && distM > 3.0) return distM + 12.0;
             return distM;
         }
@@ -237,7 +316,22 @@ function assignCandidatesToSlots(team, cands, now) {
         if (!best || cost < best.cost) best = { cost, p };
     });
     if (!best) return;
-    best.p.forEach(([si, ci]) => updatePlayerSlot(slots[si], cands[ci], now));
+
+    // หากล็อคเป้าแล้ว: ป้องกันไม่ให้หยิบ Candidate ที่อยู่ไกลเกินจริงมาแทนที่ Slot
+    if (isPlayersLocked) {
+        best.p.forEach(([si, ci]) => {
+            const slot = slots[si];
+            const cand = cands[ci];
+            const wasTracked = slot.detected && (now - slot.lastSeenMs < 2500);
+            if (wasTracked) {
+                const distM = Math.hypot((slot.u - cand.u) * ShuttleCV.COURT_WIDTH_M, (slot.v - cand.v) * ShuttleCV.COURT_LENGTH_M);
+                if (distM > 3.5) return; // ทิ้ง candidate หากพิกัดห่างจากเป้าที่ล็อคไว้เกินไป
+            }
+            updatePlayerSlot(slot, cand, now);
+        });
+    } else {
+        best.p.forEach(([si, ci]) => updatePlayerSlot(slots[si], cands[ci], now));
+    }
 }
 
 function updatePlayerSlot(slot, c, now) {
@@ -323,9 +417,12 @@ async function runRealPoseEstimation(videoEl) {
             p.currentSpeedKmh = 0;
             p._posWindow = [];
             p._anchor = null;
+            p.isLocked = false;
             return;
         }
-        if (p.detected && now - p.lastSeenMs > 900) {
+        // เมื่อล็อคเป้าแล้ว: ขยายเวลา Coasting เป็น 1800ms เผื่อจังหวะคู่ขาวิ่งตัดหน้าหรือกระโดดตบ
+        const timeoutMs = (isPlayersLocked && p.isLocked) ? 1800 : 900;
+        if (p.detected && now - p.lastSeenMs > timeoutMs) {
             p.detected = false;
             p.currentSpeedKmh = 0;
             p._posWindow = [];
@@ -391,6 +488,9 @@ async function runRealPoseEstimation(videoEl) {
 
         assignCandidatesToSlots('A', filterTeam(candsA), now);
         assignCandidatesToSlots('B', filterTeam(candsB), now);
+
+        // ตรวจสอบและอัปเดตสถานะล็อคเป้าหมายผู้เล่นครบ 4 คน
+        checkAndUpdatePlayerLockState(now);
 
         detectedHumanBoxes = masks;
     } catch (e) {
