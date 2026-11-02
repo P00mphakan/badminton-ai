@@ -216,6 +216,119 @@
         </div>
     </div>
 
+    <!-- Match Detail Modal (Stats, 2D Heatmap & AI Coach Report with Editable Title) -->
+    <div id="matchDetailModal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5">
+        <div class="glass-panel rounded-3xl max-w-2xl w-full max-h-[90dvh] flex flex-col border border-slate-700 shadow-2xl overflow-hidden">
+            <!-- Modal Header -->
+            <div class="p-4 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0 bg-slate-900/60">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                        <span id="detailMatchTitle" class="text-sm font-bold text-white truncate">ชื่อแมตช์</span>
+                        <button onclick="editCurrentDetailMatchTitle()" class="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-cyan-300 transition-colors" title="แก้ไขชื่อแมตช์">
+                            <i class="ph-bold ph-pencil-simple text-xs"></i>
+                        </button>
+                        <span id="detailMatchScore" class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold shrink-0">A 0 - 0 B</span>
+                    </div>
+                    <div id="detailMatchMeta" class="text-[11px] text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+                        <span id="detailMatchDate">-</span>
+                        <span>•</span>
+                        <span id="detailMatchDuration">-</span>
+                        <span>•</span>
+                        <span id="detailMatchSpeed" class="text-amber-300 font-semibold">-</span>
+                    </div>
+                </div>
+                <button onclick="closeMatchDetailModal()" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center shrink-0">
+                    <i class="ph-bold ph-x text-sm"></i>
+                </button>
+            </div>
+
+            <!-- Detail Tabs Bar -->
+            <div class="flex border-b border-slate-800 bg-slate-950/70 px-4 shrink-0 overflow-x-auto">
+                <button onclick="switchDetailTab('stats')" id="btnDetailTab-stats" class="py-2.5 px-3 text-xs font-bold border-b-2 border-emerald-400 text-emerald-400 flex items-center gap-1.5 transition-all">
+                    <i class="ph-bold ph-lightning"></i>
+                    <span>สถิติตบ &amp; ผู้เล่น</span>
+                </button>
+                <button onclick="switchDetailTab('heatmap')" id="btnDetailTab-heatmap" class="py-2.5 px-3 text-xs font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5 transition-all">
+                    <i class="ph-bold ph-map-trifold"></i>
+                    <span>กราฟิกวิ่ง 2D Heatmap</span>
+                </button>
+                <button onclick="switchDetailTab('coach')" id="btnDetailTab-coach" class="py-2.5 px-3 text-xs font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5 transition-all">
+                    <i class="ph-bold ph-robot"></i>
+                    <span>บทวิเคราะห์โค้ช AI</span>
+                </button>
+            </div>
+
+            <!-- Modal Body (Scrollable) -->
+            <div class="p-4 overflow-y-auto flex-1 space-y-4">
+                <!-- Tab 1: Stats & Shots -->
+                <div id="detailView-stats" class="space-y-3">
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 text-center">
+                            <span class="text-[10px] text-slate-400 block">ตบเร็วที่สุด</span>
+                            <span id="detailStatMaxSmash" class="font-mono text-base font-bold text-amber-300">0 km/h</span>
+                        </div>
+                        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 text-center">
+                            <span class="text-[10px] text-slate-400 block">สปีดตบเฉลี่ย</span>
+                            <span id="detailStatAvgSmash" class="font-mono text-base font-bold text-cyan-300">0 km/h</span>
+                        </div>
+                        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 text-center">
+                            <span class="text-[10px] text-slate-400 block">จำนวนลูกตบ</span>
+                            <span id="detailStatTotalSmashes" class="font-mono text-base font-bold text-emerald-400">0 ครั้ง</span>
+                        </div>
+                        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 text-center">
+                            <span class="text-[10px] text-slate-400 block">เวลาแข่งขัน</span>
+                            <span id="detailStatDuration" class="font-mono text-base font-bold text-slate-200">00:00</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-300 mb-2 flex items-center gap-1.5">
+                            <i class="ph-fill ph-users text-emerald-400"></i>
+                            <span>สถิติรายบุคคล (ระยะวิ่ง &amp; ความเร็ว)</span>
+                        </h4>
+                        <div id="detailPlayerCardsList" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+                    </div>
+
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-300 mb-2 flex items-center gap-1.5">
+                            <i class="ph-fill ph-clock-counter-clockwise text-cyan-400"></i>
+                            <span>บันทึกช็อตสำคัญ (Recent Shots)</span>
+                        </h4>
+                        <div id="detailRecentShotsList" class="space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: 2D Heatmap & Trails -->
+                <div id="detailView-heatmap" class="hidden space-y-3">
+                    <div class="relative w-full aspect-[16/10] bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center shadow-inner">
+                        <canvas id="detailHeatmapCanvas" class="w-full h-full block"></canvas>
+                    </div>
+                    <div id="detailHeatmapLegend" class="flex flex-wrap items-center justify-center gap-3 text-[11px] text-slate-300 bg-slate-900/80 p-2.5 rounded-xl border border-slate-800"></div>
+                </div>
+
+                <!-- Tab 3: AI Coach Report -->
+                <div id="detailView-coach" class="hidden space-y-3">
+                    <div id="detailCoachReportContent" class="text-xs text-slate-200 leading-relaxed bg-slate-950/80 border border-slate-800/90 rounded-2xl p-4"></div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="p-3 border-t border-slate-800 bg-slate-900/80 flex items-center justify-between gap-2 shrink-0">
+                <span class="text-[10px] text-emerald-400 font-semibold px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center gap-1">
+                    <i class="ph-fill ph-check-circle"></i>
+                    <span>Saved ✓</span>
+                </span>
+                <div class="flex items-center gap-2">
+                    <button onclick="loadDetailMatchIntoApp()" class="px-3.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all">
+                        <i class="ph-bold ph-arrow-square-out"></i>
+                        <span>เปิดในแท็บวิเคราะห์หลัก</span>
+                    </button>
+                    <button onclick="closeMatchDetailModal()" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium">ปิด</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification Banner -->
     <div id="toastBanner" class="hidden fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-emerald-500/40 text-emerald-300 px-4 py-2 rounded-2xl shadow-2xl text-xs font-medium flex items-center gap-2 max-w-md w-[92%]">
         <i class="ph-fill ph-check-circle text-emerald-400 text-base shrink-0"></i>
@@ -810,20 +923,21 @@
                 </div>
             </div>
 
-            <!-- Saved Match Records History (Supabase Cloud + Local Sync) -->
+            <!-- Saved Match Records History -->
             <div class="glass-panel rounded-2xl p-4 border border-cyan-500/25">
                 <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <div>
                         <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                            <i class="ph-fill ph-cloud-check text-cyan-400 text-lg"></i>
-                            <span>ประวัติแมตช์ (Supabase Cloud Sync)</span>
+                            <i class="ph-fill ph-check-circle text-emerald-400 text-lg"></i>
+                            <span>ประวัติแมตช์</span>
+                            <span id="cloudSyncBadge" class="text-[10px] text-emerald-400 font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">Saved ✓</span>
                         </h3>
-                        <p class="text-[11px] text-slate-400">ห้องก๊วนปัจจุบัน: <b class="js-club-code text-cyan-300 font-mono">PUBLIC</b> <span id="cloudSyncBadge" class="ml-1 text-[10px] text-emerald-400">• พร้อมซิงค์</span></p>
+                        <p id="historyAccountSubtitle" class="text-[11px] text-slate-400">ห้องก๊วน: <b class="js-club-code text-cyan-300 font-mono">PUBLIC</b></p>
                     </div>
                     <div class="flex items-center gap-1.5">
-                        <button onclick="fetchCloudMatches(true)" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 font-medium flex items-center gap-1" title="ดึงข้อมูลล่าสุดจาก Supabase">
+                        <button onclick="fetchCloudMatches(true)" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 font-medium flex items-center gap-1" title="ดึงข้อมูลล่าสุด">
                             <i class="ph-bold ph-arrows-clockwise"></i>
-                            <span>ซิงค์ Cloud</span>
+                            <span>รีเฟรช</span>
                         </button>
                         <button onclick="openMatchTitleModal()" class="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1">
                             <i class="ph-bold ph-plus"></i>
@@ -831,6 +945,7 @@
                         </button>
                     </div>
                 </div>
+                <div id="unauthenticatedWarningBox" class="hidden"></div>
                 <div id="savedMatchesList" class="space-y-2"></div>
             </div>
         </section>
@@ -1124,7 +1239,7 @@
     <script src="js/cv-court.js?v=20261102p"></script>
     <script src="js/pose-tracker.js?v=20261102p"></script>
     <script src="js/scoreboard.js?v=20261102p"></script>
-    <script src="js/live-view.js?v=20261102p"></script>
-    <script src="js/analytics-coach.js?v=20261102p"></script>
+    <script src="js/live-view.js?v=20261102q"></script>
+    <script src="js/analytics-coach.js?v=20261102q"></script>
 </body>
 </html>

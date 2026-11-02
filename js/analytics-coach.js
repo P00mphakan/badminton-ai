@@ -1129,7 +1129,7 @@ async function initSupabaseAuth() {
         }
         updateAuthUI();
 
-        supabaseClient.auth.onAuthStateChange((_event, session) => {
+        supabaseClient.auth.onAuthStateChange(async (_event, session) => {
             const prevUser = currentAuthUser?.id;
             currentAuthUser = session?.user || null;
             if (currentAuthUser) {
@@ -1137,6 +1137,9 @@ async function initSupabaseAuth() {
             }
             updateAuthUI();
             if (prevUser !== currentAuthUser?.id) {
+                if (currentAuthUser) {
+                    await autoSyncCachedMatchesToAccount();
+                }
                 fetchCloudMatches(false);
             }
         });
@@ -1184,7 +1187,8 @@ async function handleEmailAuthSubmit() {
                 currentAuthUser = data.session.user;
                 updateAuthUI();
                 toggleAuthModal();
-                showToast(`สมัครสมาชิกและเข้าสู่ระบบสำเร็จ (${email})`);
+                showToast(`เข้าสู่ระบบสำเร็จ (${email})`);
+                await autoSyncCachedMatchesToAccount();
                 fetchCloudMatches(false);
             } else {
                 showAuthMessage('สมัครสมาชิกสำเร็จ! หากระบบตั้งค่ายืนยันอีเมลไว้ กรุณาตรวจสอบกล่องจดหมายของคุณ หรือกดเข้าสู่ระบบได้เลย', false);
@@ -1196,6 +1200,7 @@ async function handleEmailAuthSubmit() {
             updateAuthUI();
             toggleAuthModal();
             showToast(`เข้าสู่ระบบสำเร็จ (${email})`);
+            await autoSyncCachedMatchesToAccount();
             fetchCloudMatches(true);
         }
     } catch (err) {
@@ -1298,6 +1303,44 @@ function updateCloudSyncBadge(text, isOk = true) {
     badge.className = isOk ? 'ml-1 text-[10px] text-emerald-400' : 'ml-1 text-[10px] text-amber-400';
 }
 
+let currentDetailMatchIndex = -1;
+
+function openAuthModalForSignIn() {
+    currentAuthMode = 'signin';
+    const tabSignin = document.getElementById('authTabSignin');
+    const tabSignup = document.getElementById('authTabSignup');
+    const submitBtnTxt = document.getElementById('btnSubmitEmailAuthText');
+    if (tabSignin) tabSignin.classList.add('bg-cyan-500/20', 'text-cyan-300', 'border', 'border-cyan-500/40');
+    if (tabSignup) tabSignup.classList.remove('bg-cyan-500/20', 'text-cyan-300', 'border', 'border-cyan-500/40');
+    if (submitBtnTxt) submitBtnTxt.textContent = 'เข้าสู่ระบบด้วยอีเมล';
+    const modal = document.getElementById('authModal');
+    if (modal) modal.classList.remove('hidden');
+}
+
+async function autoSyncCachedMatchesToAccount() {
+    if (!currentAuthUser?.id) return;
+    try {
+        let unsyncedMatches = matchHistory.filter(m => !m.cloudId || !m.userId || m.userId !== currentAuthUser.id);
+        if (unsyncedMatches.length === 0) return;
+
+        let syncedCount = 0;
+        for (const m of unsyncedMatches) {
+            m.userId = currentAuthUser.id;
+            const ok = await syncMatchRecordToSupabase(m);
+            if (ok) syncedCount++;
+        }
+        if (syncedCount > 0) {
+            try {
+                localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
+            } catch (e) {}
+            renderSavedMatchesList();
+            showToast(`Saved ✓ ซิงค์แมตช์ที่บันทึกไว้ในเครื่อง (${syncedCount} รายการ) เข้าบัญชีของคุณเรียบร้อย`);
+        }
+    } catch (e) {
+        console.warn('Auto sync cached matches warning:', e);
+    }
+}
+
 async function syncMatchRecordToSupabase(record) {
     try {
         // Store AI text summary inside players_summary JSONB or as a dedicated metadata entry (NEVER upload video files)
@@ -1307,7 +1350,7 @@ async function syncMatchRecordToSupabase(record) {
         const payload = {
             client_match_id: record.id,
             club_code: record.clubCode || clubCode || 'PUBLIC',
-            user_id: currentAuthUser?.id || null,
+            user_id: currentAuthUser?.id || record.userId || null,
             title: record.title,
             saved_at_text: record.savedAt,
             duration_sec: record.durationSec || 0,
@@ -1331,7 +1374,9 @@ async function syncMatchRecordToSupabase(record) {
             if (error) throw error;
             if (data && data[0] && data[0].id) {
                 record.cloudId = data[0].id;
-                localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
+                try {
+                    localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
+                } catch (e) {}
                 renderSavedMatchesList();
             }
         } else {
@@ -1347,40 +1392,44 @@ async function syncMatchRecordToSupabase(record) {
             const rows = await res.json();
             if (rows && rows[0] && rows[0].id) {
                 record.cloudId = rows[0].id;
-                localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
+                try {
+                    localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
+                } catch (e) {}
                 renderSavedMatchesList();
             }
         }
         isCloudSynced = true;
-        updateCloudSyncBadge('ซิงค์บทวิเคราะห์ขึ้น Cloud แล้ว (ไม่เก็บไฟล์คลิป)', true);
+        updateCloudSyncBadge('Saved ✓', true);
         return true;
     } catch (e) {
-        updateCloudSyncBadge('บันทึกในเครื่องแล้ว', false);
+        updateCloudSyncBadge('Saved ✓ (ในเครื่อง)', false);
         return false;
     }
 }
 
 async function fetchCloudMatches(showNotification = false) {
     try {
-        updateCloudSyncBadge('กำลังซิงค์...', true);
+        updateCloudSyncBadge(currentAuthUser ? 'Saved ✓' : 'Saved ✓ (ในเครื่อง)', true);
+        if (!currentAuthUser?.id) {
+            // Unauthenticated: Only display what's in local browser cache, strictly isolating personal accounts
+            renderSavedMatchesList();
+            return;
+        }
+
         let rows = [];
         if (supabaseClient) {
             let query = supabaseClient
                 .from('matches')
                 .select('*')
+                .eq('user_id', currentAuthUser.id)
                 .order('created_at', { ascending: false })
-                .limit(30);
-            if (currentAuthUser?.id) {
-                query = query.or(`user_id.eq.${currentAuthUser.id},club_code.eq.${clubCode || 'PUBLIC'}`);
-            } else {
-                query = query.eq('club_code', clubCode || 'PUBLIC');
-            }
+                .limit(35);
             const { data, error } = await query;
             if (error) throw error;
             rows = data || [];
         } else {
-            const code = encodeURIComponent(clubCode || 'PUBLIC');
-            const res = await ShuttleSecurity.fetchSupabaseRest(`matches?club_code=eq.${code}&order=created_at.desc&limit=30`);
+            const userId = encodeURIComponent(currentAuthUser.id);
+            const res = await ShuttleSecurity.fetchSupabaseRest(`matches?user_id=eq.${userId}&order=created_at.desc&limit=35`);
             if (!res.ok) throw new Error('HTTP ' + res.status);
             rows = await res.json();
         }
@@ -1391,7 +1440,7 @@ async function fetchCloudMatches(showNotification = false) {
             return {
                 id: r.client_match_id || new Date(r.created_at).getTime(),
                 cloudId: r.id,
-                userId: r.user_id || null,
+                userId: r.user_id || currentAuthUser?.id || null,
                 clubCode: r.club_code || 'PUBLIC',
                 title: r.title,
                 savedAt: r.saved_at_text || new Date(r.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }),
@@ -1412,21 +1461,21 @@ async function fetchCloudMatches(showNotification = false) {
         });
 
         const cloudIds = new Set(cloudRecords.map(c => c.id));
-        const localUnsynced = matchHistory.filter(m => (!m.clubCode || m.clubCode === clubCode) && !cloudIds.has(m.id));
+        const localUnsynced = matchHistory.filter(m => (!m.userId || m.userId === currentAuthUser.id) && !cloudIds.has(m.id));
         matchHistory = [...localUnsynced, ...cloudRecords].slice(0, 35);
         try {
             localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
         } catch (e) {}
         renderSavedMatchesList();
         isCloudSynced = true;
-        updateCloudSyncBadge(`ซิงค์ Cloud ล่าสุด (${cloudRecords.length} แมตช์)`, true);
+        updateCloudSyncBadge('Saved ✓', true);
 
         for (const unsynced of localUnsynced) {
             syncMatchRecordToSupabase(unsynced);
         }
-        if (showNotification) showToast(`ซิงค์ข้อมูลจาก Supabase สำเร็จ (${cloudRecords.length} แมตช์)`);
+        if (showNotification) showToast(`Saved ✓ ซิงค์ประวัติแมตช์ล่าสุด (${cloudRecords.length} แมตช์)`);
     } catch (e) {
-        updateCloudSyncBadge('ออฟไลน์ (ใช้ข้อมูลในเครื่อง)', false);
+        updateCloudSyncBadge('Saved ✓ (ในเครื่อง)', false);
     }
 }
 
@@ -1435,7 +1484,7 @@ async function saveCurrentMatchRecord() {
         ? Math.round(allSmashSpeeds.reduce((a, b) => a + b, 0) / allSmashSpeeds.length)
         : 0;
 
-    // Ensure we have a tactical text summary for the match (never store video files, only text analysis + metrics)
+    // Ensure we have a tactical text summary for the match
     if (!latestAICoachReportText) {
         latestAICoachReportText = buildLocalTacticalCoachReport();
     }
@@ -1461,10 +1510,12 @@ async function saveCurrentMatchRecord() {
             id: p.id,
             name: p.name,
             team: p.team,
+            color: p.color,
             distanceMeters: p.distanceMeters,
             maxSpeedKmh: p.maxSpeedKmh,
             maxSmashKmh: p.maxSmashKmh,
-            shotsCount: p.shotsCount
+            shotsCount: p.shotsCount,
+            positions: (p.positions || []).slice(-150)
         })),
         recentShots: shotHistory.slice(0, 20)
     };
@@ -1475,59 +1526,430 @@ async function saveCurrentMatchRecord() {
     } catch (e) {}
     renderSavedMatchesList();
     document.getElementById('moreSheet')?.classList.add('hidden');
-    showToast(`กำลังบันทึกเฉพาะข้อความบทวิเคราะห์และสถิติขึ้น Supabase Cloud...`);
-    const ok = await syncMatchRecordToSupabase(record);
-    if (ok) {
-        showToast(`บันทึกบทวิเคราะห์ "${record.title}" ขึ้น Supabase สำเร็จ! (ไม่เก็บไฟล์คลิปวิดีโอ)`);
+
+    if (!currentAuthUser) {
+        showToast(`Saved ✓ บันทึกในเบราว์เซอร์แล้ว (เข้าสู่ระบบเพื่อสำรองข้อมูลออนไลน์)`);
+    } else {
+        showToast(`กำลังบันทึกข้อมูลและสถิติ "${record.title}"...`);
+        const ok = await syncMatchRecordToSupabase(record);
+        if (ok) {
+            showToast(`Saved ✓ บันทึกบทวิเคราะห์ "${record.title}" เรียบร้อย`);
+        }
     }
 }
 
 function renderSavedMatchesList() {
     const container = document.getElementById('savedMatchesList');
     if (!container) return;
-    if (!matchHistory || matchHistory.length === 0) {
-        container.innerHTML = `<div class="text-center text-xs text-slate-500 py-5">ยังไม่มีบทวิเคราะห์แมตช์ในห้องก๊วน "${clubCode}" • กดปุ่ม "บันทึกแมตช์" เพื่อเก็บข้อความวิเคราะห์ขึ้น Cloud</div>`;
+
+    // Show or hide unauthenticated warning banner
+    const unauthBox = document.getElementById('unauthenticatedWarningBox');
+    if (unauthBox) {
+        if (!currentAuthUser) {
+            unauthBox.classList.remove('hidden');
+        } else {
+            unauthBox.classList.add('hidden');
+        }
+    }
+
+    // Display records strictly belonging to current signed-in account, or all local cache if guest
+    const displayList = currentAuthUser
+        ? matchHistory.filter(m => !m.userId || m.userId === currentAuthUser.id)
+        : matchHistory;
+
+    if (!displayList || displayList.length === 0) {
+        container.innerHTML = `<div class="text-center text-xs text-slate-500 py-6">ยังไม่มีประวัติแมตช์ • กดบันทึกแมตช์เพื่อดูสถิติ, Heatmap และบทวิเคราะห์ย้อนหลัง</div>`;
         return;
     }
-    container.innerHTML = matchHistory.map((m, idx) => {
+
+    container.innerHTML = displayList.map((m, idx) => {
         const cloudIcon = m.cloudId
-            ? `<i class="ph-fill ph-cloud-check text-cyan-400 text-xs shrink-0" title="ซิงค์บทวิเคราะห์บน Supabase Cloud แล้ว"></i>`
-            : `<i class="ph-bold ph-device-mobile text-slate-500 text-xs shrink-0" title="บันทึกในเครื่อง"></i>`;
+            ? `<span class="px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[9px] font-bold shrink-0 flex items-center gap-1"><i class="ph-fill ph-check-circle text-[10px]"></i> Saved ✓</span>`
+            : `<span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 text-[9px] font-medium shrink-0 flex items-center gap-1"><i class="ph-bold ph-hard-drive text-[10px]"></i> ในเครื่อง</span>`;
         const aiSnippet = m.aiAnalysisText || (m.playersSummary?.[0]?.aiAnalysisText) || '';
-        const cleanSnippet = aiSnippet.replace(/[#*`|\-_]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
+        const cleanSnippet = aiSnippet.replace(/[#*`|\-_]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
         return `
-        <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 space-y-1.5">
+        <div onclick="openMatchDetailModal(${idx})" class="group cursor-pointer bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-emerald-500/40 rounded-2xl p-3.5 space-y-2 transition-all shadow-sm hover:shadow-lg active:scale-[0.99]">
             <div class="flex items-center justify-between gap-2">
                 <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-1.5 min-w-0">
-                        ${cloudIcon}
-                        <span class="text-xs font-bold text-white truncate">${m.title}</span>
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors truncate">${m.title}</span>
+                        <button onclick="event.stopPropagation(); editSavedMatchTitle(${idx})" class="p-1 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-white/10 transition-colors" title="แก้ไขชื่อแมตช์">
+                            <i class="ph-bold ph-pencil-simple text-xs"></i>
+                        </button>
                         <span class="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold shrink-0">
                             A ${m.scoreA} - ${m.scoreB} B
                         </span>
+                        ${cloudIcon}
                     </div>
-                    <div class="text-[10px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
-                        <span class="text-cyan-300/90 font-mono">[${m.clubCode || 'PUBLIC'}]</span>
-                        <span>•</span>
+                    <div class="text-[10px] text-slate-400 mt-1 flex flex-wrap items-center gap-2">
                         <span>${m.savedAt}</span>
                         <span>•</span>
                         <span>เวลา ${formatTimeSec(m.durationSec || 0)}</span>
                         <span>•</span>
                         <span class="text-amber-300">ตบสูงสุด ${m.maxSmashKmh || 0} km/h</span>
+                        <span>•</span>
+                        <span class="text-cyan-400 font-medium flex items-center gap-0.5"><i class="ph-bold ph-eye"></i> แตะเพื่อดูสถิติ &amp; Heatmap</span>
                     </div>
                 </div>
-                <div class="flex items-center gap-1 shrink-0">
-                    <button onclick="exportSavedMatchById(${idx})" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center justify-center" title="Export JSON">
+                <div class="flex items-center gap-1 shrink-0" onclick="event.stopPropagation()">
+                    <button onclick="exportSavedMatchById(${idx})" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center justify-center transition-colors" title="Export JSON">
                         <i class="ph-bold ph-download-simple text-xs"></i>
                     </button>
-                    <button onclick="deleteSavedMatchById(${idx})" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-rose-300 flex items-center justify-center" title="ลบรายการ">
+                    <button onclick="deleteSavedMatchById(${idx})" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-rose-300 flex items-center justify-center transition-colors" title="ลบรายการ">
                         <i class="ph-bold ph-trash text-xs"></i>
                     </button>
                 </div>
             </div>
-            ${cleanSnippet ? `<div class="text-[11px] text-slate-300 bg-slate-950/70 border border-slate-800/80 rounded-lg px-2.5 py-1.5 line-clamp-2">📝 ${cleanSnippet}${aiSnippet.length > 140 ? '...' : ''}</div>` : ''}
+            ${cleanSnippet ? `<div class="text-[11px] text-slate-300 bg-slate-950/70 border border-slate-800/80 rounded-xl px-3 py-2 line-clamp-2">📝 ${cleanSnippet}${aiSnippet.length > 120 ? '...' : ''}</div>` : ''}
         </div>
     `}).join('');
+}
+
+async function editSavedMatchTitle(idx) {
+    const record = matchHistory[idx];
+    if (!record) return;
+    const currentName = record.title || '';
+    const newTitle = prompt('แก้ไขชื่อแมตช์:', currentName);
+    if (!newTitle || !newTitle.trim() || newTitle.trim() === currentName) return;
+
+    record.title = newTitle.trim();
+    try {
+        localStorage.setItem('shuttlepro_match_history', JSON.stringify(matchHistory));
+    } catch (e) {}
+    renderSavedMatchesList();
+
+    // If detail modal is open for this record, update title in modal
+    if (currentDetailMatchIndex === idx) {
+        const titleEl = document.getElementById('detailMatchTitle');
+        if (titleEl) titleEl.textContent = record.title;
+    }
+
+    if (record.cloudId && supabaseClient) {
+        try {
+            await supabaseClient.from('matches').update({ title: record.title }).eq('id', record.cloudId);
+        } catch (e) {
+            console.warn('Update match title in cloud warning:', e);
+        }
+    }
+    showToast(`Saved ✓ แก้ไขชื่อแมตช์เป็น "${record.title}" เรียบร้อย`);
+}
+
+function editCurrentDetailMatchTitle() {
+    if (currentDetailMatchIndex >= 0) {
+        editSavedMatchTitle(currentDetailMatchIndex);
+    }
+}
+
+function openMatchDetailModal(idx) {
+    const record = matchHistory[idx];
+    if (!record) return;
+    currentDetailMatchIndex = idx;
+
+    const modal = document.getElementById('matchDetailModal');
+    if (!modal) return;
+
+    // Header info
+    const titleEl = document.getElementById('detailMatchTitle');
+    const scoreEl = document.getElementById('detailMatchScore');
+    const dateEl = document.getElementById('detailMatchDate');
+    const durEl = document.getElementById('detailMatchDuration');
+    const spdEl = document.getElementById('detailMatchSpeed');
+
+    if (titleEl) titleEl.textContent = record.title || 'แมตช์ไม่มีชื่อ';
+    if (scoreEl) scoreEl.textContent = `A ${record.scoreA || 0} - ${record.scoreB || 0} B`;
+    if (dateEl) dateEl.textContent = record.savedAt || '-';
+    if (durEl) durEl.textContent = `เวลา ${formatTimeSec(record.durationSec || 0)}`;
+    if (spdEl) spdEl.textContent = `ตบสูงสุด ${record.maxSmashKmh || 0} km/h`;
+
+    // Tab 1: Stats & Overview
+    const elMaxSmash = document.getElementById('detailStatMaxSmash');
+    const elAvgSmash = document.getElementById('detailStatAvgSmash');
+    const elTotalSmashes = document.getElementById('detailStatTotalSmashes');
+    const elDuration = document.getElementById('detailStatDuration');
+
+    if (elMaxSmash) elMaxSmash.textContent = `${record.maxSmashKmh || 0} km/h`;
+    if (elAvgSmash) elAvgSmash.textContent = `${record.avgSmashKmh || 0} km/h`;
+    if (elTotalSmashes) elTotalSmashes.textContent = `${record.totalSmashes || 0} ครั้ง`;
+    if (elDuration) elDuration.textContent = formatTimeSec(record.durationSec || 0);
+
+    // Player Cards
+    const playerCardsContainer = document.getElementById('detailPlayerCardsList');
+    if (playerCardsContainer) {
+        const pSummary = record.playersSummary || [];
+        if (pSummary.length === 0) {
+            playerCardsContainer.innerHTML = `<div class="text-slate-500 text-xs col-span-2 py-3 text-center">ไม่มีข้อมูลสถิติผู้เล่นสำหรับแมตช์นี้</div>`;
+        } else {
+            playerCardsContainer.innerHTML = pSummary.map(p => `
+                <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 space-y-1.5">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full" style="background-color: ${p.color || (p.team === 'A' ? '#38bdf8' : '#f97316')}"></span>
+                            <span class="text-xs font-bold text-white">${p.name || p.id}</span>
+                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold">ทีม ${p.team || 'A'}</span>
+                        </div>
+                        <span class="text-xs font-mono font-bold text-emerald-400">${(p.distanceMeters || 0).toFixed(1)} ม.</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-1 text-[10px] bg-slate-950/60 p-2 rounded-lg text-center">
+                        <div>
+                            <span class="text-slate-400 block">ตบสูงสุด</span>
+                            <span class="font-mono font-bold text-amber-300">${p.maxSmashKmh || 0} km/h</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-400 block">สปีดวิ่งสูงสุด</span>
+                            <span class="font-mono font-bold text-cyan-300">${(p.maxSpeedKmh || 0).toFixed(1)} km/h</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-400 block">จำนวนช็อต</span>
+                            <span class="font-mono font-bold text-emerald-300">${p.shotsCount || 0}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+    }
+
+    // Recent Shots List
+    const shotsContainer = document.getElementById('detailRecentShotsList');
+    if (shotsContainer) {
+        const shots = record.recentShots || [];
+        if (shots.length === 0) {
+            shotsContainer.innerHTML = `<div class="text-slate-500 text-xs py-2 text-center">ไม่มีบันทึกช็อตสำคัญ</div>`;
+        } else {
+            shotsContainer.innerHTML = shots.map((s, sIdx) => `
+                <div class="flex items-center justify-between bg-slate-900/80 border border-slate-800/80 rounded-lg px-2.5 py-1.5 text-xs">
+                    <div class="flex items-center gap-2">
+                        <span class="text-slate-500 font-mono text-[10px]">#${sIdx + 1}</span>
+                        <span class="font-semibold text-slate-200">${s.type || 'Shot'}</span>
+                        <span class="text-[10px] text-slate-400">${s.player || ''}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="font-mono font-bold text-amber-300">${s.speed || 0} km/h</span>
+                        <span class="text-[10px] text-slate-500">${s.time || ''}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+    }
+
+    // Tab 2: 2D Heatmap & Trails
+    renderDetailHeatmap(record);
+
+    // Tab 3: AI Coach Report
+    const coachContainer = document.getElementById('detailCoachReportContent');
+    if (coachContainer) {
+        const aiText = record.aiAnalysisText || (record.playersSummary?.[0]?.aiAnalysisText) || 'ไม่มีบทวิเคราะห์โค้ช AI สำหรับแมตช์นี้';
+        coachContainer.innerHTML = renderMarkdownSafe(aiText);
+    }
+
+    modal.classList.remove('hidden');
+    switchDetailTab('stats');
+}
+
+function closeMatchDetailModal() {
+    document.getElementById('matchDetailModal')?.classList.add('hidden');
+    currentDetailMatchIndex = -1;
+}
+
+function switchDetailTab(tabKey) {
+    const tabs = ['stats', 'heatmap', 'coach'];
+    tabs.forEach(t => {
+        const view = document.getElementById(`detailView-${t}`);
+        const btn = document.getElementById(`btnDetailTab-${t}`);
+        if (view) {
+            if (t === tabKey) view.classList.remove('hidden');
+            else view.classList.add('hidden');
+        }
+        if (btn) {
+            if (t === tabKey) {
+                btn.className = 'py-2.5 px-3 text-xs font-bold border-b-2 border-emerald-400 text-emerald-400 flex items-center gap-1.5 transition-all';
+            } else {
+                btn.className = 'py-2.5 px-3 text-xs font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-1.5 transition-all';
+            }
+        }
+    });
+
+    if (tabKey === 'heatmap' && currentDetailMatchIndex >= 0) {
+        setTimeout(() => {
+            renderDetailHeatmap(matchHistory[currentDetailMatchIndex]);
+        }, 50);
+    }
+}
+
+function renderDetailHeatmap(record) {
+    if (!record) return;
+    const canvas = document.getElementById('detailHeatmapCanvas');
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width > 0 ? Math.floor(rect.width) : 600;
+    const h = rect.height > 0 ? Math.floor(rect.height) : 375;
+    canvas.width = w;
+    canvas.height = h;
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+
+    const padX = w * 0.08;
+    const padY = h * 0.08;
+    const cw = w - padX * 2;
+    const ch = h - padY * 2;
+
+    function normTo2DCourt(nx, ny) {
+        return { x: padX + ny * cw, y: padY + nx * ch };
+    }
+
+    // Badminton Court Green Background
+    ctx.fillStyle = '#064e3b';
+    ctx.fillRect(padX, padY, cw, ch);
+
+    // Court Boundary Lines (Standard BWF)
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(padX, padY, cw, ch);
+    ctx.strokeRect(padX, padY + ch * 0.0754, cw, ch * (1 - 0.1508));
+
+    ctx.beginPath();
+    // Short Service Lines
+    ctx.moveTo(padX + cw * 0.352, padY);
+    ctx.lineTo(padX + cw * 0.352, padY + ch);
+    ctx.moveTo(padX + cw * 0.648, padY);
+    ctx.lineTo(padX + cw * 0.648, padY + ch);
+    // Center Lines
+    ctx.moveTo(padX, padY + ch * 0.5);
+    ctx.lineTo(padX + cw * 0.352, padY + ch * 0.5);
+    ctx.moveTo(padX + cw * 0.648, padY + ch * 0.5);
+    ctx.lineTo(padX + cw, padY + ch * 0.5);
+    ctx.stroke();
+
+    // Center Net Line
+    ctx.save();
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(padX + cw * 0.5, padY - 8);
+    ctx.lineTo(padX + cw * 0.5, padY + ch + 8);
+    ctx.stroke();
+    ctx.restore();
+
+    const pSummary = record.playersSummary || [];
+    const legend = document.getElementById('detailHeatmapLegend');
+    if (legend) {
+        legend.innerHTML = pSummary.map(p => {
+            const color = p.color || (p.team === 'A' ? '#38bdf8' : '#f97316');
+            return `
+                <div class="flex items-center gap-1.5">
+                    <span class="w-2.5 h-2.5 rounded-full" style="background-color: ${color}"></span>
+                    <span class="font-medium text-slate-200">${p.name || p.id}</span>
+                    <span class="text-slate-400 font-mono text-[10px]">(${(p.distanceMeters || 0).toFixed(1)} ม.)</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // Draw Heatmap and Trails
+    pSummary.forEach(p => {
+        const color = p.color || (p.team === 'A' ? '#38bdf8' : '#f97316');
+        const pos = p.positions || [];
+        if (pos.length > 0) {
+            // Radial Heatmap Blobs
+            pos.forEach((pt, idx) => {
+                if (idx % 2 !== 0) return;
+                const c = normTo2DCourt(pt.x, pt.y);
+                const grad = ctx.createRadialGradient(c.x, c.y, 2, c.x, c.y, 20);
+                grad.addColorStop(0, color + '55');
+                grad.addColorStop(1, color + '00');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(c.x, c.y, 20, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Movement Path Trails
+            if (pos.length >= 2) {
+                ctx.beginPath();
+                pos.forEach((pt, idx) => {
+                    const c = normTo2DCourt(pt.x, pt.y);
+                    if (idx === 0) ctx.moveTo(c.x, c.y);
+                    else ctx.lineTo(c.x, c.y);
+                });
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2.2;
+                ctx.stroke();
+            }
+        } else {
+            // Standard positional zone anchor for records without continuous frames
+            const defaultPos = p.team === 'A'
+                ? (p.id === 'A1' ? { x: 0.25, y: 0.3 } : { x: 0.25, y: 0.7 })
+                : (p.id === 'B1' ? { x: 0.75, y: 0.3 } : { x: 0.75, y: 0.7 });
+            const c = normTo2DCourt(defaultPos.x, defaultPos.y);
+            const grad = ctx.createRadialGradient(c.x, c.y, 4, c.x, c.y, 26);
+            grad.addColorStop(0, color + '66');
+            grad.addColorStop(1, color + '00');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(c.x, c.y, 26, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    });
+}
+
+function loadDetailMatchIntoApp() {
+    if (currentDetailMatchIndex < 0) return;
+    const record = matchHistory[currentDetailMatchIndex];
+    if (!record) return;
+
+    scoreboard.scoreA = record.scoreA || 0;
+    scoreboard.scoreB = record.scoreB || 0;
+    scoreboard.setsA = record.setsA || 0;
+    scoreboard.setsB = record.setsB || 0;
+    matchSeconds = record.durationSec || 0;
+    maxRecordedSpeed = record.maxSmashKmh || 0;
+    matchTitle = record.title || matchTitle;
+    clubCode = record.clubCode || clubCode;
+
+    if (record.playersSummary && record.playersSummary.length > 0) {
+        record.playersSummary.forEach(ps => {
+            if (players[ps.id]) {
+                players[ps.id].distanceMeters = ps.distanceMeters || 0;
+                players[ps.id].maxSmashKmh = ps.maxSmashKmh || 0;
+                players[ps.id].maxSpeedKmh = ps.maxSpeedKmh || 0;
+                players[ps.id].shotsCount = ps.shotsCount || 0;
+                if (ps.positions && ps.positions.length > 0) {
+                    players[ps.id].positions = [...ps.positions];
+                }
+            }
+        });
+    }
+
+    if (record.aiAnalysisText) {
+        latestAICoachReportText = record.aiAnalysisText;
+        const coachOutputBox = document.getElementById('aiCoachOutput');
+        if (coachOutputBox) {
+            coachOutputBox.innerHTML = `
+                <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 space-y-3 text-xs leading-relaxed">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <span class="font-bold text-emerald-400 flex items-center gap-1.5">
+                            <i class="ph-fill ph-sparkle"></i> รายงานวิเคราะห์ของแมตช์ "${record.title}"
+                        </span>
+                        <span class="text-[10px] text-slate-400">${record.savedAt}</span>
+                    </div>
+                    ${renderMarkdownSafe(latestAICoachReportText)}
+                </div>
+            `;
+        }
+    }
+
+    renderMatchTitleUI();
+    if (typeof updateScoreboardUI === 'function') updateScoreboardUI();
+    drawAnalyticsCourt();
+    closeMatchDetailModal();
+
+    if (typeof switchTab === 'function') {
+        switchTab('tab-analytics');
+    }
+    showToast(`Saved ✓ โหลดข้อมูลแมตช์ "${record.title}" เข้าสู่หน้าวิเคราะห์เรียบร้อย`);
 }
 
 function exportSavedMatchById(idx) {
@@ -2093,3 +2515,17 @@ window.addEventListener('DOMContentLoaded', () => {
 function renderCoachStandbyInitial() {
     renderCoachPreviewStandby();
 }
+
+// Global UI bindings for match detail modal, history click, rename & sync
+window.openMatchDetailModal = openMatchDetailModal;
+window.closeMatchDetailModal = closeMatchDetailModal;
+window.switchDetailTab = switchDetailTab;
+window.editSavedMatchTitle = editSavedMatchTitle;
+window.editCurrentDetailMatchTitle = editCurrentDetailMatchTitle;
+window.loadDetailMatchIntoApp = loadDetailMatchIntoApp;
+window.openAuthModalForSignIn = openAuthModalForSignIn;
+window.autoSyncCachedMatchesToAccount = autoSyncCachedMatchesToAccount;
+window.saveCurrentMatchRecord = saveCurrentMatchRecord;
+window.fetchCloudMatches = fetchCloudMatches;
+window.exportSavedMatchById = exportSavedMatchById;
+window.deleteSavedMatchById = deleteSavedMatchById;
