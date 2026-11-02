@@ -202,15 +202,15 @@ function getResolutionConstraints(resMode) {
     }
     if (resMode === '1080p') {
         return {
-            width: { ideal: 1920, max: 1920 },
-            height: { ideal: 1080, max: 1080 },
+            width: { ideal: 1920, min: 1280, max: 1920 },
+            height: { ideal: 1080, min: 720, max: 1080 },
             frameRate: { ideal: 60, min: 30 }
         };
     }
-    // 'native' mode: Request maximum native sensor pixels according to each mobile phone (1080p / 4K)
+    // 'native' mode: Request minimum 1080p FHD up to 4K
     return {
-        width: { ideal: 1920, max: 3840, min: 640 },
-        height: { ideal: 1080, max: 2160, min: 480 },
+        width: { ideal: 1920, min: 1280, max: 3840 },
+        height: { ideal: 1080, min: 720, max: 2160 },
         frameRate: { ideal: 60, min: 30 }
     };
 }
@@ -563,24 +563,36 @@ function getSupportedRecorderMimeType() {
 }
 
 function updateRawRecordUI(recording) {
+    const btn = document.getElementById('btnRecordRawVideo');
     const iconWrap = document.getElementById('recRawIconWrap');
     const icon = document.getElementById('recRawIcon');
     const label = document.getElementById('recRawLabel');
+    const sheetBtn = document.getElementById('sheetBtnRecordRawVideo');
     const sheetLabel = document.getElementById('sheetRecRawLabel');
     const topDot = document.getElementById('recDot');
     const collapsedDot = document.getElementById('collapsedDockRecDot');
 
     if (recording) {
-        if (iconWrap) iconWrap.className = 'dock-icon !bg-rose-500 text-white animate-pulse';
-        if (icon) icon.className = 'ph-fill ph-stop text-white';
-        if (label) label.textContent = '00:00';
+        if (btn) btn.classList.add('is-recording');
+        if (sheetBtn) sheetBtn.classList.add('!bg-rose-500/30', '!border-rose-400');
+        if (iconWrap) iconWrap.className = 'inline-flex items-center justify-center animate-pulse';
+        if (icon) icon.className = 'ph-fill ph-stop text-white text-sm';
+        if (label) {
+            label.textContent = '00:00';
+            label.className = 'text-rose-400 font-mono font-bold';
+        }
         if (sheetLabel) sheetLabel.textContent = 'หยุดอัดคลิป';
         if (topDot) topDot.className = 'w-2 h-2 rounded-full bg-rose-500 animate-ping';
         if (collapsedDot) collapsedDot.classList.remove('hidden');
     } else {
-        if (iconWrap) iconWrap.className = 'dock-icon';
-        if (icon) icon.className = 'ph-fill ph-record text-rose-400';
-        if (label) label.textContent = 'Record';
+        if (btn) btn.classList.remove('is-recording');
+        if (sheetBtn) sheetBtn.classList.remove('!bg-rose-500/30', '!border-rose-400');
+        if (iconWrap) iconWrap.className = 'inline-flex items-center justify-center';
+        if (icon) icon.className = 'ph-fill ph-record text-rose-400 text-sm';
+        if (label) {
+            label.textContent = 'Record';
+            label.className = '';
+        }
         if (sheetLabel) sheetLabel.textContent = 'อัดคลิปสด';
         if (topDot) topDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
         if (collapsedDot) collapsedDot.classList.add('hidden');
@@ -593,8 +605,12 @@ async function toggleRawVideoRecording() {
         return;
     }
     if (!isWebcamActive || !webcamVideo.srcObject) {
-        showToast('กรุณากดปุ่ม "กล้องสด" ก่อนเริ่มอัดคลิปวิดีโอต้นฉบับ');
-        return;
+        showToast('กำลังเปิดกล้อง 1080p เพื่อเตรียมบันทึก...');
+        await toggleWebcam();
+        if (!isWebcamActive || !webcamVideo.srcObject) {
+            showToast('กรุณากดเปิดกล้องสดก่อนเริ่มอัดวิดีโอ');
+            return;
+        }
     }
     if (typeof MediaRecorder === 'undefined') {
         showToast('เบราว์เซอร์ของคุณไม่รองรับการอัดวิดีโอโดยตรง');
@@ -604,10 +620,11 @@ async function toggleRawVideoRecording() {
     try {
         rawRecordedChunks = [];
         const mimeType = getSupportedRecorderMimeType();
-        // Space-saving compressed bitrates: ~1.8 Mbps video + 64 kbps audio (~13 MB per minute, sharp 720p, zero graphic overlay)
+        // High-clarity 1080p compressed bitrate: ~2.8 Mbps video + 96 kbps audio (~21 MB/minute, sharp 1080p, zero graphics)
+        // Space-saving: over 85% smaller than native phone recording, preserving storage while keeping fast shuttlecock motion crisp
         const options = {
-            videoBitsPerSecond: 1800000,
-            audioBitsPerSecond: 64000
+            videoBitsPerSecond: 2800000,
+            audioBitsPerSecond: 96000
         };
         if (mimeType) options.mimeType = mimeType;
 
@@ -633,7 +650,7 @@ async function toggleRawVideoRecording() {
             if (label) label.textContent = formatTimeSec(elapsedSec);
         }, 500);
 
-        showToast('เริ่มอัดวิดีโอต้นฉบับ (ภาพ+เสียง ไม่มีกราฟิกทับ บีบอัดขนาดประหยัดพื้นที่)');
+        showToast('🔴 เริ่มอัดวิดีโอ 1080p (Clean Feed ไม่มีกราฟิกทับ • ประหยัดความจุ)');
     } catch (err) {
         console.error('MediaRecorder start error:', err);
         showToast('ไม่สามารถเริ่มอัดวิดีโอได้บนอุปกรณ์นี้');

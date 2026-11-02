@@ -602,6 +602,12 @@ canvas {
     border-color: rgba(16, 185, 129, 0.5);
 }
 
+.dock-pill-btn.is-recording {
+    background: rgba(239, 68, 68, 0.22) !important;
+    border-color: rgba(239, 68, 68, 0.7) !important;
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.45) !important;
+}
+
 .calib-mode-pill {
     padding: 5px 12px;
     border-radius: 9999px;

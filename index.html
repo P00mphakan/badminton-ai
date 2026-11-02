@@ -29,7 +29,7 @@
             }
         }
     </script>
-    <link rel="stylesheet" href="css/styles.css?v=20261102e">
+    <link rel="stylesheet" href="css/styles.css?v=20261102f">
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
 
@@ -364,10 +364,6 @@
                         <i class="ph-bold ph-caret-right text-base text-emerald-300"></i>
                     </button>
 
-                    <!-- Hidden legacy vertical container placeholder for script references -->
-                    <div id="verticalDockCard" class="hidden">
-                        <button id="btnRecordRawVideo" onclick="toggleRawVideoRecording()"><span id="recRawIconWrap"><i id="recRawIcon"></i></span><span id="recRawLabel"></span></button>
-                    </div>
 
                     <!-- Top Auxiliary: Floating Camera Lens / Zoom Selector Pills (0.5x, 1x, 2x, 5x) -->
                     <div id="cameraLensSelector" class="hidden camera-lens-bar pointer-events-auto self-end">
@@ -414,11 +410,15 @@
                             </div>
                         </button>
 
-                        <!-- Secondary Quick Setup Pills: Camera, Upload, Court, Demo, Menu -->
-                        <div class="pointer-events-auto flex items-center justify-center gap-1 max-w-md w-full overflow-x-auto py-0.5">
+                        <!-- Secondary Quick Setup Pills: Live, Record 1080p (Clean Feed), Upload, Court, Menu -->
+                        <div class="pointer-events-auto flex items-center justify-center gap-1 sm:gap-1.5 max-w-md w-full overflow-x-auto py-0.5">
                             <button id="btnToggleCamera" onclick="toggleWebcam()" class="dock-pill-btn" title="เปิด/ปิดกล้องสด">
                                 <i class="ph-bold ph-video-camera text-emerald-400"></i>
                                 <span id="cameraBtnText">Live</span>
+                            </button>
+                            <button id="btnRecordRawVideo" onclick="toggleRawVideoRecording()" class="dock-pill-btn" title="บันทึกวิดีโอ 1080p สะอาดแบบไม่มีกราฟิกทับ (ประหยัดความจุ)">
+                                <span id="recRawIconWrap" class="inline-flex items-center justify-center"><i id="recRawIcon" class="ph-fill ph-record text-rose-400 text-sm"></i></span>
+                                <span id="recRawLabel">Record</span>
                             </button>
                             <button onclick="triggerVideoUploadSelect()" class="dock-pill-btn" title="อัปโหลดคลิปจากมือถือ/คอม">
                                 <i class="ph-bold ph-upload-simple text-cyan-300"></i>
@@ -504,15 +504,19 @@
                             <span id="sheetActiveLensBadge" class="text-[10px] font-mono font-semibold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full">1.0x • Native</span>
                         </div>
 
-                        <!-- Source Quick Select -->
-                        <div class="grid grid-cols-2 gap-2 mb-2.5 text-center">
+                        <!-- Source Quick Select (Live, Record 1080p Clean, Upload) -->
+                        <div class="grid grid-cols-3 gap-1.5 mb-2.5 text-center">
                             <button onclick="closeMoreSheet(); toggleWebcam()" class="sheet-btn !py-2">
                                 <i class="ph-bold ph-video-camera text-emerald-400 text-base"></i>
-                                <span class="text-[11px] font-bold">กล้อง Live</span>
+                                <span class="text-[10.5px] font-bold">กล้อง Live</span>
+                            </button>
+                            <button id="sheetBtnRecordRawVideo" onclick="closeMoreSheet(); toggleRawVideoRecording()" class="sheet-btn !py-2 border-rose-500/35 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300">
+                                <i class="ph-fill ph-record text-rose-400 text-base"></i>
+                                <span class="text-[10.5px] font-bold" id="sheetRecRawLabel">อัดคลิปสด</span>
                             </button>
                             <button onclick="closeMoreSheet(); triggerVideoUploadSelect()" class="sheet-btn !py-2">
                                 <i class="ph-bold ph-upload-simple text-cyan-300 text-base"></i>
-                                <span class="text-[11px] font-bold">อัปโหลดคลิป</span>
+                                <span class="text-[10.5px] font-bold">อัปโหลด</span>
                             </button>
                         </div>
 
@@ -1112,12 +1116,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261102l" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261102l"></script>
-    <script src="js/cv-court.js?v=20261102l"></script>
-    <script src="js/pose-tracker.js?v=20261102l"></script>
-    <script src="js/scoreboard.js?v=20261102l"></script>
-    <script src="js/live-view.js?v=20261102l"></script>
-    <script src="js/analytics-coach.js?v=20261102l"></script>
+    <script src="js/env.local.js?v=20261102m" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261102m"></script>
+    <script src="js/cv-court.js?v=20261102m"></script>
+    <script src="js/pose-tracker.js?v=20261102m"></script>
+    <script src="js/scoreboard.js?v=20261102m"></script>
+    <script src="js/live-view.js?v=20261102m"></script>
+    <script src="js/analytics-coach.js?v=20261102m"></script>
 </body>
 </html>

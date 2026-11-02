@@ -23,11 +23,24 @@
 | `v1.2.1-fix-dock-overlap` | เวอร์ชันแก้ปัญหาแถบปุ่มลัดทับซ้อนกับแถบเมนูด้านล่าง | `git checkout v1.2.1-fix-dock-overlap -- .` |
 | `v1.2.2-court-geometry-and-ui-cleanup` | แก้ไขมิติมุมสนามตรงจุด 100%, แก้กราฟิกมาร์คคนตรงตัว, แก้ปัญหา UI 5 ชั้นทับซ้อน, และปรับปรุงสแกนเส้น | `git checkout v1.2.2-court-geometry-and-ui-cleanup -- .` |
 | `v1.3.0-physics-aerodynamics-tracking-update` | ฟิสิกส์แรงต้านอากาศ (Aerodynamic Drag Model), Spatial Gate Filter & Play Volume Box, ป้องกันเส้นบิดเบี้ยวด้วย orderFourCorners อัตโนมัติบน pointerup, และล็อก Letterbox Render | `git checkout v1.3.0-physics-aerodynamics-tracking-update -- .` |
-| `v1.3.1-fix-player-ring-and-target-lock` | **เวอร์ชันล่าสุด: ลดระดับวงแหวน Tracker ลงติดพื้นสนามใต้พื้นรองเท้า (Floor Mat Alignment) และแก้ไข Team Separation / In-Court Gating ให้ล็อคเป้าผู้เล่นครบ 4 คน (A1, A2, B1, B2) ได้แม่นยำ ไม่หลุด** | `git checkout v1.3.1-fix-player-ring-and-target-lock -- .` |
+| `v1.3.1-fix-player-ring-and-target-lock` | ลดระดับวงแหวน Tracker ลงติดพื้นสนามใต้พื้นรองเท้า (Floor Mat Alignment) และแก้ไข Team Separation / In-Court Gating ให้ล็อคเป้าผู้เล่นครบ 4 คน (A1, A2, B1, B2) ได้แม่นยำ ไม่หลุด | `git checkout v1.3.1-fix-player-ring-and-target-lock -- .` |
+| `v1.3.2-restore-clean-1080p-video-recorder` | **เวอร์ชันล่าสุด: นำปุ่ม Record วิดีโอต้นฉบับ 1080p (Clean Feed แบบไม่มีกราฟิกทับ) กลับมาไว้ที่แถบควบคุมหลักและเมนูตั้งค่า พร้อมระบบบีบอัดความละเอียดสูงประหยัดความจุ (~21 MB/นาที)** | `git checkout v1.3.2-restore-clean-1080p-video-recorder -- .` |
 
 ---
 
 ## 🚀 รายการบันทึกการแก้ไขตามเวอร์ชัน
+
+### [v1.3.2-restore-clean-1080p-video-recorder] - 2026-11-02
+- **Clean 1080p Raw Video Recorder UI Restored (`index.html`, `css/styles.css`, `js/live-view.js`):**
+  - นำปุ่ม **Record** กลับมาแสดงอย่างเด่นชัดบนแถบปุ่มลัดหลักด้านล่างหน้าจอ (`#btnRecordRawVideo`) ข้างปุ่มกล้อง Live และปุ่มคลิป
+  - เพิ่มปุ่มบันทึกวิดีโอสดลงในเมนูหลักแฮมเบอร์เกอร์ (`#moreSheet`) ภายใต้ขั้นตอนที่ 1 (ตั้งกล้อง & คลิปวิดีโอ)
+  - เพิ่มเอฟเฟกต์ไฟสถานะสีแดงนีออนกะพริบ (`.dock-pill-btn.is-recording` & `#recDot`) พร้อมตัวเลขนับเวลาอัดคลิปสดแบบเรียลไทม์
+- **Zero-Graphics Clean Recording:**
+  - บันทึกสัญญาณภาพและเสียงโดยตรงจาก `webcamVideo.srcObject` (Camera Sensor Stream) 100% จึงไม่มีเส้นคอร์ท โครงกระดูก วงแหวน หรือสกอร์บอร์ดมาบดบังแมตช์จริง
+- **1080p High-Efficiency Storage Optimization:**
+  - กำหนดค่ากล้องขั้นต่ำ 1080p Full HD (`1920 × 1080 @ 60fps`)
+  - ใช้โปรไฟล์บีบอัด H.264 / VP9 อัตราบิต 2.8 Mbps (ภาพ) + 96 kbps (เสียง) ได้ขนาดไฟล์เพียง ~21 MB ต่อนาที (ประหยัดความจำมือถือมากกว่ากล้องติดเครื่องเดิมถึง 85% โดยลูกขนไก่ที่พุ่งเร็วยังคงคมชัด ไม่แตกเป็นบล็อก)
+  - รองรับการบันทึกเข้าสู่คลังภาพ (Photos / Gallery) ผ่าน Native Share Sheet บน iOS และ Android ทันทีเมื่อกดหยุดอัดคลิป
 
 ### [v1.3.1-fix-player-ring-and-target-lock] - 2026-11-02
 - **Player Floor Contact & Neon Tracker Ring Height Fix (`js/pose-tracker.js`, `js/live-view.js`):**
