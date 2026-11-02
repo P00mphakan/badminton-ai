@@ -376,6 +376,9 @@
                     <!-- Slim video timeline (uploaded clip only - docked neatly above match controls) -->
                     <div id="videoPlaybackControls" class="hidden hud-glass rounded-2xl px-3 py-1.5 w-full max-w-md pointer-events-auto">
                         <div class="flex items-center gap-2">
+                            <button onclick="toggleVideoPlaybackPlayPause()" id="btnUploadedPlayPause" class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 flex items-center justify-center shrink-0 active:scale-95 transition-all" title="เล่น/หยุดคลิป">
+                                <i id="uploadedPlayPauseIcon" class="ph-fill ph-pause text-xs"></i>
+                            </button>
                             <span id="uploadedFileName" class="text-[10px] text-slate-300 truncate flex-1 min-w-0">clip.mp4</span>
                             <button onclick="cycleVideoSpeed()" id="btnVideoSpeed" class="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-bold text-emerald-300">1.0x</button>
                             <button onclick="exitUploadedVideoMode()" class="w-6 h-6 rounded-full bg-white/10 text-slate-300 flex items-center justify-center" aria-label="ปิดคลิป">
@@ -1116,12 +1119,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261102n" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261102n"></script>
-    <script src="js/cv-court.js?v=20261102n"></script>
-    <script src="js/pose-tracker.js?v=20261102n"></script>
-    <script src="js/scoreboard.js?v=20261102n"></script>
-    <script src="js/live-view.js?v=20261102n"></script>
-    <script src="js/analytics-coach.js?v=20261102n"></script>
+    <script src="js/env.local.js?v=20261102o" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261102o"></script>
+    <script src="js/cv-court.js?v=20261102o"></script>
+    <script src="js/pose-tracker.js?v=20261102o"></script>
+    <script src="js/scoreboard.js?v=20261102o"></script>
+    <script src="js/live-view.js?v=20261102o"></script>
+    <script src="js/analytics-coach.js?v=20261102o"></script>
 </body>
 </html>

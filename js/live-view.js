@@ -747,12 +747,23 @@ function handleVideoUpload(event) {
         const finishInit = () => {
             const dur = getSafeVideoDuration();
             document.getElementById('videoDurTime').textContent = formatTimeSec(dur);
-            ShuttleCV.setCourtLocked(true);
-            ShuttleCV.setCourtTrusted(false); // require calibration or successful refine before auto-scoring
-            initPoseDetectionModel();
-            resetMatchData(true);
+            const vW = webcamVideo.videoWidth || 1280;
+            const vH = webcamVideo.videoHeight || 720;
+            const videoIsPortrait = vH >= vW;
+
+            if (window.ShuttleCV) {
+                ShuttleCV.setCalibrationMode('full', videoIsPortrait);
+                ShuttleCV.resetCornersDefault(videoIsPortrait, true);
+                ShuttleCV.setCourtLocked(true);
+                ShuttleCV.setCourtTrusted(true);
+            }
+            lastProcessedMediaTime = -1;
+            if (typeof window.resetPoseTimestamps === 'function') window.resetPoseTimestamps();
             if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
             if (typeof window.resetPlayerLockState === 'function') window.resetPlayerLockState();
+
+            initPoseDetectionModel();
+            resetMatchData(true);
             webcamVideo.play().catch(() => {});
             resizeCanvases();
             setTimeout(() => {
@@ -762,8 +773,8 @@ function handleVideoUpload(event) {
                         ShuttleCV.setCourtTrusted(true);
                     }
                 }
-            }, 250);
-            showToast(`โหลดคลิป "${file.name}" สำเร็จ! ปรับจูนเส้นสนามอัตโนมัติ`);
+            }, 300);
+            showToast(`โหลดคลิป "${file.name}" สำเร็จ! ปรับจูนเส้นสนาม 13.4m อัตโนมัติ`);
         };
 
         // Fix MediaRecorder WebM infinite duration issue (shows 119309:13 if not fixed)
@@ -906,11 +917,27 @@ function closeMoreSheet() {
     });
 })();
 
+function toggleVideoPlaybackPlayPause() {
+    if (!webcamVideo || !isUploadedVideoActive) return;
+    const icon = document.getElementById('uploadedPlayPauseIcon');
+    if (webcamVideo.paused) {
+        webcamVideo.play().catch(() => {});
+        isTrackingPaused = false;
+        if (icon) icon.className = 'ph-fill ph-pause text-xs';
+    } else {
+        webcamVideo.pause();
+        isTrackingPaused = true;
+        if (icon) icon.className = 'ph-fill ph-play text-xs';
+    }
+}
+
 function seekUploadedVideo(percentVal) {
     const dur = getSafeVideoDuration();
     if (!isUploadedVideoActive || dur <= 0) return;
     if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
+    if (typeof window.resetPoseTimestamps === 'function') window.resetPoseTimestamps();
     webcamVideo.currentTime = (Number(percentVal) / 100) * dur;
+    lastProcessedMediaTime = -1; // force re-evaluation of current frame
 }
 
 function exitUploadedVideoMode() {
@@ -1200,6 +1227,19 @@ function getPointerNormPos(evt) {
     };
 }
 
+let dragStartPointerPos = null;
+let dragStartCornerPos = null;
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const l2 = dx * dx + dy * dy;
+    if (l2 === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * dx + (py - y1) * dy) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
 liveCanvas.addEventListener('pointerdown', (e) => {
     if (!isCalibratingCourt) return;
     const pos = getPointerNormPos(e);
@@ -1207,7 +1247,7 @@ liveCanvas.addEventListener('pointerdown', (e) => {
     const handleKeys = ['tl', 'tr', 'br', 'bl', 'sfl', 'sfr', 'snl', 'snr', 'netL', 'netR'];
 
     let closestKey = null;
-    let minDist = 0.085; // Wide 8.5% touch tolerance for easy fingertip grab
+    let minDist = 0.095; // Wide 9.5% touch tolerance for easy fingertip grab
     handleKeys.forEach(k => {
         const pt = corners[k];
         if (!pt) return;
@@ -1224,9 +1264,27 @@ liveCanvas.addEventListener('pointerdown', (e) => {
         }
     });
 
+    // If point is off-frame, allow dragging directly from the boundary line in that area
+    if (!closestKey && corners) {
+        const lineDistances = [
+            { key: (pos.x < (corners.bl.x + corners.br.x) / 2) ? 'bl' : 'br', d: distToSegment(pos.x, pos.y, corners.bl.x, corners.bl.y, corners.br.x, corners.br.y) },
+            { key: (pos.x < (corners.tl.x + corners.tr.x) / 2) ? 'tl' : 'tr', d: distToSegment(pos.x, pos.y, corners.tl.x, corners.tl.y, corners.tr.x, corners.tr.y) },
+            { key: (pos.y < (corners.tl.y + corners.bl.y) / 2) ? 'tl' : 'bl', d: distToSegment(pos.x, pos.y, corners.tl.x, corners.tl.y, corners.bl.x, corners.bl.y) },
+            { key: (pos.y < (corners.tr.y + corners.br.y) / 2) ? 'tr' : 'br', d: distToSegment(pos.x, pos.y, corners.tr.x, corners.tr.y, corners.br.x, corners.br.y) },
+            { key: (pos.x < (corners.netL.x + corners.netR.x) / 2) ? 'netL' : 'netR', d: distToSegment(pos.x, pos.y, corners.netL.x, corners.netL.y, corners.netR.x, corners.netR.y) }
+        ];
+        lineDistances.sort((a, b) => a.d - b.d);
+        if (lineDistances[0].d < 0.08) {
+            closestKey = lineDistances[0].key;
+        }
+    }
+
     if (closestKey) {
         draggingHandleKey = closestKey;
         dragPointerPos = pos;
+        dragStartPointerPos = { x: pos.x, y: pos.y };
+        const pt = corners[closestKey];
+        dragStartCornerPos = pt ? { x: pt.x, y: pt.y } : { x: pos.x, y: pos.y };
         const calibToolbar = document.getElementById('courtCalibrationToolbar');
         if (calibToolbar) calibToolbar.classList.add('is-dragging-handle');
         try {
@@ -1240,7 +1298,13 @@ liveCanvas.addEventListener('pointermove', (e) => {
     if (!isCalibratingCourt || !draggingHandleKey) return;
     const pos = getPointerNormPos(e);
     dragPointerPos = pos;
-    ShuttleCV.setCorner(draggingHandleKey, pos.x, pos.y);
+    if (dragStartPointerPos && dragStartCornerPos) {
+        const dx = pos.x - dragStartPointerPos.x;
+        const dy = pos.y - dragStartPointerPos.y;
+        ShuttleCV.setCorner(draggingHandleKey, dragStartCornerPos.x + dx, dragStartCornerPos.y + dy);
+    } else {
+        ShuttleCV.setCorner(draggingHandleKey, pos.x, pos.y);
+    }
     e.preventDefault();
 });
 
@@ -1256,6 +1320,8 @@ function handleCalibrationPointerEnd(e) {
         }
         draggingHandleKey = null;
         dragPointerPos = null;
+        dragStartPointerPos = null;
+        dragStartCornerPos = null;
         const calibToolbar = document.getElementById('courtCalibrationToolbar');
         if (calibToolbar) calibToolbar.classList.remove('is-dragging-handle');
     }
@@ -2322,8 +2388,12 @@ function animateLoop() {
         if (isUploadedVideoActive) {
             const slider = document.getElementById('videoSeekSlider');
             const curTimeEl = document.getElementById('videoCurTime');
-            if (slider && safeDur > 0) slider.value = (webcamVideo.currentTime / safeDur) * 100;
+            if (slider && safeDur > 0 && !slider.matches(':active')) slider.value = (webcamVideo.currentTime / safeDur) * 100;
             if (curTimeEl) curTimeEl.textContent = formatTimeSec(webcamVideo.currentTime);
+            const playPauseIcon = document.getElementById('uploadedPlayPauseIcon');
+            if (playPauseIcon) {
+                playPauseIcon.className = webcamVideo.paused ? 'ph-fill ph-play text-xs' : 'ph-fill ph-pause text-xs';
+            }
         }
 
         if (typeof expireStaleCallChip === 'function') expireStaleCallChip();
@@ -2357,3 +2427,4 @@ window.toggleMatchSession = toggleMatchSession;
 window.startMatchSession = startMatchSession;
 window.finishMatchAndSendToCoach = finishMatchAndSendToCoach;
 window.loadDemoBadmintonClip = loadDemoBadmintonClip;
+window.toggleVideoPlaybackPlayPause = toggleVideoPlaybackPlayPause;

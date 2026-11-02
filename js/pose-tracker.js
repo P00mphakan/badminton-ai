@@ -61,9 +61,14 @@ const poseCropCanvas = document.createElement('canvas');
 const poseCropCtx = poseCropCanvas.getContext('2d');
 let posePassTeam = 'A';
 let poseInferenceBusy = false;
+let lastPoseWallTimestamp = 0;
 let isPlayersLocked = false;
 let targetLockTimestamp = 0;
 const maskBoxesByTeam = { A: { boxes: [], t: 0 }, B: { boxes: [], t: 0 } };
+
+function resetPoseTimestamps() {
+    lastPoseWallTimestamp = 0;
+}
 
 function resetPlayerLockState() {
     isPlayersLocked = false;
@@ -260,9 +265,9 @@ function evaluatePoseCandidate(pose, crop) {
 
     // In-court gating:
     // Players regularly jump behind the baseline (especially Far Court receives) and dive into tramlines.
-    // Tolerate lateral displacement (tolU = 0.45) and depth displacement (tolV = 0.65) so players never drop lock.
+    // Tolerate lateral displacement (tolU = 0.45) and depth displacement (tolV = 0.85) so players never drop lock.
     if (ShuttleCV.isCourtTrusted() && uv && isFinite(uv.x) && isFinite(uv.y)) {
-        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.45, 0.65);
+        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.45, 0.85);
         if (!inCourt) {
             return { mask: box, player: null };
         }
@@ -431,6 +436,9 @@ async function runRealPoseEstimation(videoEl) {
     if (!videoEl || videoEl.readyState < 2) return;
     const now = trackerNow();
 
+    // Video pause protection: if video playback is paused, do not expire player tracking
+    const isVideoPaused = (typeof isUploadedVideoActive !== 'undefined' && isUploadedVideoActive && videoEl.paused) || (typeof isTrackingPaused !== 'undefined' && isTrackingPaused);
+
     Object.values(players).forEach(p => {
         // Enforce strict Singles vs Doubles slot state
         if (!isDoublesMatch && (p.id === 'A2' || p.id === 'B2')) {
@@ -441,19 +449,28 @@ async function runRealPoseEstimation(videoEl) {
             p.isLocked = false;
             return;
         }
+
+        // Seeking / video time leap resilience
+        if (now < p.lastSeenMs || Math.abs(now - p.lastSeenMs) > 3000) {
+            p.lastSeenMs = now;
+        }
+
         // เมื่อล็อคเป้าแล้ว: ขยายเวลา Coasting เป็น 2400ms เผื่อจังหวะคู่ขาวิ่งตัดหน้าหรือกระโดดตบ
-        const timeoutMs = (isPlayersLocked && p.isLocked) ? 2400 : 1800;
-        if (p.detected && now - p.lastSeenMs > timeoutMs) {
-            p.detected = false;
-            p.currentSpeedKmh = 0;
-            p._posWindow = [];
-            p._anchor = null;
+        if (!isVideoPaused) {
+            const timeoutMs = (isPlayersLocked && p.isLocked) ? 2400 : 1800;
+            if (p.detected && now - p.lastSeenMs > timeoutMs) {
+                p.detected = false;
+                p.currentSpeedKmh = 0;
+                p._posWindow = [];
+                p._anchor = null;
+            }
         }
     });
 
     if (!poseModelReady || !poseDetector || poseInferenceBusy) return;
-    if (now - lastPoseTimestamp < 35) return;
-    lastPoseTimestamp = now;
+    const wallNow = performance.now();
+    if (wallNow - lastPoseWallTimestamp < 33) return;
+    lastPoseWallTimestamp = wallNow;
 
     const vW = videoEl.videoWidth || 1280;
     const vH = videoEl.videoHeight || 720;
@@ -939,3 +956,4 @@ function classifyRealStroke(hitter, speedKmh, distM, startV = null, endV = null,
 }
 
 window.resetPlayerLockState = resetPlayerLockState;
+window.resetPoseTimestamps = resetPoseTimestamps;

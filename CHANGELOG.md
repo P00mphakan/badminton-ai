@@ -25,11 +25,24 @@
 | `v1.3.0-physics-aerodynamics-tracking-update` | ฟิสิกส์แรงต้านอากาศ (Aerodynamic Drag Model), Spatial Gate Filter & Play Volume Box, ป้องกันเส้นบิดเบี้ยวด้วย orderFourCorners อัตโนมัติบน pointerup, และล็อก Letterbox Render | `git checkout v1.3.0-physics-aerodynamics-tracking-update -- .` |
 | `v1.3.1-fix-player-ring-and-target-lock` | ลดระดับวงแหวน Tracker ลงติดพื้นสนามใต้พื้นรองเท้า (Floor Mat Alignment) และแก้ไข Team Separation / In-Court Gating ให้ล็อคเป้าผู้เล่นครบ 4 คน (A1, A2, B1, B2) ได้แม่นยำ ไม่หลุด | `git checkout v1.3.1-fix-player-ring-and-target-lock -- .` |
 | `v1.3.2-restore-clean-1080p-video-recorder` | นำปุ่ม Record วิดีโอต้นฉบับ 1080p (Clean Feed แบบไม่มีกราฟิกทับ) กลับมาไว้ที่แถบควบคุมหลักและเมนูตั้งค่า พร้อมระบบบีบอัดความละเอียดสูงประหยัดความจุ (~21 MB/นาที) | `git checkout v1.3.2-restore-clean-1080p-video-recorder -- .` |
-| `v1.3.3-wider-clean-player-ring` | **เวอร์ชันล่าสุด: ขยายขนาดวงแหวน Player Tracker ให้กว้างขึ้นตามท่ายืนแบดมินตัน (~32% wider) และนำขีดเล็งกากบาทออก (Clean Solid Neon Halo)** | `git checkout v1.3.3-wider-clean-player-ring -- .` |
+| `v1.3.3-wider-clean-player-ring` | ขยายขนาดวงแหวน Player Tracker ให้กว้างขึ้นตามท่ายืนแบดมินตัน (~32% wider) และนำขีดเล็งกากบาทออก (Clean Solid Neon Halo) | `git checkout v1.3.3-wider-clean-player-ring -- .` |
+| `v1.3.4-fix-uploaded-clip-tracker-and-13m-calibration` | **เวอร์ชันล่าสุด: กู้คืน Tracker ในโหมดอัพโหลดคลิป, ซิงค์เมนูและการควบคุมให้เหมือนโหมด Live, ใช้เส้นสนาม 13.4m เต็มสนามเป็นหลัก และรองรับการลากมุม/ขอบเขตเส้นแม้หลุดเฟรม** | `git checkout v1.3.4-fix-uploaded-clip-tracker-and-13m-calibration -- .` |
 
 ---
 
 ## 🚀 รายการบันทึกการแก้ไขตามเวอร์ชัน
+
+### [v1.3.4-fix-uploaded-clip-tracker-and-13m-calibration] - 2026-11-02
+- **กู้คืนระบบ Tracker ในโหมดอัพโหลดคลิป (`js/pose-tracker.js`, `js/live-view.js`):**
+  - แก้ไขปัญหา MoveNet MultiPose ค้าง/ไม่ตรวจจับคนในคลิปวิดีโออัพโหลด โดยเปลี่ยนมาใช้ `performance.now()` เป็น Wall-clock throttle อิสระ ทำให้การประมวลผลไม่ถูกบล็อกจากการแปลง `mediaTime` หรือการกรอกลับ/Seek
+  - เพิ่มระบบ Pause Protection: เมื่อหยุดวิดีโอชั่วคราว ข้อมูล Tracker ผู้เล่นและตำแหน่งจะไม่หายไป (ไม่หมดอายุเมื่อ `video.paused`)
+  - อัปเดตพิกัดเริ่มต้นสนามแนวตั้งมาตรฐาน (Far Baseline อยู่ที่ $y \approx 0.39$ เหนือผู้เล่นฝั่งไกล แทนที่ $0.584$) ทำให้ผู้เล่นทั้งฝั่งใกล้และฝั่งไกล (A1, A2, B1, B2) คำนวณค่า $u, v$ อยู่ในสนามจริงและตรวจจับได้ครบถ้วน
+- **ระบบทาบเส้นสนาม 13.4m เต็มสนามเป็นหลัก + ลากเส้นบริเวณขอบเขตเมื่อหลุดเฟรม (`js/cv-court.js`, `js/live-view.js`):**
+  - ตั้งค่า BWF 13.40m Full Court (`full`) เป็นโหมดหลักถาวร และยกเลิกการสลับโหมดอัตโนมัติเมื่อแตะจุด เพื่อความแม่นยำในการวิเคราะห์
+  - รองรับการลากที่เส้นขอบเขต (Boundary Line Dragging): เมื่อจุดมุมสนามหลุดออกนอกจอ (เช่น เส้นหลังใกล้ `bl`, `br`) ผู้ใช้สามารถสัมผัสและลากเส้นบริเวณขอบเขตนั้น ๆ ได้โดยตรง ด้วยระบบ Relative Delta Tracking ทำให้เส้นขยับตามนิ้วอย่างแม่นยำ ไม่กระตุก
+- **ซิงค์เมนูและการควบคุมให้สมบูรณ์ทั้งในโหมดคลิปและ Live (`index.html`, `js/live-view.js`):**
+  - เพิ่มปุ่ม เล่น/หยุด (Play/Pause) ที่แถบควบคุมคลิปวิดีโอ เพื่อความสะดวกในการหยุดดูจังหวะและปรับเส้นสนาม
+  - เมนูหลัก Quick Setup Pills (กล้องสด, Record, คลิป, ทาบเส้น, เมนู) และฟังก์ชันใน Hamburger Sheet ใช้งานได้เหมือนกัน 100%
 
 ### [v1.3.3-wider-clean-player-ring] - 2026-11-02
 - **Wider Athletic Floor Ring & Crosshair Removal (`js/live-view.js`):**

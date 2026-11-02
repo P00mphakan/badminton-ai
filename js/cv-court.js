@@ -74,20 +74,20 @@ window.ShuttleCV = (function () {
     let calibrationMode = 'full';
 
     // Calibrated / Detected Court Keypoints in normalized screen coordinates (can extend beyond [0..1] for wide perspective)
-    // Default values pre-calibrated to match standard portrait baseline perspective (e.g. IMG_7847.MOV, IMG_7130.MOV)
+    // Default values pre-calibrated to match standard 13.4m full court perspective
     let courtCorners = {
-        tl: { x: 0.382, y: 0.584 }, // Far Baseline Left Corner (u=0, v=0)
-        tr: { x: 0.698, y: 0.586 }, // Far Baseline Right Corner (u=1, v=0)
-        br: { x: 1.120, y: 0.875 }, // Near Baseline Right Corner (u=1, v=1.0) - extends off-screen to right (+12%)
-        bl: { x: -0.060, y: 0.865 }, // Near Baseline Left Corner (u=0, v=1.0) - extends off-screen to left (-6%)
-        netL: { x: 0.320, y: 0.628 }, // Net Top Tape Left Post
-        netR: { x: 0.772, y: 0.630 },  // Net Top Tape Right Post
+        tl: { x: 0.360, y: 0.390 }, // Far Baseline Left Corner (u=0, v=0)
+        tr: { x: 0.720, y: 0.390 }, // Far Baseline Right Corner (u=1, v=0)
+        br: { x: 0.900, y: 0.880 }, // Near Baseline Right Corner (u=1, v=1.0)
+        bl: { x: 0.180, y: 0.880 }, // Near Baseline Left Corner (u=0, v=1.0)
+        netL: { x: 0.250, y: 0.465 }, // Net Top Tape Left Post
+        netR: { x: 0.830, y: 0.465 },  // Net Top Tape Right Post
         // Front-of-Net Handles (Short Service Lines: Far v=0.3522 & Near v=0.6478)
-        // Solves edge-overflow: Completely within screen viewport, zero baseline obstruction!
-        sfl: { x: 0.355, y: 0.605 }, // Far Short Service Left (เส้นหน้าเน็ตฝั่งไกล-ซ้าย)
-        sfr: { x: 0.730, y: 0.607 }, // Far Short Service Right (เส้นหน้าเน็ตฝั่งไกล-ขวา)
-        snl: { x: 0.280, y: 0.655 }, // Near Short Service Left (เส้นหน้าเน็ตฝั่งใกล้-ซ้าย)
-        snr: { x: 0.816, y: 0.658 }  // Near Short Service Right (เส้นหน้าเน็ตฝั่งใกล้-ขวา)
+        sfl: { x: 0.320, y: 0.520 }, // Far Short Service Left (เส้นหน้าเน็ตฝั่งไกล-ซ้าย)
+        sfr: { x: 0.760, y: 0.520 }, // Far Short Service Right (เส้นหน้าเน็ตฝั่งไกล-ขวา)
+        snl: { x: 0.250, y: 0.680 }, // Near Short Service Left (เส้นหน้าเน็ตฝั่งใกล้-ซ้าย)
+        snr: { x: 0.830, y: 0.680 }, // Near Short Service Right (เส้นหน้าเน็ตฝั่งใกล้-ขวา)
+        _customNet: true
     };
 
     // 3x3 Homography Matrices:
@@ -1102,12 +1102,6 @@ window.ShuttleCV = (function () {
                 if (key === 'netL' || key === 'netR') {
                     courtCorners._customNet = true;
                 }
-                // When dragging a front-of-net handle while in full mode, switch to front-net mode seamlessly
-                if (key.startsWith('s') && calibrationMode === 'full') {
-                    calibrationMode = 'front-net';
-                    const labelEl = document.getElementById('calibModeToggleLabel');
-                    if (labelEl) labelEl.textContent = 'เส้นหน้าเน็ต 2 ฝั่ง';
-                }
                 updateHomographyFromCorners();
             }
         },
@@ -1117,12 +1111,12 @@ window.ShuttleCV = (function () {
             if (calibrationMode === 'front-net') {
                 if (isPortrait) {
                     // Front-of-Net (Short Service Lines) mode: 100% in center of video frame, away from top/bottom edges
-                    courtCorners.sfl = { x: 0.355, y: 0.605 }; // Far Short Service L
-                    courtCorners.sfr = { x: 0.730, y: 0.607 }; // Far Short Service R
-                    courtCorners.snl = { x: 0.280, y: 0.655 }; // Near Short Service L
-                    courtCorners.snr = { x: 0.816, y: 0.658 }; // Near Short Service R
-                    courtCorners.netL = { x: 0.320, y: 0.628 };
-                    courtCorners.netR = { x: 0.772, y: 0.630 };
+                    courtCorners.sfl = { x: 0.320, y: 0.520 }; // Far Short Service L
+                    courtCorners.sfr = { x: 0.760, y: 0.520 }; // Far Short Service R
+                    courtCorners.snl = { x: 0.250, y: 0.680 }; // Near Short Service L
+                    courtCorners.snr = { x: 0.830, y: 0.680 }; // Near Short Service R
+                    courtCorners.netL = { x: 0.250, y: 0.465 };
+                    courtCorners.netR = { x: 0.830, y: 0.465 };
                 } else {
                     courtCorners.sfl = { x: 0.350, y: 0.490 };
                     courtCorners.sfr = { x: 0.650, y: 0.490 };
@@ -1134,36 +1128,36 @@ window.ShuttleCV = (function () {
             } else if (calibrationMode === 'service') {
                 if (isPortrait) {
                     // Near Short Service Line mode: 100% inside visible frame (ideal when near baseline is off-screen)
-                    courtCorners.tl = { x: 0.382, y: 0.584 }; // Far Baseline L
-                    courtCorners.tr = { x: 0.698, y: 0.586 }; // Far Baseline R
-                    courtCorners.snl = { x: 0.280, y: 0.655 }; // Near Short Service L
-                    courtCorners.snr = { x: 0.816, y: 0.658 }; // Near Short Service R
-                    courtCorners.netL = { x: 0.320, y: 0.628 };
-                    courtCorners.netR = { x: 0.772, y: 0.630 };
+                    courtCorners.tl = { x: 0.360, y: 0.390 }; // Far Baseline L
+                    courtCorners.tr = { x: 0.720, y: 0.390 }; // Far Baseline R
+                    courtCorners.snl = { x: 0.250, y: 0.680 }; // Near Short Service L
+                    courtCorners.snr = { x: 0.830, y: 0.680 }; // Near Short Service R
+                    courtCorners.netL = { x: 0.250, y: 0.465 };
+                    courtCorners.netR = { x: 0.830, y: 0.465 };
                 } else {
-                    courtCorners.tl = { x: 0.380, y: 0.460 };
-                    courtCorners.tr = { x: 0.620, y: 0.460 };
+                    courtCorners.tl = { x: 0.360, y: 0.420 };
+                    courtCorners.tr = { x: 0.640, y: 0.420 };
                     courtCorners.snl = { x: 0.240, y: 0.680 };
                     courtCorners.snr = { x: 0.760, y: 0.680 };
                     courtCorners.netL = { x: 0.280, y: 0.540 };
                     courtCorners.netR = { x: 0.720, y: 0.540 };
                 }
             } else {
-                // Full Court BWF 13.40m x 6.10m
+                // Full Court BWF 13.40m x 6.10m (Primary Default Mode)
                 if (isPortrait) {
-                    courtCorners.tl = { x: 0.382, y: 0.584 }; // Far Baseline L
-                    courtCorners.tr = { x: 0.698, y: 0.586 }; // Far Baseline R
-                    courtCorners.bl = { x: -0.060, y: 0.865 }; // Near Baseline L (off-screen left -6%)
-                    courtCorners.br = { x: 1.120, y: 0.875 };  // Near Baseline R (off-screen right +12%)
-                    courtCorners.netL = { x: 0.320, y: 0.628 };
-                    courtCorners.netR = { x: 0.772, y: 0.630 };
+                    courtCorners.tl = { x: 0.360, y: 0.390 }; // Far Baseline L
+                    courtCorners.tr = { x: 0.720, y: 0.390 }; // Far Baseline R
+                    courtCorners.bl = { x: 0.180, y: 0.880 }; // Near Baseline L
+                    courtCorners.br = { x: 0.900, y: 0.880 }; // Near Baseline R
+                    courtCorners.netL = { x: 0.250, y: 0.465 };
+                    courtCorners.netR = { x: 0.830, y: 0.465 };
                 } else {
-                    courtCorners.tl = { x: 0.380, y: 0.460 };
-                    courtCorners.tr = { x: 0.620, y: 0.460 };
+                    courtCorners.tl = { x: 0.360, y: 0.420 };
+                    courtCorners.tr = { x: 0.640, y: 0.420 };
                     courtCorners.bl = { x: 0.120, y: 0.900 };
                     courtCorners.br = { x: 0.880, y: 0.900 };
-                    courtCorners.netL = { x: 0.280, y: 0.540 };
-                    courtCorners.netR = { x: 0.720, y: 0.540 };
+                    courtCorners.netL = { x: 0.260, y: 0.520 };
+                    courtCorners.netR = { x: 0.740, y: 0.520 };
                 }
             }
             if (force) isManuallyEdited = false;
