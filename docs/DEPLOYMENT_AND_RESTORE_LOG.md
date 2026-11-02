@@ -3,17 +3,17 @@
 **Project:** ShuttlePro AI (Badminton AI)  
 **Remote Repository:** [https://github.com/P00mphakan/badminton-ai.git](https://github.com/P00mphakan/badminton-ai.git)  
 **Production Branch:** `main`  
-**Latest Production Tag:** `v1.2.0-court-math-ui-redesign` (Commit `b23916f`)  
-**Deployment Date:** 2026-11-02 16:34:15 +07:00  
+**Latest Production Tag:** `v1.2.1-fix-dock-overlap`  
+**Deployment Date:** 2026-11-02 16:40:00 +07:00  
 
 ---
 
 ## 🚀 ข้อมูลการ Deploy สู่ Vercel
 
 เมื่อโค้ดถูก Push สู่ Branch `main` บน GitHub (`P00mphakan/badminton-ai`) ระบบ Vercel ที่ผูกกับ Repo นี้จะตรวจจับ Webhook อัตโนมัติและดำเนินการ:
-1. ดึงโค้ดเวอร์ชันล่าสุด (`b23916f`)
+1. ดึงโค้ดเวอร์ชันล่าสุด
 2. Build & Deploy เป็น Static Web Application
-3. กระจายผลขึ้น Vercel Edge Network พร้อม Cache-Buster (`?v=20261102b`) เพื่อให้ผู้ใช้ได้รับไฟล์ล่าสุดทันทีโดยไม่ต้องล้างแคชบราวเซอร์
+3. กระจายผลขึ้น Vercel Edge Network พร้อม Cache-Buster (`?v=20261102c`) เพื่อให้ผู้ใช้ได้รับไฟล์ล่าสุดทันทีโดยไม่ต้องล้างแคชบราวเซอร์
 
 ---
 
@@ -23,7 +23,8 @@
 
 | เวอร์ชัน (Git Tag) | Commit SHA | รายละเอียดของเวอร์ชัน | คำสั่งกู้คืน (One-Command Restore) |
 | :--- | :--- | :--- | :--- |
-| **`v1.2.0-court-math-ui-redesign`** | `b23916f` | **เวอร์ชันปัจจุบัน:** แก้ Math เส้นตรง 100%, แก้แอปค้าง, UI 1-Tap นักแบด | `git checkout v1.2.0-court-math-ui-redesign -- .` |
+| **`v1.2.1-fix-dock-overlap`** | `HEAD` | **เวอร์ชันปัจจุบัน:** แก้แถบปุ่มลัด (Quick Setup Pills) ทับซ้อนกับเมนูด้านล่าง | `git checkout v1.2.1-fix-dock-overlap -- .` |
+| `v1.2.0-court-math-ui-redesign` | `b23916f` | แก้ Math เส้นตรง 100%, แก้แอปค้าง, UI 1-Tap นักแบด | `git checkout v1.2.0-court-math-ui-redesign -- .` |
 | `v1.1.0-fieldtest-complete` | `9c53bd1` | เวอร์ชันเสถียรหลังแก้ปัญหา 9 ข้อจากคลิปทดสอบจริง | `git checkout v1.1.0-fieldtest-complete -- .` |
 | `v1.0.9-fix-J` | `bf9aacc` | ปรับป้ายกำกับมิติความลึกสนาม (TL, TR, SL, SR) | `git checkout v1.0.9-fix-J -- .` |
 | `v1.0.8-fix-H` | `6d954b2` | Data Quality Validation & Anti-Hallucination ใน AI Prompt | `git checkout v1.0.8-fix-H -- .` |

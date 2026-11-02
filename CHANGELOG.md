@@ -19,11 +19,18 @@
 | `v1.0.8-fix-H` | กู้คืนหลังเพิ่ม Data Quality Validation ใน AI JSON & Prompt | `git checkout v1.0.8-fix-H -- .` |
 | `v1.0.9-fix-J` | กู้คืนหลังปรับป้ายชื่อจุดคาลิเบรต (TL, TR, SL, SR, Net-L, Net-R) | `git checkout v1.0.9-fix-J -- .` |
 | `v1.1.0-fieldtest-complete` | เวอร์ชันเสถียรหลังแก้ปัญหาจากคลิปทดสอบจริง | `git checkout v1.1.0-fieldtest-complete -- .` |
-| `v1.2.0-court-math-ui-redesign` | **เวอร์ชันเสถียร: แก้ไขคณิตศาสตร์เส้นสนามตรง 100%, แก้บั๊กแอปค้าง, UI Redesign สำหรับนักแบด 1-Tap AI** | `git checkout v1.2.0-court-math-ui-redesign -- .` |
+| `v1.2.0-court-math-ui-redesign` | เวอร์ชันเสถียร: แก้ไขคณิตศาสตร์เส้นสนามตรง 100%, แก้บั๊กแอปค้าง, UI Redesign สำหรับนักแบด 1-Tap AI | `git checkout v1.2.0-court-math-ui-redesign -- .` |
+| `v1.2.1-fix-dock-overlap` | **เวอร์ชันล่าสุด: แก้ปัญหาแถบปุ่มลัด (Quick Setup Pills) ทับซ้อนกับแถบเมนูด้านล่าง (Bottom Nav)** | `git checkout v1.2.1-fix-dock-overlap -- .` |
 
 ---
 
 ## 🚀 รายการบันทึกการแก้ไขตามเวอร์ชัน
+
+### [v1.2.1-fix-dock-overlap] - 2026-11-02
+- **UI Layout & Clearance Fix (`css/styles.css`, `index.html`):**
+  - ขยับตำแหน่ง `.hud-bottom` จากเดิม `bottom: calc(3.85rem + ...)` เป็น `bottom: calc(5.1rem + env(safe-area-inset-bottom, 0px))` เพิ่มระยะห่างให้ลอยเหนือแถบเมนูด้านล่าง 20px+ ป้องกันการเกยทับกันอย่างเด็ดขาด
+  - ปรับขนาดและ Padding ของ `.hero-match-btn` (รัศมีมน 20px, padding 8px 14px) และ `.dock-pill-btn` ให้กะทัดรัด สวยงาม ไม่บวมทับคอนเทนต์
+  - อัปเดต Cache-Buster ทั้งใน `<link rel="stylesheet">` และ `<script>` ทั้งหมดเป็น `?v=20261102c` เพื่อบังคับให้อุปกรณ์และ Vercel Edge โหลด CSS ใหม่ทันที
 
 ### [v1.2.0-court-math-ui-redesign] - 2026-11-02
 - **Court Perspective Math (DLT Homography) (`js/cv-court.js`):**
