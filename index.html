@@ -29,7 +29,7 @@
             }
         }
     </script>
-    <link rel="stylesheet" href="css/styles.css?v=20261102c">
+    <link rel="stylesheet" href="css/styles.css?v=20261102d">
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
 
@@ -335,55 +335,52 @@
                         <button id="btnRecordRawVideo" onclick="toggleRawVideoRecording()"><span id="recRawIconWrap"><i id="recRawIcon"></i></span><span id="recRawLabel"></span></button>
                     </div>
 
-                    <!-- Top Auxiliary Layer: Lens selector, Calibration Toolbar, and Video Seek Bar -->
-                    <div class="w-full flex flex-col sm:flex-row items-end sm:items-center justify-between gap-2">
-                        <!-- Floating Camera Lens / Zoom Selector Pills (0.5x, 1x, 2x, 5x) -->
-                        <div id="cameraLensSelector" class="hidden camera-lens-bar pointer-events-auto">
-                            <button onclick="setCameraZoomOrLens(0.5)" id="btnLens05" class="lens-pill" title="0.5x เลนส์มุมกว้างพิเศษ (Ultra Wide)">.5</button>
-                            <button onclick="setCameraZoomOrLens(1.0)" id="btnLens10" class="lens-pill is-active" title="1x เลนส์มาตรฐาน (Standard Wide)">1x</button>
-                            <button onclick="setCameraZoomOrLens(2.0)" id="btnLens20" class="lens-pill" title="2x ซูม (Telephoto)">2x</button>
-                            <button onclick="setCameraZoomOrLens(5.0)" id="btnLens50" class="lens-pill" title="5x ซูมไกล (Super Zoom)">5x</button>
-                        </div>
+                    <!-- Top Auxiliary: Floating Camera Lens / Zoom Selector Pills (0.5x, 1x, 2x, 5x) -->
+                    <div id="cameraLensSelector" class="hidden camera-lens-bar pointer-events-auto self-end">
+                        <button onclick="setCameraZoomOrLens(0.5)" id="btnLens05" class="lens-pill" title="0.5x เลนส์มุมกว้างพิเศษ (Ultra Wide)">.5</button>
+                        <button onclick="setCameraZoomOrLens(1.0)" id="btnLens10" class="lens-pill is-active" title="1x เลนส์มาตรฐาน (Standard Wide)">1x</button>
+                        <button onclick="setCameraZoomOrLens(2.0)" id="btnLens20" class="lens-pill" title="2x ซูม (Telephoto)">2x</button>
+                        <button onclick="setCameraZoomOrLens(5.0)" id="btnLens50" class="lens-pill" title="5x ซูมไกล (Super Zoom)">5x</button>
+                    </div>
 
-                        <!-- Active Court Calibration Multi-Action Toolbar (Visible only in calibration mode) -->
-                        <div id="courtCalibrationToolbar" class="hidden pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-950/90 backdrop-blur-md px-2.5 py-1.5 rounded-2xl border border-amber-500/40 shadow-xl">
-                            <button id="floatingSaveCalibBtn" onclick="toggleCourtCalibrationMode()" class="px-3 py-1.5 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/30 flex items-center gap-1 hover:bg-emerald-400">
-                                <i class="ph-fill ph-check-fat text-xs"></i>
-                                <span>บันทึกเส้น ✓</span>
-                            </button>
-                            <button id="calibModeToggleBtn" onclick="cycleCourtCalibMode()" class="px-2.5 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold text-xs flex items-center gap-1 hover:bg-amber-500/30">
-                                <i class="ph-bold ph-arrows-clockwise text-xs"></i>
-                                <span>13.4m เต็มสนาม</span>
-                            </button>
-                            <button onclick="resetCourtCalibToDefault()" class="px-2 py-1.5 rounded-xl bg-white/10 text-slate-300 hover:text-white font-semibold text-xs flex items-center gap-1">
-                                <i class="ph-bold ph-arrow-counter-clockwise text-xs"></i>
-                                <span>รีเซ็ต</span>
-                            </button>
-                            <button onclick="triggerAutoSnapCourtCV()" class="px-2 py-1.5 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold text-xs flex items-center gap-1">
-                                <i class="ph-bold ph-scan text-xs"></i>
-                                <span>สแกนเส้น</span>
+                    <!-- Slim video timeline (uploaded clip only - docked neatly above match controls) -->
+                    <div id="videoPlaybackControls" class="hidden hud-glass rounded-2xl px-3 py-1.5 w-full max-w-md pointer-events-auto">
+                        <div class="flex items-center gap-2">
+                            <span id="uploadedFileName" class="text-[10px] text-slate-300 truncate flex-1 min-w-0">clip.mp4</span>
+                            <button onclick="cycleVideoSpeed()" id="btnVideoSpeed" class="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-bold text-emerald-300">1.0x</button>
+                            <button onclick="exitUploadedVideoMode()" class="w-6 h-6 rounded-full bg-white/10 text-slate-300 flex items-center justify-center" aria-label="ปิดคลิป">
+                                <i class="ph-bold ph-x text-[11px]"></i>
                             </button>
                         </div>
-
-                        <!-- Slim video timeline (uploaded clip only) -->
-                        <div id="videoPlaybackControls" class="hidden hud-glass rounded-2xl px-3 py-1.5 w-full max-w-sm pointer-events-auto ml-auto">
-                            <div class="flex items-center gap-2">
-                                <span id="uploadedFileName" class="text-[10px] text-slate-300 truncate flex-1 min-w-0">clip.mp4</span>
-                                <button onclick="cycleVideoSpeed()" id="btnVideoSpeed" class="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-bold text-emerald-300">1.0x</button>
-                                <button onclick="exitUploadedVideoMode()" class="w-6 h-6 rounded-full bg-white/10 text-slate-300 flex items-center justify-center" aria-label="ปิดคลิป">
-                                    <i class="ph-bold ph-x text-[11px]"></i>
-                                </button>
-                            </div>
-                            <div class="flex items-center gap-2 mt-1">
-                                <span id="videoCurTime" class="text-[10px] font-mono text-slate-400">00:00</span>
-                                <input type="range" id="videoSeekSlider" min="0" max="100" value="0" step="0.1" oninput="seekUploadedVideo(this.value)" class="flex-1 accent-emerald-400 h-1">
-                                <span id="videoDurTime" class="text-[10px] font-mono text-slate-400">00:00</span>
-                            </div>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span id="videoCurTime" class="text-[10px] font-mono text-slate-400">00:00</span>
+                            <input type="range" id="videoSeekSlider" min="0" max="100" value="0" step="0.1" oninput="seekUploadedVideo(this.value)" class="flex-1 accent-emerald-400 h-1">
+                            <span id="videoDurTime" class="text-[10px] font-mono text-slate-400">00:00</span>
                         </div>
                     </div>
 
+                    <!-- ACTIVE COURT CALIBRATION MULTI-ACTION TOOLBAR (Exclusively shown during court calibration) -->
+                    <div id="courtCalibrationToolbar" class="hidden pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 bg-slate-950/95 backdrop-blur-md px-3 py-2 rounded-2xl border border-amber-500/50 shadow-2xl max-w-md w-full">
+                        <button id="floatingSaveCalibBtn" onclick="toggleCourtCalibrationMode()" class="px-3.5 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/30 flex items-center gap-1 hover:bg-emerald-400 active:scale-95 transition-all">
+                            <i class="ph-fill ph-check-fat text-xs"></i>
+                            <span>บันทึกเส้น ✓</span>
+                        </button>
+                        <button id="calibModeToggleBtn" onclick="cycleCourtCalibMode()" class="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold text-xs flex items-center gap-1 hover:bg-amber-500/30 active:scale-95 transition-all">
+                            <i class="ph-bold ph-arrows-clockwise text-xs"></i>
+                            <span>13.4m เต็มสนาม</span>
+                        </button>
+                        <button onclick="resetCourtCalibToDefault()" class="px-2.5 py-2 rounded-xl bg-white/10 text-slate-300 hover:text-white font-semibold text-xs flex items-center gap-1 active:scale-95 transition-all">
+                            <i class="ph-bold ph-arrow-counter-clockwise text-xs"></i>
+                            <span>รีเซ็ต</span>
+                        </button>
+                        <button onclick="triggerAutoSnapCourtCV()" class="px-2.5 py-2 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold text-xs flex items-center gap-1 active:scale-95 transition-all">
+                            <i class="ph-bold ph-scan text-xs"></i>
+                            <span>สแกนเส้น</span>
+                        </button>
+                    </div>
+
                     <!-- Bottom Hero Player Bar (Hero Match Button + Quick Setup Tools Bar) -->
-                    <div class="w-full flex flex-col items-center gap-1.5">
+                    <div id="heroPlayerDockWrap" class="w-full flex flex-col items-center gap-1.5 pb-1">
                         <!-- Primary Action: Start/Finish Match & Send to AI Coach -->
                         <button id="btnHeroMatchAction" onclick="toggleMatchSession()" class="hero-match-btn is-idle w-full max-w-md pointer-events-auto" title="แตะเมื่อเริ่มเล่น เพื่อตรวจจับแต้ม สปีดตบ และตำแหน่งวิ่ง">
                             <div class="flex items-center gap-2.5 min-w-0">
@@ -1109,12 +1106,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261102c" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261102c"></script>
-    <script src="js/cv-court.js?v=20261102c"></script>
-    <script src="js/pose-tracker.js?v=20261102c"></script>
-    <script src="js/scoreboard.js?v=20261102c"></script>
-    <script src="js/live-view.js?v=20261102c"></script>
-    <script src="js/analytics-coach.js?v=20261102c"></script>
+    <script src="js/env.local.js?v=20261102d" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261102d"></script>
+    <script src="js/cv-court.js?v=20261102d"></script>
+    <script src="js/pose-tracker.js?v=20261102d"></script>
+    <script src="js/scoreboard.js?v=20261102d"></script>
+    <script src="js/live-view.js?v=20261102d"></script>
+    <script src="js/analytics-coach.js?v=20261102d"></script>
 </body>
 </html>

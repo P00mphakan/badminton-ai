@@ -916,6 +916,9 @@ function toggleCourtCalibrationMode() {
     const label = document.getElementById('calibLabel');
     const floatSaveBtn = document.getElementById('floatingSaveCalibBtn');
     const calibToolbar = document.getElementById('courtCalibrationToolbar');
+    const heroDockWrap = document.getElementById('heroPlayerDockWrap');
+    const videoControls = document.getElementById('videoPlaybackControls');
+
     if (isCalibratingCourt) {
         // Freeze the clip while dragging so the handles stay on the same frame
         calibPausedVideo = isUploadedVideoActive && !webcamVideo.paused;
@@ -924,7 +927,10 @@ function toggleCourtCalibrationMode() {
         if (label) label.textContent = 'บันทึกเส้นสนาม';
         if (floatSaveBtn) floatSaveBtn.classList.remove('hidden');
         if (calibToolbar) calibToolbar.classList.remove('hidden');
-        showToast('ลากจุดมุมคอร์ท 4 จุด และหัวเน็ท 2 ข้างให้ตรงเส้นจริง แล้วกด "บันทึกเส้นสนาม"');
+        // Hide normal match hero bar and video scrubber during calibration to prevent any UI overlapping
+        if (heroDockWrap) heroDockWrap.classList.add('hidden');
+        if (videoControls) videoControls.classList.add('hidden');
+        showToast('ลากจุดมุมคอร์ท 4 จุด และหัวเน็ท 2 ข้างให้ตรงเส้นจริง แล้วกด "บันทึกเส้น ✓"');
     } else {
         if (ShuttleCV.updateHomography) {
             ShuttleCV.updateHomography();
@@ -938,6 +944,9 @@ function toggleCourtCalibrationMode() {
         if (label) label.textContent = 'ตั้งเส้นสนาม';
         if (floatSaveBtn) floatSaveBtn.classList.add('hidden');
         if (calibToolbar) calibToolbar.classList.add('hidden');
+        // Restore normal match hero bar and video scrubber
+        if (heroDockWrap) heroDockWrap.classList.remove('hidden');
+        if (videoControls && isUploadedVideoActive) videoControls.classList.remove('hidden');
         showToast('ล็อกพิกัดเส้นสนามเรียบร้อยแล้ว');
     }
 }

@@ -74,14 +74,14 @@ window.ShuttleCV = (function () {
     let calibrationMode = 'full';
 
     // Calibrated / Detected Court Keypoints in normalized screen coordinates [0..1]
-    // Default values pre-calibrated to match standard portrait baseline perspective (e.g. IMG_7847.MOV)
+    // Default values pre-calibrated to match standard portrait baseline perspective (e.g. IMG_7847.MOV, IMG_7130.MOV)
     let courtCorners = {
-        tl: { x: 0.355, y: 0.585 }, // Far Baseline Left Corner (u=0, v=0)
-        tr: { x: 0.715, y: 0.585 }, // Far Baseline Right Corner (u=1, v=0)
-        br: { x: 0.940, y: 0.975 }, // Near Baseline Right Corner (u=1, v=1.0)
-        bl: { x: 0.100, y: 0.975 }, // Near Baseline Left Corner (u=0, v=1.0)
-        netL: { x: 0.180, y: 0.560 }, // Net Top Tape Left Post
-        netR: { x: 0.825, y: 0.560 }  // Net Top Tape Right Post
+        tl: { x: 0.360, y: 0.390 }, // Far Baseline Left Corner (u=0, v=0)
+        tr: { x: 0.720, y: 0.390 }, // Far Baseline Right Corner (u=1, v=0)
+        br: { x: 0.900, y: 0.880 }, // Near Baseline Right Corner (u=1, v=1.0)
+        bl: { x: 0.180, y: 0.880 }, // Near Baseline Left Corner (u=0, v=1.0)
+        netL: { x: 0.250, y: 0.465 }, // Net Top Tape Left Post
+        netR: { x: 0.830, y: 0.465 }  // Net Top Tape Right Post
     };
 
     // 3x3 Homography Matrices:
@@ -206,10 +206,10 @@ window.ShuttleCV = (function () {
 
         const midL = projectPoint(H_courtToScreen, 0, 0.5);
         const midR = projectPoint(H_courtToScreen, 1, 0.5);
-        const netHeightNorm = 0.087; // BWF 1.55m net height in baseline perspective
+        const netHeightNorm = 0.055; // BWF 1.55m net height in baseline perspective
         if (!courtCorners._customNet) {
-            courtCorners.netL = { x: midL.x + 0.022, y: midL.y - netHeightNorm };
-            courtCorners.netR = { x: midR.x - 0.025, y: midL.y - netHeightNorm };
+            courtCorners.netL = { x: midL.x, y: midL.y - netHeightNorm };
+            courtCorners.netR = { x: midR.x, y: midR.y - netHeightNorm };
         }
     }
 
@@ -716,10 +716,10 @@ window.ShuttleCV = (function () {
             const H_before = H_courtToScreen.slice();
             let H = H_courtToScreen.slice();
             let lastStats = null;
-            const radii = [0.02, 0.01]; // 2 fast passes (coarse -> fine)
+            const radii = [0.035, 0.015]; // 2 fast passes (coarse -> fine)
 
             for (let iter = 0; iter < radii.length; iter++) {
-                const searchR = Math.min(14, Math.max(5, Math.round(radii[iter] * Math.max(W, Hh))));
+                const searchR = Math.min(22, Math.max(6, Math.round(radii[iter] * Math.max(W, Hh))));
                 const src = [];
                 const dst = [];
                 const offsets = [];
@@ -757,7 +757,7 @@ window.ShuttleCV = (function () {
                                 if (resp > bestResp) { bestResp = resp; bestT = k; }
                             }
                         }
-                        if (bestResp >= 16) {
+                        if (bestResp >= 10) {
                             src.push({ x: u, y: v });
                             dst.push({ x: (px + nx * bestT) / W, y: (py + ny * bestT) / Hh });
                             offsets.push(Math.abs(bestT));
@@ -803,7 +803,7 @@ window.ShuttleCV = (function () {
                 const b = projectPoint(H, u, v);
                 return Math.hypot(a.x - b.x, a.y - b.y);
             }));
-            if (maxShift > 0.08 || lastStats.rmsPx > 8) {
+            if (maxShift > 0.16 || lastStats.rmsPx > 14) {
                 return { ok: false, reason: 'unstable', maxShift: +maxShift.toFixed(3), rmsPx: lastStats.rmsPx };
             }
 
@@ -943,36 +943,36 @@ window.ShuttleCV = (function () {
             courtCorners._customNet = true;
             if (calibrationMode === 'service') {
                 if (isPortrait) {
-                    courtCorners.tl = { x: 0.355, y: 0.613 };
-                    courtCorners.tr = { x: 0.715, y: 0.615 };
-                    courtCorners.br = { x: 0.932, y: 0.688 };
-                    courtCorners.bl = { x: 0.142, y: 0.684 };
-                    courtCorners.netL = { x: 0.248, y: 0.569 };
-                    courtCorners.netR = { x: 0.822, y: 0.571 };
+                    courtCorners.tl = { x: 0.360, y: 0.390 };
+                    courtCorners.tr = { x: 0.720, y: 0.390 };
+                    courtCorners.br = { x: 0.825, y: 0.610 };
+                    courtCorners.bl = { x: 0.255, y: 0.610 };
+                    courtCorners.netL = { x: 0.250, y: 0.465 };
+                    courtCorners.netR = { x: 0.830, y: 0.465 };
                 } else {
-                    courtCorners.tl = { x: 0.310, y: 0.500 };
-                    courtCorners.tr = { x: 0.690, y: 0.500 };
-                    courtCorners.br = { x: 0.850, y: 0.675 };
-                    courtCorners.bl = { x: 0.150, y: 0.675 };
-                    courtCorners.netL = { x: 0.235, y: 0.425 };
-                    courtCorners.netR = { x: 0.765, y: 0.425 };
+                    courtCorners.tl = { x: 0.380, y: 0.260 };
+                    courtCorners.tr = { x: 0.620, y: 0.260 };
+                    courtCorners.br = { x: 0.740, y: 0.560 };
+                    courtCorners.bl = { x: 0.260, y: 0.560 };
+                    courtCorners.netL = { x: 0.280, y: 0.420 };
+                    courtCorners.netR = { x: 0.720, y: 0.420 };
                 }
             } else {
                 // Full Court BWF 13.40m x 6.10m 4 outer corners mode (Standard)
                 if (isPortrait) {
-                    courtCorners.tl = { x: 0.355, y: 0.585 };
-                    courtCorners.tr = { x: 0.715, y: 0.585 };
-                    courtCorners.br = { x: 0.940, y: 0.975 };
-                    courtCorners.bl = { x: 0.100, y: 0.975 };
-                    courtCorners.netL = { x: 0.180, y: 0.560 };
-                    courtCorners.netR = { x: 0.825, y: 0.560 };
+                    courtCorners.tl = { x: 0.360, y: 0.390 };
+                    courtCorners.tr = { x: 0.720, y: 0.390 };
+                    courtCorners.br = { x: 0.900, y: 0.880 };
+                    courtCorners.bl = { x: 0.180, y: 0.880 };
+                    courtCorners.netL = { x: 0.250, y: 0.465 };
+                    courtCorners.netR = { x: 0.830, y: 0.465 };
                 } else {
-                    courtCorners.tl = { x: 0.310, y: 0.480 };
-                    courtCorners.tr = { x: 0.690, y: 0.480 };
-                    courtCorners.br = { x: 0.880, y: 0.880 };
-                    courtCorners.bl = { x: 0.120, y: 0.880 };
-                    courtCorners.netL = { x: 0.220, y: 0.450 };
-                    courtCorners.netR = { x: 0.780, y: 0.450 };
+                    courtCorners.tl = { x: 0.380, y: 0.260 };
+                    courtCorners.tr = { x: 0.620, y: 0.260 };
+                    courtCorners.br = { x: 0.840, y: 0.840 };
+                    courtCorners.bl = { x: 0.160, y: 0.840 };
+                    courtCorners.netL = { x: 0.280, y: 0.420 };
+                    courtCorners.netR = { x: 0.720, y: 0.420 };
                 }
             }
             if (force) isManuallyEdited = false;

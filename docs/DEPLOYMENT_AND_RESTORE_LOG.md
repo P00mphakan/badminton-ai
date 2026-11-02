@@ -3,8 +3,8 @@
 **Project:** ShuttlePro AI (Badminton AI)  
 **Remote Repository:** [https://github.com/P00mphakan/badminton-ai.git](https://github.com/P00mphakan/badminton-ai.git)  
 **Production Branch:** `main`  
-**Latest Production Tag:** `v1.2.1-fix-dock-overlap`  
-**Deployment Date:** 2026-11-02 16:40:00 +07:00  
+**Latest Production Tag:** `v1.2.2-court-geometry-and-ui-cleanup`  
+**Deployment Date:** 2026-11-02 17:05:00 +07:00  
 
 ---
 
@@ -13,7 +13,7 @@
 เมื่อโค้ดถูก Push สู่ Branch `main` บน GitHub (`P00mphakan/badminton-ai`) ระบบ Vercel ที่ผูกกับ Repo นี้จะตรวจจับ Webhook อัตโนมัติและดำเนินการ:
 1. ดึงโค้ดเวอร์ชันล่าสุด
 2. Build & Deploy เป็น Static Web Application
-3. กระจายผลขึ้น Vercel Edge Network พร้อม Cache-Buster (`?v=20261102c`) เพื่อให้ผู้ใช้ได้รับไฟล์ล่าสุดทันทีโดยไม่ต้องล้างแคชบราวเซอร์
+3. กระจายผลขึ้น Vercel Edge Network พร้อม Cache-Buster (`?v=20261102d`) เพื่อให้ผู้ใช้ได้รับไฟล์ล่าสุดทันทีโดยไม่ต้องล้างแคชบราวเซอร์
 
 ---
 
@@ -23,7 +23,8 @@
 
 | เวอร์ชัน (Git Tag) | Commit SHA | รายละเอียดของเวอร์ชัน | คำสั่งกู้คืน (One-Command Restore) |
 | :--- | :--- | :--- | :--- |
-| **`v1.2.1-fix-dock-overlap`** | `HEAD` | **เวอร์ชันปัจจุบัน:** แก้แถบปุ่มลัด (Quick Setup Pills) ทับซ้อนกับเมนูด้านล่าง | `git checkout v1.2.1-fix-dock-overlap -- .` |
+| **`v1.2.2-court-geometry-and-ui-cleanup`** | `HEAD` | **เวอร์ชันปัจจุบัน:** พิกัด 4 มุมตรงจริง, แก้กราฟิกมาร์คคนตรงตัว, แก้ปัญหา UI 5 ชั้นทับซ้อน | `git checkout v1.2.2-court-geometry-and-ui-cleanup -- .` |
+| `v1.2.1-fix-dock-overlap` | `1106770` | แก้แถบปุ่มลัด (Quick Setup Pills) ทับซ้อนกับเมนูด้านล่าง | `git checkout v1.2.1-fix-dock-overlap -- .` |
 | `v1.2.0-court-math-ui-redesign` | `b23916f` | แก้ Math เส้นตรง 100%, แก้แอปค้าง, UI 1-Tap นักแบด | `git checkout v1.2.0-court-math-ui-redesign -- .` |
 | `v1.1.0-fieldtest-complete` | `9c53bd1` | เวอร์ชันเสถียรหลังแก้ปัญหา 9 ข้อจากคลิปทดสอบจริง | `git checkout v1.1.0-fieldtest-complete -- .` |
 | `v1.0.9-fix-J` | `bf9aacc` | ปรับป้ายกำกับมิติความลึกสนาม (TL, TR, SL, SR) | `git checkout v1.0.9-fix-J -- .` |

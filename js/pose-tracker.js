@@ -258,9 +258,9 @@ function updatePlayerSlot(slot, c, now) {
     const ring = ShuttleCV.courtNormalizedToScreen(newU, newV);
     slot.u = newU;
     slot.v = newV;
-    // When court is trusted, render foot ring strictly on calibrated court floor to eliminate misalignment
-    slot.screenX = ShuttleCV.isCourtTrusted() ? ring.x : (c.footX !== undefined ? c.footX : ring.x);
-    slot.screenY = ShuttleCV.isCourtTrusted() ? ring.y : (c.footY !== undefined ? c.footY : ring.y);
+    // Lock floor ring and tactical bracket directly to the detected player feet in screen space
+    slot.screenX = (c.footX !== undefined) ? c.footX : ring.x;
+    slot.screenY = (c.footY !== undefined) ? c.footY : ring.y;
     slot.box = c.box;
     slot.keypoints = c.kps;
     slot.detected = true;
