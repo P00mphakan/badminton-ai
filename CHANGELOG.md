@@ -28,11 +28,20 @@
 | `v1.3.3-wider-clean-player-ring` | ขยายขนาดวงแหวน Player Tracker ให้กว้างขึ้นตามท่ายืนแบดมินตัน (~32% wider) และนำขีดเล็งกากบาทออก (Clean Solid Neon Halo) | `git checkout v1.3.3-wider-clean-player-ring -- .` |
 | `v1.3.4-fix-uploaded-clip-tracker-and-13m-calibration` | กู้คืน Tracker ในโหมดอัพโหลดคลิป, ซิงค์เมนูและการควบคุมให้เหมือนโหมด Live, ใช้เส้นสนาม 13.4m เต็มสนามเป็นหลัก และรองรับการลากมุม/ขอบเขตเส้นแม้หลุดเฟรม | `git checkout v1.3.4-fix-uploaded-clip-tracker-and-13m-calibration -- .` |
 | `v1.3.5-high-precision-anti-interference-tracker` | ป้องกันจับคน/ลูกจากสนามข้างเคียง 100%, ล็อคเป้าหมายผู้เล่นไม่ให้หลุด Tracker (Coasting 6s), ยกระดับความแม่นยำและความละเอียด 576px ในโหมดคลิป | `git checkout v1.3.5-high-precision-anti-interference-tracker -- .` |
-| `v1.3.6-saved-history-detail-modal-and-account-sync` | **เวอร์ชันล่าสุด: แตะเลือกแมตช์ในประวัติดูสถิติ & 2D Heatmap & บทวิเคราะห์ AI ทันที, รองรับเปลี่ยนชื่อแมตช์, แสดงสถานะ Saved ✓ (ไม่ระบุ Supabase), แยกบัญชีผู้ใช้ และซิงค์ข้อมูลจาก Cache เบราว์เซอร์อัตโนมัติ** | `git checkout v1.3.6-saved-history-detail-modal-and-account-sync -- .` |
+| `v1.3.6-saved-history-detail-modal-and-account-sync` | แตะเลือกแมตช์ในประวัติดูสถิติ & 2D Heatmap & บทวิเคราะห์ AI ทันที, รองรับเปลี่ยนชื่อแมตช์, แสดงสถานะ Saved ✓ (ไม่ระบุ Supabase), แยกบัญชีผู้ใช้ และซิงค์ข้อมูลจาก Cache เบราว์เซอร์อัตโนมัติ | `git checkout v1.3.6-saved-history-detail-modal-and-account-sync -- .` |
+| `v1.3.7-restore-v131-player-tracker` | **เวอร์ชันล่าสุด: นำโค้ด Player Tracker ของ v1.3.1 กลับมาใส่ในเวอร์ชันปัจจุบัน (กว้างเต็มจอ, ขอบเขต tolU/tolV กว้างจับคนติดง่ายไม่หลุด, ระดับวงแหวนแนบพื้นเท้า และคงฟังก์ชัน v1.3.6 ทั้งหมดไว้ครบถ้วน)** | `git checkout v1.3.7-restore-v131-player-tracker -- .` |
 
 ---
 
 ## 🚀 รายการบันทึกการแก้ไขตามเวอร์ชัน
+
+### [v1.3.7-restore-v131-player-tracker] - 2026-11-03
+- **กู้คืนระบบ Player Tracker ฉบับเสถียรของ v1.3.1 กลับสู่เวอร์ชันปัจจุบัน:**
+  - นำ `getCourtActionCrop` มุมมองแบบเต็มความกว้างจอ (`x: 0, w: 1.0, cropY0: max(0, min(0.40, minCourtY - 0.24))`) กลับมาใช้ ทำให้ตรวจจับผู้เล่นริมเส้นข้างและแดนหลังได้ครบถ้วน ไม่ถูกตัดขอบทิ้ง
+  - ปรับค่าความคลาดเคลื่อน Homography In-Court Gating กลับเป็น `tolU = 0.45` และ `tolV = 0.65` ป้องกันปัญหาวงแหวน Tracker หลุดเป้าเมื่อผู้เล่นวิ่งถอยรับลูกเสิร์ฟหรือลูกตบหลังเส้น Baseline
+  - รักษาระดับวงแหวน Tracker ให้อยู่ใต้พื้นรองเท้าแนบพื้นคอร์ท (`soleOffset`) ตามการคำนวณสรีระข้อเท้า-หัวเข่า-สะโพกของ v1.3.1
+  - ย้อนกลับเกณฑ์ระยะการเคลื่อนที่ของลูกขนไก่เทียบกับตัวผู้เล่นตีลูกเป็นรัศมี $2.2\text{ m}$ ป้องกันการตัดลูกตบเหนือศีรษะทิ้ง
+  - **คงฟังก์ชันใหม่ของเวอร์ชัน v1.3.6 ไว้ 100%:** ทั้ง Modal สถิติแมตช์ย้อนหลัง, 2D Heatmap, บทวิเคราะห์โค้ช AI, การเปลี่ยนชื่อแมตช์, ปุ่ม Record วิดีโอ 1080p, และการซิงค์บัญชีผู้ใช้ `Saved ✓`
 
 ### [v1.3.6-saved-history-detail-modal-and-account-sync] - 2026-11-02
 - **แตะเลือกแมตช์ในประวัติเพื่อดูรายละเอียดเต็ม (Interactive Match Detail Modal):**
