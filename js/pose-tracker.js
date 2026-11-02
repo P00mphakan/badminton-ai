@@ -173,12 +173,20 @@ function getCourtActionCrop(vW, vH) {
     const corners = ShuttleCV.getCorners();
     // In low-angle badminton view, players never jump into the upper 30-40% ceiling
     const minCourtY = Math.min(corners.tl.y, corners.tr.y, corners.netL.y, corners.netR.y);
-    // Allow 24% screen height above far baseline for jump smash and overhead clears
-    const cropY0 = Math.max(0, Math.min(0.40, minCourtY - 0.24));
+    // Allow 22% screen height above far baseline for jump smash and overhead clears
+    const cropY0 = Math.max(0, Math.min(0.38, minCourtY - 0.22));
+
+    // Horizontal boundary crop: strictly isolate our match court and strip adjacent courts
+    const minCourtX = Math.min(corners.tl.x, corners.bl.x, corners.netL.x);
+    const maxCourtX = Math.max(corners.tr.x, corners.br.x, corners.netR.x);
+    const padX = 0.08; // 8% lateral buffer for tramline jumps (~0.5m)
+    const cropX0 = Math.max(0, minCourtX - padX);
+    const cropX1 = Math.min(1.0, maxCourtX + padX);
+
     return {
-        x: 0,
+        x: cropX0,
         y: cropY0,
-        w: 1.0,
+        w: Math.max(0.40, cropX1 - cropX0),
         h: 1.0 - cropY0
     };
 }
@@ -264,12 +272,13 @@ function evaluatePoseCandidate(pose, crop) {
     }
 
     // In-court gating:
-    // Players regularly jump behind the baseline (especially Far Court receives) and dive into tramlines.
-    // Tolerate lateral displacement (tolU = 0.45) and depth displacement (tolV = 0.85) so players never drop lock.
-    if (ShuttleCV.isCourtTrusted() && uv && isFinite(uv.x) && isFinite(uv.y)) {
-        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.45, 0.85);
+    // Strictly isolate our match court: lateral tolerance tolU = 0.16 (~0.98m from sidelines),
+    // depth tolerance tolV = 0.16 (~2.14m behind baselines).
+    // People on adjacent courts (which start at >1.5m to the left/right) are 100% rejected!
+    if (uv && isFinite(uv.x) && isFinite(uv.y)) {
+        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.16, 0.16);
         if (!inCourt) {
-            return { mask: box, player: null };
+            return { mask: null, player: null };
         }
     }
 
@@ -306,20 +315,22 @@ function assignCandidatesToSlots(team, cands, now) {
     }
 
     const slotCost = (slot, idx, c) => {
-        const recent = now - slot.lastSeenMs < (isPlayersLocked ? 2500 : 2000);
+        const isUploaded = typeof isUploadedVideoActive !== 'undefined' && isUploadedVideoActive;
+        const coastWindow = (isPlayersLocked ? (isUploaded ? 6000 : 4500) : (isUploaded ? 3600 : 2500));
+        const recent = now - slot.lastSeenMs < coastWindow;
         if (recent) {
             const distM = Math.hypot((slot.u - c.u) * ShuttleCV.COURT_WIDTH_M, (slot.v - c.v) * ShuttleCV.COURT_LENGTH_M);
             
             if (isPlayersLocked || slot.isLocked) {
                 // เมื่อเข้าสู่สถานะล็อคเป้า:
-                // 1. ลงโทษอย่างรุนแรงหากพิกัดกระโดดเกิน 2.8 เมตร (ป้องกันการสลับ Slot ID ระหว่างคู่ขา)
-                if (distM > 2.8) return distM * 5.0 + 30.0;
+                // 1. ลงโทษอย่างรุนแรงหากพิกัดกระโดดเกิน 2.2 เมตร (ป้องกันการสลับ Slot ID ระหว่างคู่ขาเด็ดขาด)
+                if (distM > 2.2) return distM * 8.0 + 50.0;
                 // 2. ให้ความสำคัญสูงสุดกับความต่อเนื่องของ Track เดิม
-                return distM * 1.6;
+                return distM * 1.4;
             }
 
             // ก่อนล็อคเป้า: ปกป้องการกระโดดฉับพลันปกติ
-            if (now - slot.lastSeenMs < 300 && distM > 3.0) return distM + 12.0;
+            if (now - slot.lastSeenMs < 300 && distM > 2.8) return distM + 15.0;
             return distM;
         }
         // Not tracked yet: slot 1 = left side of screen, slot 2 = right side
@@ -348,10 +359,10 @@ function assignCandidatesToSlots(team, cands, now) {
         best.p.forEach(([si, ci]) => {
             const slot = slots[si];
             const cand = cands[ci];
-            const wasTracked = slot.detected && (now - slot.lastSeenMs < 2500);
+            const wasTracked = slot.detected && (now - slot.lastSeenMs < 4500);
             if (wasTracked) {
                 const distM = Math.hypot((slot.u - cand.u) * ShuttleCV.COURT_WIDTH_M, (slot.v - cand.v) * ShuttleCV.COURT_LENGTH_M);
-                if (distM > 4.8) return; // ทิ้ง candidate หากพิกัดห่างจากเป้าที่ล็อคไว้เกินกว่าระยะสปรินต์จริง
+                if (distM > 3.6) return; // ทิ้ง candidate หากพิกัดห่างจากเป้าที่ล็อคไว้เกินกว่าระยะสปรินต์จริง
             }
             updatePlayerSlot(slot, cand, now);
         });
@@ -361,9 +372,10 @@ function assignCandidatesToSlots(team, cands, now) {
 }
 
 function updatePlayerSlot(slot, c, now) {
-    const wasTracked = slot.detected && now - slot.lastSeenMs < 700;
+    const wasTracked = slot.detected && now - slot.lastSeenMs < 1200;
     const dt = wasTracked ? (now - slot.lastSeenMs) / 1000 : 0;
-    const alpha = 0.55;
+    // Smoother tracking when locked to prevent ring jitter while responsive to athletic movement
+    const alpha = (isPlayersLocked || slot.isLocked) ? 0.42 : 0.55;
     const newU = wasTracked ? slot.u * (1 - alpha) + c.u * alpha : c.u;
     const newV = wasTracked ? slot.v * (1 - alpha) + c.v * alpha : c.v;
 
@@ -439,6 +451,8 @@ async function runRealPoseEstimation(videoEl) {
     // Video pause protection: if video playback is paused, do not expire player tracking
     const isVideoPaused = (typeof isUploadedVideoActive !== 'undefined' && isUploadedVideoActive && videoEl.paused) || (typeof isTrackingPaused !== 'undefined' && isTrackingPaused);
 
+    const isUploaded = typeof isUploadedVideoActive !== 'undefined' && isUploadedVideoActive;
+
     Object.values(players).forEach(p => {
         // Enforce strict Singles vs Doubles slot state
         if (!isDoublesMatch && (p.id === 'A2' || p.id === 'B2')) {
@@ -455,9 +469,9 @@ async function runRealPoseEstimation(videoEl) {
             p.lastSeenMs = now;
         }
 
-        // เมื่อล็อคเป้าแล้ว: ขยายเวลา Coasting เป็น 2400ms เผื่อจังหวะคู่ขาวิ่งตัดหน้าหรือกระโดดตบ
+        // เมื่อล็อคเป้าแล้ว: ขยายเวลา Coasting ยาวนาน (6000ms ในคลิป, 4500ms ใน Live) ป้องกันหลุดเด็ดขาด
         if (!isVideoPaused) {
-            const timeoutMs = (isPlayersLocked && p.isLocked) ? 2400 : 1800;
+            const timeoutMs = (isPlayersLocked && p.isLocked) ? (isUploaded ? 6000 : 4500) : (isUploaded ? 3600 : 2200);
             if (p.detected && now - p.lastSeenMs > timeoutMs) {
                 p.detected = false;
                 p.currentSpeedKmh = 0;
@@ -469,7 +483,8 @@ async function runRealPoseEstimation(videoEl) {
 
     if (!poseModelReady || !poseDetector || poseInferenceBusy) return;
     const wallNow = performance.now();
-    if (wallNow - lastPoseWallTimestamp < 33) return;
+    const minWallInterval = isUploaded ? 22 : 33;
+    if (wallNow - lastPoseWallTimestamp < minWallInterval) return;
     lastPoseWallTimestamp = wallNow;
 
     const vW = videoEl.videoWidth || 1280;
@@ -483,7 +498,8 @@ async function runRealPoseEstimation(videoEl) {
     const cropPixelH = Math.round(crop.h * vH);
 
     const cropAspect = cropPixelW / cropPixelH;
-    const TARGET_LONG = 448; // Crisp resolution so far players are 55+ px tall for MoveNet MultiPose
+    // Uploaded Clip mode: 576px Ultra-Detail for high-precision joint tracking; Live mode: 448px balanced for battery/FPS
+    const TARGET_LONG = isUploaded ? 576 : 448;
     const cw = cropAspect >= 1 ? TARGET_LONG : Math.max(160, Math.round(TARGET_LONG * cropAspect));
     const ch = cropAspect >= 1 ? Math.max(160, Math.round(TARGET_LONG / cropAspect)) : TARGET_LONG;
     if (poseCropCanvas.width !== cw) poseCropCanvas.width = cw;
@@ -673,8 +689,9 @@ function onTrackConfirmed(now) {
     const second = shuttleTrack[Math.min(2, shuttleTrack.length - 1)];
     const near = nearestPlayerToPoint(first.sx, first.sy);
     // 2.2 Interference Rejection:
-    // Shuttlecock hit must originate near an active on-court match player
-    if (!near || near.d > 2.2 || !near.p) {
+    // Shuttlecock hit must strictly originate near an active on-court match player (within 1.45 player heights ~2.5m)
+    // Completely rejects shuttles flying from adjacent courts!
+    if (!near || near.d > 1.45 || !near.p) {
         shuttleTrack = [];
         return;
     }
@@ -824,9 +841,20 @@ function processRealShuttleAndRally(cvResult) {
             const d = Math.hypot(c.x - b.sx, c.y - b.sy);
             if (d >= 0.0025 && d < bestD) { bestD = d; chosen = c; }
         });
-        if (!chosen && cands.length) shuttleTrack = [{ sx: cands[0].x, sy: cands[0].y, t: now, inpainted: false }];
+        if (!chosen && cands.length) {
+            const near = nearestPlayerToPoint(cands[0].x, cands[0].y);
+            if (near && near.d <= 1.45) {
+                shuttleTrack = [{ sx: cands[0].x, sy: cands[0].y, t: now, inpainted: false }];
+            } else {
+                shuttleTrack = [];
+            }
+        }
     } else if (cands.length) {
-        shuttleTrack = [{ sx: cands[0].x, sy: cands[0].y, t: now, inpainted: false }];
+        // Strict Adjacent Court Rejection: Only start a new track if the shuttle is near an active on-court match player
+        const near = nearestPlayerToPoint(cands[0].x, cands[0].y);
+        if (near && near.d <= 1.45) {
+            shuttleTrack = [{ sx: cands[0].x, sy: cands[0].y, t: now, inpainted: false }];
+        }
     }
 
     if (chosen) {

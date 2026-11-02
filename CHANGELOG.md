@@ -26,11 +26,26 @@
 | `v1.3.1-fix-player-ring-and-target-lock` | ลดระดับวงแหวน Tracker ลงติดพื้นสนามใต้พื้นรองเท้า (Floor Mat Alignment) และแก้ไข Team Separation / In-Court Gating ให้ล็อคเป้าผู้เล่นครบ 4 คน (A1, A2, B1, B2) ได้แม่นยำ ไม่หลุด | `git checkout v1.3.1-fix-player-ring-and-target-lock -- .` |
 | `v1.3.2-restore-clean-1080p-video-recorder` | นำปุ่ม Record วิดีโอต้นฉบับ 1080p (Clean Feed แบบไม่มีกราฟิกทับ) กลับมาไว้ที่แถบควบคุมหลักและเมนูตั้งค่า พร้อมระบบบีบอัดความละเอียดสูงประหยัดความจุ (~21 MB/นาที) | `git checkout v1.3.2-restore-clean-1080p-video-recorder -- .` |
 | `v1.3.3-wider-clean-player-ring` | ขยายขนาดวงแหวน Player Tracker ให้กว้างขึ้นตามท่ายืนแบดมินตัน (~32% wider) และนำขีดเล็งกากบาทออก (Clean Solid Neon Halo) | `git checkout v1.3.3-wider-clean-player-ring -- .` |
-| `v1.3.4-fix-uploaded-clip-tracker-and-13m-calibration` | **เวอร์ชันล่าสุด: กู้คืน Tracker ในโหมดอัพโหลดคลิป, ซิงค์เมนูและการควบคุมให้เหมือนโหมด Live, ใช้เส้นสนาม 13.4m เต็มสนามเป็นหลัก และรองรับการลากมุม/ขอบเขตเส้นแม้หลุดเฟรม** | `git checkout v1.3.4-fix-uploaded-clip-tracker-and-13m-calibration -- .` |
+| `v1.3.4-fix-uploaded-clip-tracker-and-13m-calibration` | กู้คืน Tracker ในโหมดอัพโหลดคลิป, ซิงค์เมนูและการควบคุมให้เหมือนโหมด Live, ใช้เส้นสนาม 13.4m เต็มสนามเป็นหลัก และรองรับการลากมุม/ขอบเขตเส้นแม้หลุดเฟรม | `git checkout v1.3.4-fix-uploaded-clip-tracker-and-13m-calibration -- .` |
+| `v1.3.5-high-precision-anti-interference-tracker` | **เวอร์ชันล่าสุด: ป้องกันจับคน/ลูกจากสนามข้างเคียง 100%, ล็อคเป้าหมายผู้เล่นไม่ให้หลุด Tracker (Coasting 6s), ยกระดับความแม่นยำและความละเอียด 576px ในโหมดคลิป** | `git checkout v1.3.5-high-precision-anti-interference-tracker -- .` |
 
 ---
 
 ## 🚀 รายการบันทึกการแก้ไขตามเวอร์ชัน
+
+### [v1.3.5-high-precision-anti-interference-tracker] - 2026-11-02
+- **ป้องกันการจับคนจากสนามข้างเคียง 100% (Adjacent Court Player Rejection):**
+  - ปรับปรุง `getCourtActionCrop()` ให้ตัดขอบด้านข้างตามแนวคอร์ทจริงของเรา (+8% margin buffer หรือ ~0.5m) ตัดภาพสนามข้างเคียงซ้าย-ขวาออกจากอินพุตของ MoveNet โดยสิ้นเชิง
+  - ปรับความคลาดเคลื่อนด้านข้างสนาม (`tolU`) และด้านหลังสนาม (`tolV`) ใน `evaluatePoseCandidate` จากเดิมที่กว้างเกินไป เหลือเพียง `0.16` (~0.98m จากเส้นข้าง และ ~2.14m จากเส้นหลัง) ปัดทิ้งผู้เล่นและผู้ชมของสนามข้างเคียงทั้งหมดโดยอัตโนมัติ
+- **ระบบล็อคเป้าผู้เล่นไม่หลุด Tracker (Rock-Solid Player Locking & Coasting):**
+  - ขยายระยะเวลา Coasting เมื่อเข้าสู่สถานะล็อคเป้าเป็น 6,000ms ในโหมดคลิป (4,500ms ใน Live) ทำให้จังหวะที่คู่ขาวิ่งตัดหน้า กระโดดตบ หรือบังตัวกัน วงแหวน Tracker และโครงร่างจะไม่หลุดหรือหายไป
+  - เพิ่มบทลงโทษการสลับ Slot ID ระหว่างคู่ขา (`slotCost`) สูงสุด $distM \times 8.0 + 50.0$ ป้องกันการสลับคู่ขา A1/A2 และ B1/B2
+  - ปรับค่าความนุ่มนวล Exponential Filter ($\alpha = 0.42$) ทำให้วงแหวนเคลื่อนที่ตามฝีเท้าอย่างมั่นคง ไร้อาการสั่นกระตุก
+- **ยกระดับความแม่นยำสูงพิเศษในโหมดอัพโหลดคลิป (Ultra-Detail 576px Resolution):**
+  - ขยายความละเอียดภาพป้อนเข้าโมเดล MoveNet จาก 448px เป็น 576px (+65% พิกเซล) เมื่อตรวจจับคลิปวิดีโออัพโหลด ทำให้ตรวจจับข้อเท้า หัวเข่า และข้อมือของผู้เล่นฝั่งไกลได้แม่นยำและคมชัดยิ่งขึ้น
+- **ป้องกันการจับลูกขนไก่จากสนามข้างเคียง (Adjacent Shuttlecock Rejection):**
+  - บีบ Play Volume Box ด้านข้างให้กระชับเหลือ $x \in [-0.75, 6.85]\text{ m}$ (จากเดิม 7.3m)
+  - เพิ่มเงื่อนไขตรวจสอบต้นกำเนิดลูก (Rally Origin Gate): ลูกขนไก่ที่เริ่มบินข้ามเฟรมจะถูกรับเป็น Track ตีลูกก็ต่อเมื่อเริ่มต้นในระยะเอื้อมตีของนักกีฬาในสนามเรา ($\le 1.45$ เท่าของความสูงคน หรือ ~2.5m) เท่านั้น ลูกที่ลอยมาจากสนามอื่นจะถูกตัดทิ้งทันที
 
 ### [v1.3.4-fix-uploaded-clip-tracker-and-13m-calibration] - 2026-11-02
 - **กู้คืนระบบ Tracker ในโหมดอัพโหลดคลิป (`js/pose-tracker.js`, `js/live-view.js`):**

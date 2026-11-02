@@ -607,12 +607,14 @@ window.ShuttleCV = (function () {
         return true;
     }
 
-    // 2.2 Play Volume Box: x in [-1.2, 7.3] m, y in [-1.5, 14.9] m, z in [0, 8.0] m
+    // 2.2 Play Volume Box: Strictly confined to our match airspace (rejects adjacent courts)
+    // Lateral margin: 0.75m from sidelines (adjacent courts start at >1.5m)
+    // Depth margin: 1.20m behind baselines, Height: 0 to 8.0m BWF ceiling limit
     const PLAY_VOLUME = {
-        minX: -1.2,
-        maxX: 7.3,
-        minY: -1.5,
-        maxY: 14.9,
+        minX: -0.75,
+        maxX: 6.85,
+        minY: -1.20,
+        maxY: 14.60,
         minZ: 0.0,
         maxZ: 8.0
     };
@@ -629,10 +631,10 @@ window.ShuttleCV = (function () {
         return isInsidePlayVolume(xM, yM, zM);
     }
 
-    // Court airspace = court floor quad (with 1.2m width margin, 1.5m length margin) lifted up to 8.0m (shuttle flight volume)
+    // Court airspace = court floor quad (with 0.75m width margin, 1.2m length margin) lifted up to 8.0m (shuttle flight volume)
     function getCourtAirspacePolygon() {
-        const mU = 1.2 / COURT_WIDTH_M;
-        const mV = 1.5 / COURT_LENGTH_M;
+        const mU = 0.75 / COURT_WIDTH_M;
+        const mV = 1.20 / COURT_LENGTH_M;
         const floorPts = [
             [-mU, -mV], [1 + mU, -mV], [1 + mU, 1 + mV], [-mU, 1 + mV]
         ];
