@@ -227,7 +227,7 @@ window.ShuttleCV = (function () {
         };
     }
 
-    function updateHomographyFromCorners() {
+    function updateHomographyFromCorners(skipKey = null) {
         const anchorRect = getAnchorRect();
         let dstQuad;
         if (calibrationMode === 'front-net') {
@@ -262,25 +262,25 @@ window.ShuttleCV = (function () {
             const tr = projectPoint(H_courtToScreen, 1, 0);
             const br = projectPoint(H_courtToScreen, 1, 1.0);
             const bl = projectPoint(H_courtToScreen, 0, 1.0);
-            courtCorners.tl = { x: tl.x, y: tl.y };
-            courtCorners.tr = { x: tr.x, y: tr.y };
-            courtCorners.br = { x: br.x, y: br.y };
-            courtCorners.bl = { x: bl.x, y: bl.y };
+            if (skipKey !== 'tl') courtCorners.tl = { x: tl.x, y: tl.y };
+            if (skipKey !== 'tr') courtCorners.tr = { x: tr.x, y: tr.y };
+            if (skipKey !== 'br') courtCorners.br = { x: br.x, y: br.y };
+            if (skipKey !== 'bl') courtCorners.bl = { x: bl.x, y: bl.y };
         } else {
             const sfl = projectPoint(H_courtToScreen, 0, 0.3522);
             const sfr = projectPoint(H_courtToScreen, 1, 0.3522);
             const snl = projectPoint(H_courtToScreen, 0, 0.6478);
             const snr = projectPoint(H_courtToScreen, 1, 0.6478);
-            courtCorners.sfl = { x: sfl.x, y: sfl.y };
-            courtCorners.sfr = { x: sfr.x, y: sfr.y };
-            courtCorners.snl = { x: snl.x, y: snl.y };
-            courtCorners.snr = { x: snr.x, y: snr.y };
+            if (skipKey !== 'sfl') courtCorners.sfl = { x: sfl.x, y: sfl.y };
+            if (skipKey !== 'sfr') courtCorners.sfr = { x: sfr.x, y: sfr.y };
+            if (skipKey !== 'snl') courtCorners.snl = { x: snl.x, y: snl.y };
+            if (skipKey !== 'snr') courtCorners.snr = { x: snr.x, y: snr.y };
         }
 
         const midL = projectPoint(H_courtToScreen, 0, 0.5);
         const midR = projectPoint(H_courtToScreen, 1, 0.5);
         const netHeightNorm = 0.055; // BWF 1.55m net height in baseline perspective
-        if (!courtCorners._customNet) {
+        if (!courtCorners._customNet && skipKey !== 'netL' && skipKey !== 'netR') {
             courtCorners.netL = { x: midL.x, y: midL.y - netHeightNorm };
             courtCorners.netR = { x: midR.x, y: midR.y - netHeightNorm };
         }
@@ -1096,15 +1096,76 @@ window.ShuttleCV = (function () {
             }
         },
         setCorner: (key, x, y) => {
-            if (courtCorners[key]) {
-                // Allow handles to extend beyond screen [0, 1] to support wide angle cameras & baseline frame overflow
-                courtCorners[key].x = Math.max(-0.60, Math.min(1.60, x));
-                courtCorners[key].y = Math.max(-0.20, Math.min(1.60, y));
-                isManuallyEdited = true;
-                if (key === 'netL' || key === 'netR') {
-                    courtCorners._customNet = true;
+            const clampedX = Math.max(-0.60, Math.min(1.60, x));
+            const clampedY = Math.max(-0.20, Math.min(1.60, y));
+
+            if (key === 'sfl') {
+                const prev = courtCorners.sfl || { x: clampedX, y: clampedY };
+                const dx = clampedX - prev.x;
+                const dy = clampedY - prev.y;
+                courtCorners.sfl = { x: clampedX, y: clampedY };
+                if (courtCorners.tl) {
+                    courtCorners.tl.x += dx;
+                    courtCorners.tl.y += dy;
                 }
-                updateHomographyFromCorners();
+                isManuallyEdited = true;
+                updateHomographyFromCorners('sfl');
+                return;
+            }
+            if (key === 'sfr') {
+                const prev = courtCorners.sfr || { x: clampedX, y: clampedY };
+                const dx = clampedX - prev.x;
+                const dy = clampedY - prev.y;
+                courtCorners.sfr = { x: clampedX, y: clampedY };
+                if (courtCorners.tr) {
+                    courtCorners.tr.x += dx;
+                    courtCorners.tr.y += dy;
+                }
+                isManuallyEdited = true;
+                updateHomographyFromCorners('sfr');
+                return;
+            }
+            if (key === 'snl') {
+                const prev = courtCorners.snl || { x: clampedX, y: clampedY };
+                const dx = clampedX - prev.x;
+                const dy = clampedY - prev.y;
+                courtCorners.snl = { x: clampedX, y: clampedY };
+                if (courtCorners.bl) {
+                    courtCorners.bl.x += dx;
+                    courtCorners.bl.y += dy;
+                }
+                isManuallyEdited = true;
+                updateHomographyFromCorners('snl');
+                return;
+            }
+            if (key === 'snr') {
+                const prev = courtCorners.snr || { x: clampedX, y: clampedY };
+                const dx = clampedX - prev.x;
+                const dy = clampedY - prev.y;
+                courtCorners.snr = { x: clampedX, y: clampedY };
+                if (courtCorners.br) {
+                    courtCorners.br.x += dx;
+                    courtCorners.br.y += dy;
+                }
+                isManuallyEdited = true;
+                updateHomographyFromCorners('snr');
+                return;
+            }
+            if (key === 'netL' || key === 'netR') {
+                if (courtCorners[key]) {
+                    courtCorners[key].x = clampedX;
+                    courtCorners[key].y = clampedY;
+                }
+                courtCorners._customNet = true;
+                isManuallyEdited = true;
+                updateHomographyFromCorners(key);
+                return;
+            }
+            if (courtCorners[key]) {
+                courtCorners[key].x = clampedX;
+                courtCorners[key].y = clampedY;
+                isManuallyEdited = true;
+                updateHomographyFromCorners(key);
             }
         },
         resetCornersDefault: (isPortrait = true, force = false) => {

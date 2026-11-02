@@ -1244,10 +1244,11 @@ liveCanvas.addEventListener('pointerdown', (e) => {
     if (!isCalibratingCourt) return;
     const pos = getPointerNormPos(e);
     const corners = ShuttleCV.getCorners();
-    const handleKeys = ['tl', 'tr', 'br', 'bl', 'sfl', 'sfr', 'snl', 'snr', 'netL', 'netR'];
+    // Prioritize net and short-service handles so points near the net are always easily grabbed
+    const handleKeys = ['sfl', 'sfr', 'snl', 'snr', 'netL', 'netR', 'tl', 'tr', 'br', 'bl'];
 
     let closestKey = null;
-    let minDist = 0.095; // Wide 9.5% touch tolerance for easy fingertip grab
+    let minDist = 0.11; // Generous 11% touch tolerance for easy fingertip grab on mobile
     handleKeys.forEach(k => {
         const pt = corners[k];
         if (!pt) return;
@@ -1264,14 +1265,16 @@ liveCanvas.addEventListener('pointerdown', (e) => {
         }
     });
 
-    // If point is off-frame, allow dragging directly from the boundary line in that area
+    // If point is touched near line, allow dragging directly from boundary, net tape, or short-service lines
     if (!closestKey && corners) {
         const lineDistances = [
+            { key: (pos.x < (corners.netL.x + corners.netR.x) / 2) ? 'netL' : 'netR', d: distToSegment(pos.x, pos.y, corners.netL.x, corners.netL.y, corners.netR.x, corners.netR.y) },
+            { key: (pos.x < (corners.sfl.x + corners.sfr.x) / 2) ? 'sfl' : 'sfr', d: distToSegment(pos.x, pos.y, corners.sfl.x, corners.sfl.y, corners.sfr.x, corners.sfr.y) },
+            { key: (pos.x < (corners.snl.x + corners.snr.x) / 2) ? 'snl' : 'snr', d: distToSegment(pos.x, pos.y, corners.snl.x, corners.snl.y, corners.snr.x, corners.snr.y) },
             { key: (pos.x < (corners.bl.x + corners.br.x) / 2) ? 'bl' : 'br', d: distToSegment(pos.x, pos.y, corners.bl.x, corners.bl.y, corners.br.x, corners.br.y) },
             { key: (pos.x < (corners.tl.x + corners.tr.x) / 2) ? 'tl' : 'tr', d: distToSegment(pos.x, pos.y, corners.tl.x, corners.tl.y, corners.tr.x, corners.tr.y) },
             { key: (pos.y < (corners.tl.y + corners.bl.y) / 2) ? 'tl' : 'bl', d: distToSegment(pos.x, pos.y, corners.tl.x, corners.tl.y, corners.bl.x, corners.bl.y) },
-            { key: (pos.y < (corners.tr.y + corners.br.y) / 2) ? 'tr' : 'br', d: distToSegment(pos.x, pos.y, corners.tr.x, corners.tr.y, corners.br.x, corners.br.y) },
-            { key: (pos.x < (corners.netL.x + corners.netR.x) / 2) ? 'netL' : 'netR', d: distToSegment(pos.x, pos.y, corners.netL.x, corners.netL.y, corners.netR.x, corners.netR.y) }
+            { key: (pos.y < (corners.tr.y + corners.br.y) / 2) ? 'tr' : 'br', d: distToSegment(pos.x, pos.y, corners.tr.x, corners.tr.y, corners.br.x, corners.br.y) }
         ];
         lineDistances.sort((a, b) => a.d - b.d);
         if (lineDistances[0].d < 0.08) {
@@ -2031,16 +2034,18 @@ function drawCalibrationHandlesAndLoupe(ctx, w, h) {
             ctx.fillText(badgeText, badgeX + badgeW / 2, badgeY + 12);
         } else {
             // Normal On-screen Handle
+            const isDraggingThis = draggingHandleKey === key;
+            const handleRadius = isDraggingThis ? 16 : 12;
             ctx.beginPath();
-            ctx.arc(px, py, 12, 0, Math.PI * 2);
-            ctx.fillStyle = color + '33';
+            ctx.arc(px, py, handleRadius, 0, Math.PI * 2);
+            ctx.fillStyle = isDraggingThis ? color + '66' : color + '33';
             ctx.fill();
-            ctx.lineWidth = 2.5;
-            ctx.strokeStyle = color;
+            ctx.lineWidth = isDraggingThis ? 3.5 : 2.5;
+            ctx.strokeStyle = isDraggingThis ? '#ffffff' : color;
             ctx.stroke();
 
             ctx.beginPath();
-            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+            ctx.arc(px, py, isDraggingThis ? 5 : 3.5, 0, Math.PI * 2);
             ctx.fillStyle = '#ffffff';
             ctx.fill();
 
