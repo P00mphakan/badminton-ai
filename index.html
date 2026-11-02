@@ -814,10 +814,11 @@
                             <span>จบแมตช์ &amp; ส่งวิเคราะห์ที่ โค้ช AI ทันที</span>
                         </button>
 
-                        <div class="grid grid-cols-4 gap-1.5">
+                        <div class="grid grid-cols-5 gap-1.5">
                             <button onclick="closeMoreSheet(); openMatchTitleModal()" class="sheet-btn !py-2"><i class="ph-bold ph-pencil-simple text-emerald-300 text-base"></i><span class="text-[10px]">ชื่อแมตช์</span></button>
                             <button onclick="saveCurrentMatchRecord()" class="sheet-btn !py-2"><i class="ph-bold ph-cloud-arrow-up text-cyan-300 text-base"></i><span class="text-[10px]">บันทึกผล</span></button>
                             <button onclick="exportReportJSON()" class="sheet-btn !py-2"><i class="ph-bold ph-download-simple text-amber-300 text-base"></i><span class="text-[10px]">ส่งออก JSON</span></button>
+                            <button onclick="exportReportCSV()" class="sheet-btn !py-2"><i class="ph-bold ph-table text-cyan-300 text-base"></i><span class="text-[10px]">ส่งออก CSV</span></button>
                             <button onclick="startNewMatch()" class="sheet-btn !py-2"><i class="ph-bold ph-arrow-counter-clockwise text-rose-300 text-base"></i><span class="text-[10px]">แมตช์ใหม่</span></button>
                         </div>
                     </div>
@@ -850,6 +851,10 @@
                         <i class="ph-bold ph-download-simple"></i>
                         <span>JSON</span>
                     </button>
+                    <button onclick="exportReportCSV()" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-xs font-medium flex items-center gap-1" title="ส่งออก CSV สำหรับ Excel/Data Analysis">
+                        <i class="ph-bold ph-table"></i>
+                        <span>CSV</span>
+                    </button>
                 </div>
             </div>
 
@@ -860,7 +865,11 @@
                             <i class="ph-fill ph-lightning text-lg"></i>
                             <span>สถิติความเร็วลูกตบจริง (Real Smash Speed)</span>
                         </h2>
-                        <p class="text-[11px] text-slate-400">คำนวณจากระยะทางจริงบนคอร์ท 13.40m × 6.10m ด้วย Homography</p>
+                        <p class="text-[11px] text-slate-400">คำนวณจากระยะจริงบนคอร์ท 13.40m × 6.10m ด้วย Homography + Multi-point Regression ชดเชยแรงต้านอากาศ (*ค่าประมาณบนระนาบ 2D)</p>
+                        <div class="mt-1 flex items-center gap-1.5 text-[10px] text-amber-300/90 font-medium">
+                            <i class="ph-bold ph-video-camera"></i>
+                            <span>💡 แนะนำ: ถ่ายวิดีโอแบบ 120fps หรือ 240fps (Slow-Mo) หากต้องการวัดความเร็วลูกสแมชความเร็วสูงได้อย่างแม่นยำสูงสุด</span>
+                        </div>
                     </div>
                     <span class="text-xs px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-medium">
                         รวม <b id="statTotalSmashes" class="text-white">0</b> ลูกตบ

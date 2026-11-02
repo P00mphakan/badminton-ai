@@ -11,12 +11,55 @@ function trackerNow() {
     return (typeof frameClockMs === 'number' && frameClockMs > 0) ? frameClockMs : performance.now();
 }
 
+/**
+ * One Euro Filter for adaptive jitter-free tracking with low latency.
+ * - Low speed / stationary: cutoff drops to minCutoff (eliminates foot jitter).
+ * - High speed / sprint: cutoff increases proportionally to speed via beta (zero lag).
+ */
+class OneEuroFilter {
+    constructor(freq = 30, minCutoff = 0.8, beta = 0.010, dCutoff = 1.0) {
+        this.freq = freq;
+        this.minCutoff = minCutoff;
+        this.beta = beta;
+        this.dCutoff = dCutoff;
+        this.x = null;
+        this.dx = 0;
+    }
+    alpha(cutoff) {
+        const te = 1.0 / this.freq;
+        const tau = 1.0 / (2 * Math.PI * cutoff);
+        return 1.0 / (1.0 + tau / te);
+    }
+    filter(val, dt) {
+        if (!isFinite(val)) return val;
+        if (dt && dt > 0) this.freq = 1.0 / dt;
+        if (this.x === null || !isFinite(this.x)) {
+            this.x = val;
+            return val;
+        }
+        const dVal = (val - this.x) * this.freq;
+        const edx = this.alpha(this.dCutoff);
+        this.dx = this.dx + edx * (dVal - this.dx);
+        const cutoff = this.minCutoff + this.beta * Math.abs(this.dx);
+        const a = this.alpha(cutoff);
+        this.x = this.x + a * (val - this.x);
+        return this.x;
+    }
+    reset() {
+        this.x = null;
+        this.dx = 0;
+    }
+}
+
 function resetShuttleTracker() {
     shuttleTrack = [];
     activeShot = null;
     pendingRallyEnd = null;
     shuttle.detected = false;
     shuttle.trail = [];
+    if (typeof shuttleSpeedCalc !== 'undefined' && shuttleSpeedCalc.reset) {
+        shuttleSpeedCalc.reset();
+    }
 }
 
 async function initPoseDetectionModel() {
@@ -198,20 +241,19 @@ function evaluatePoseCandidate(pose, crop) {
     };
     const playerH = Math.max(0.06, box.yMax - box.yMin);
 
-    // Foot contact point: must contact the court floor mat at the shoe soles (not up at the ankle bone/knees)
-    // 1. Ankles (if visible and confident)
-    const ankles = ['left_ankle', 'right_ankle'].map(get).filter(k => k && k.score >= 0.16);
+    // Foot contact point: use ankle mid-point and lowest point (max Y) contacting court floor
+    const leftAnkle = get('left_ankle');
+    const rightAnkle = get('right_ankle');
+    const confidentAnkles = [leftAnkle, rightAnkle].filter(k => k && k.score >= 0.16);
     let footX, footY;
-    if (ankles.length) {
-        footX = ankles.reduce((a, k) => a + k.x, 0) / ankles.length;
-        const maxAnkleY = Math.max(...ankles.map(k => k.y));
-        const knees = ['left_knee', 'right_knee'].map(get).filter(k => k && k.score >= 0.16);
-        const ankleToKnee = knees.length ? (maxAnkleY - (knees.reduce((a, k) => a + k.y, 0) / knees.length)) : 0;
-        // Shift lower by sole offset so the tracker ring sits directly on the court mat under the shoe soles
-        const soleOffset = ankleToKnee > 0.02 ? ankleToKnee * 0.22 : playerH * 0.055;
-        footY = Math.min(1.0, maxAnkleY + soleOffset);
+    if (confidentAnkles.length === 2) {
+        footX = (leftAnkle.x + rightAnkle.x) / 2;
+        footY = Math.max(leftAnkle.y, rightAnkle.y); // จุดที่ต่ำสุดคือจุดแตะพื้น
+    } else if (confidentAnkles.length === 1) {
+        footX = confidentAnkles[0].x;
+        footY = confidentAnkles[0].y;
     } else {
-        // 2. Knees + Hips extrapolation
+        // 2. Knees + Hips fallback when ankles are occluded (e.g. by net tape)
         const knees = ['left_knee', 'right_knee'].map(get).filter(k => k && k.score >= 0.14);
         const hips = ['left_hip', 'right_hip'].map(get).filter(k => k && k.score >= 0.14);
         if (knees.length && hips.length) {
@@ -219,11 +261,8 @@ function evaluatePoseCandidate(pose, crop) {
             const hipY = hips.reduce((a, k) => a + k.y, 0) / hips.length;
             footX = knees.reduce((a, k) => a + k.x, 0) / knees.length;
             const thighH = Math.max(0.03, kneeY - hipY);
-            // Lower leg + shoe sole length is ~1.18x thigh length
             footY = Math.min(1.0, kneeY + thighH * 1.18);
         } else if (hips.length) {
-            // 3. Net Occlusion: Far court players behind badminton net tape/mesh
-            // Human anatomy: Hip-to-floor length is approx 1.30 - 1.40x torso length
             const shoulders = ['left_shoulder', 'right_shoulder'].map(get).filter(k => k && k.score >= 0.14);
             const hipY = hips.reduce((a, k) => a + k.y, 0) / hips.length;
             footX = hips.reduce((a, k) => a + k.x, 0) / hips.length;
@@ -249,20 +288,23 @@ function evaluatePoseCandidate(pose, crop) {
         : ((corners.netL.y + corners.netR.y) / 2 + 0.08);
 
     // Team assignment:
-    // Far Court (Team A): court depth v <= 0.50 (or screen feet behind netBaseY)
-    // Near Court (Team B): court depth v > 0.50 (or screen feet in front of netBaseY)
+    // Far Court (Team A): court depth Y <= 6.70m (v <= 0.50)
+    // Near Court (Team B): court depth Y > 6.70m (v > 0.50)
     let team;
     if (uv && isFinite(uv.y)) {
-        team = (uv.y <= 0.51) ? 'A' : 'B';
+        team = (uv.y <= 0.50) ? 'A' : 'B';
     } else {
         team = (footY < netBaseY) ? 'A' : 'B';
     }
 
-    // In-court gating:
-    // Players regularly jump behind the baseline (especially Far Court receives) and dive into tramlines.
-    // Tolerate lateral displacement (tolU = 0.45) and depth displacement (tolV = 0.65) so players never drop lock.
+    // In-court gating & Audience rejection:
+    // Court is 6.10m x 13.40m.
+    // Cut off spectators/judges standing outside court (margin: max 1.2m sideways, 1.5m behind baselines)
+    // In normalized court coordinates:
+    // tolU = 1.20 / 6.10 = 0.20
+    // tolV = 1.50 / 13.40 = 0.11
     if (ShuttleCV.isCourtTrusted() && uv && isFinite(uv.x) && isFinite(uv.y)) {
-        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.45, 0.65);
+        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.20, 0.11);
         if (!inCourt) {
             return { mask: box, player: null };
         }
@@ -357,10 +399,29 @@ function assignCandidatesToSlots(team, cands, now) {
 
 function updatePlayerSlot(slot, c, now) {
     const wasTracked = slot.detected && now - slot.lastSeenMs < 700;
-    const dt = wasTracked ? (now - slot.lastSeenMs) / 1000 : 0;
-    const alpha = 0.55;
-    const newU = wasTracked ? slot.u * (1 - alpha) + c.u * alpha : c.u;
-    const newV = wasTracked ? slot.v * (1 - alpha) + c.v * alpha : c.v;
+    const dt = wasTracked ? (now - slot.lastSeenMs) / 1000 : 0.033;
+
+    // One Euro Filter initialization & filtering (removes foot jitter while maintaining instant sprint response)
+    if (!slot._filterU) {
+        slot._filterU = new OneEuroFilter(30, 0.8, 0.010, 1.0);
+        slot._filterV = new OneEuroFilter(30, 0.8, 0.010, 1.0);
+        slot._filterSX = new OneEuroFilter(30, 0.9, 0.012, 1.0);
+        slot._filterSY = new OneEuroFilter(30, 0.9, 0.012, 1.0);
+    }
+    if (!wasTracked) {
+        slot._filterU.reset();
+        slot._filterV.reset();
+        slot._filterSX.reset();
+        slot._filterSY.reset();
+    }
+
+    const newU = slot._filterU.filter(c.u, dt);
+    const newV = slot._filterV.filter(c.v, dt);
+    const ring = ShuttleCV.courtNormalizedToScreen(newU, newV);
+    const targetSX = (c.footX !== undefined) ? c.footX : ring.x;
+    const targetSY = (c.footY !== undefined) ? c.footY : ring.y;
+    const newScreenX = slot._filterSX.filter(targetSX, dt);
+    const newScreenY = slot._filterSY.filter(targetSY, dt);
 
     // Maintain a rolling 500ms window for noise-resilient speed calculation
     if (!slot._posWindow) slot._posWindow = [];
@@ -415,17 +476,18 @@ function updatePlayerSlot(slot, c, now) {
     }
     if (wrists.length) slot._lastWrist = wrists.reduce((a, k) => (k.y < a.y ? k : a), wrists[0]);
 
-    const ring = ShuttleCV.courtNormalizedToScreen(newU, newV);
     slot.u = newU;
     slot.v = newV;
-    // Lock floor ring and tactical bracket directly to the detected player feet in screen space
-    slot.screenX = (c.footX !== undefined) ? c.footX : ring.x;
-    slot.screenY = (c.footY !== undefined) ? c.footY : ring.y;
+    // Lock floor ring and tactical bracket directly to the filtered player feet in screen space
+    slot.screenX = newScreenX;
+    slot.screenY = newScreenY;
     slot.box = c.box;
     slot.keypoints = c.kps;
     slot.detected = true;
     slot.lastSeenMs = now;
 }
+
+let lastPoseDurationMs = 0;
 
 async function runRealPoseEstimation(videoEl) {
     if (!videoEl || videoEl.readyState < 2) return;
@@ -473,6 +535,7 @@ async function runRealPoseEstimation(videoEl) {
     if (poseCropCanvas.height !== ch) poseCropCanvas.height = ch;
 
     poseInferenceBusy = true;
+    const tStartPose = performance.now();
     try {
         poseCropCtx.drawImage(
             videoEl,
@@ -481,6 +544,7 @@ async function runRealPoseEstimation(videoEl) {
         );
         // maxPoses: 8 ensures background gym spectators do not crowd out active Team A / Team B players
         const poses = await poseDetector.estimatePoses(poseCropCanvas, { maxPoses: 8, flipHorizontal: false });
+        lastPoseDurationMs = performance.now() - tStartPose;
 
         const masks = [];
         const candsA = [];
@@ -562,6 +626,75 @@ if (typeof window !== 'undefined') {
     window.calculateSmashInitialSpeed = calculateSmashInitialSpeed;
     if (window.ShuttleCV) window.ShuttleCV.calculateSmashInitialSpeed = calculateSmashInitialSpeed;
 }
+
+/**
+ * Multi-point Regression Speed Estimator + Aerodynamic Drag Compensation
+ * (Exponential drag back-calculation to initial release speed v0 = v * e^(k * s))
+ */
+const K_DRAG = 9.81 / (6.8 * 6.8);   // ~0.212 1/m (BWF shuttlecock terminal velocity ~6.8 m/s)
+const MAX_KMH = 500;                 // Outlier gate
+
+class ShuttleSpeed {
+    constructor() {
+        this.buf = [];
+        this.hit = null;
+    }
+
+    onHit(p) {
+        this.hit = p; // { X, Y } in meters
+        this.buf = [];
+    }
+
+    push(t, X, Y) {
+        if (!isFinite(t) || !isFinite(X) || !isFinite(Y)) return null;
+        const last = this.buf.length ? this.buf[this.buf.length - 1] : null;
+        if (last) {
+            const dt = t - last.t;
+            const jump = Math.hypot(X - last.X, Y - last.Y);
+            if (dt <= 0.002 || (jump / dt) > (MAX_KMH / 3.6)) return null; // outlier gating
+        }
+        this.buf.push({ t, X, Y });
+        if (this.buf.length > 6) this.buf.shift();
+        return this.estimate();
+    }
+
+    estimate() {
+        const n = this.buf.length;
+        if (n < 3) return null;
+        // linear regression ของ X(t), Y(t) ได้ความเร็วเฉลี่ยที่ทน noise
+        const t0 = this.buf[0].t;
+        let st = 0, sx = 0, sy = 0, stt = 0, stx = 0, sty = 0;
+        for (const p of this.buf) {
+            const t = p.t - t0;
+            st += t; sx += p.X; sy += p.Y; stt += t * t; stx += t * p.X; sty += t * p.Y;
+        }
+        const d = n * stt - st * st;
+        if (Math.abs(d) < 1e-9) return null;
+        const vx = (n * stx - st * sx) / d;
+        const vy = (n * sty - st * sy) / d;
+        const v = Math.hypot(vx, vy);
+
+        // ชดเชยแรงต้าน: ย้อนกลับไปหาความเร็วตอนออกจากไม้ (v0 = v * exp(k * s))
+        const mid = this.buf[Math.floor(n / 2)];
+        const s = this.hit ? Math.hypot(mid.X - this.hit.X, mid.Y - this.hit.Y) : 0;
+        const v0 = v * Math.exp(K_DRAG * s);
+        return {
+            kmh: Math.round(v * 3.6),
+            initialKmh: Math.min(MAX_KMH, Math.round(v0 * 3.6))
+        };
+    }
+
+    reset() {
+        this.buf = [];
+        this.hit = null;
+    }
+}
+const shuttleSpeedCalc = new ShuttleSpeed();
+if (typeof window !== 'undefined') {
+    window.ShuttleSpeed = ShuttleSpeed;
+    window.shuttleSpeedCalc = shuttleSpeedCalc;
+}
+
 const INPAINT_MAX_GAP_MS = 210; // Bridge up to ~5-6 frames of occlusion/blur like InpaintNet
 let shuttleTrack = [];          // [{ sx, sy, t, inpainted }]
 let activeShot = null;          // { hitter, tHit, startU, startV }
@@ -640,6 +773,16 @@ function startShotFromContact(contactPt, nextPt, now, forcedHitter = null) {
         startU: hitter ? hitter.u : null,
         startV: hitter ? hitter.v : null
     };
+
+    // Multi-point regression & aerodynamic drag speed estimator
+    const hitCourt = ShuttleCV.screenToCourtMeters(contactPt.sx, contactPt.sy);
+    shuttleSpeedCalc.onHit({ X: hitCourt.xMeters, Y: hitCourt.yMeters });
+    const contactT = (contactPt.t - lag * 1000) / 1000;
+    shuttleSpeedCalc.push(contactT, hitCourt.xMeters, hitCourt.yMeters);
+    if (nextPt) {
+        const nextCourt = ShuttleCV.screenToCourtMeters(nextPt.sx, nextPt.sy);
+        shuttleSpeedCalc.push(nextPt.t / 1000, nextCourt.xMeters, nextCourt.yMeters);
+    }
     if (hitter) {
         shuttle.lastHitter = hitter.id;
         shuttle.lastHitterTeam = hitter.team;
@@ -703,27 +846,29 @@ function finalizeShot(shot, endU, endV, tEnd, isLanding) {
     const vDrag = smashSpeedKmh / 3.6; // m/s
     if (vDrag <= 0) return;
 
-    // 2. Direct pixel-to-meter velocity from early shuttle track at hitter's depth plane
+    // 2. Linear regression estimator speed with aerodynamic drag compensation
+    const regEst = shuttleSpeedCalc.estimate();
+    let regSpeedMps = (regEst && regEst.initialKmh > 0) ? (regEst.initialKmh / 3.6) : 0;
+
+    // 3. Early segment pixel-to-meter velocity
     const vTrack = measureTrackInitialSpeedMps(shuttleTrack, shot.startV);
-    // If no real track speed was observed on camera, DO NOT invent/hallucinate speed from pure time-of-flight
-    if (vTrack <= 0) return;
 
-    // Trajectory consistency check: time-of-flight vs measured metric speed must align within 1.8x
-    const ratio = Math.max(vDrag, vTrack) / Math.max(0.1, Math.min(vDrag, vTrack));
-    if (ratio > 1.8) return;
-
-    const realPts = shuttleTrack.filter(pt => !pt.inpainted);
-    if (realPts.length < 4) return;
-
-    // 3. Cross-validate both measurements (blends time-of-flight with actual observed pixel velocity)
-    let v0 = (vDrag * 0.55 + vTrack * 0.45);
+    // Blend estimators: regression speed + time-of-flight aerodynamic model
+    let v0;
+    if (regSpeedMps >= 6 && regSpeedMps <= 140) {
+        v0 = vDrag * 0.50 + regSpeedMps * 0.50;
+    } else if (vTrack > 0) {
+        v0 = vDrag * 0.55 + vTrack * 0.45;
+    } else {
+        v0 = vDrag;
+    }
 
     // Controlled wrist boost up to 1.05 only on clear explosive swings
     const wristBoost = Math.min(1.05, 1.0 + Math.max(0, (shot.hitter.wristSpeedPx || 0) - 1.2) * 0.03);
     let kmh = Math.round(v0 * 3.6 * wristBoost);
 
-    // Realistic club / competitive single-camera bounds (rejects physically impossible > 265 km/h spikes)
-    if (kmh < 22 || kmh > 265) return;
+    // Realistic club / competitive single-camera bounds (22 - 350 km/h)
+    if (kmh < 22 || kmh > 350) return;
 
     shuttle.speedKmh = kmh;
     shuttle.lastSpeedAtMs = trackerNow();
@@ -869,6 +1014,14 @@ function processRealShuttleAndRally(cvResult) {
             if (shuttleTrack.length > 120) shuttleTrack.shift();
             const realCount = shuttleTrack.filter(pt => !pt.inpainted).length;
             if (realCount === 3 && !activeShot) onTrackConfirmed(now);
+
+            // Feed metric court coordinates into multi-point regression estimator
+            const courtPt = ShuttleCV.screenToCourtMeters(chosen.x, chosen.y);
+            const est = shuttleSpeedCalc.push(now / 1000, courtPt.xMeters, courtPt.yMeters);
+            if (est && est.kmh > 0) {
+                shuttle.speedKmh = est.initialKmh > 0 ? est.initialKmh : est.kmh;
+                shuttle.lastSpeedAtMs = now;
+            }
         }
     } else if (shuttleTrack.length >= 3 && lastReal && (now - lastReal.t) <= 95) {
         // Real-time InpaintNet prediction for up to ~3 frames during fast motion blur
@@ -939,6 +1092,9 @@ function classifyRealStroke(hitter, speedKmh, distM, startV = null, endV = null,
 }
 
 window.resetPlayerLockState = resetPlayerLockState;
+window.getLastPoseDurationMs = function() {
+    return lastPoseDurationMs;
+};
 window.resetPoseTimestamps = function() {
     lastPoseTimestamp = 0;
 };

@@ -30,11 +30,27 @@
 | `v1.3.5-high-precision-anti-interference-tracker` | ป้องกันจับคน/ลูกจากสนามข้างเคียง 100%, ล็อคเป้าหมายผู้เล่นไม่ให้หลุด Tracker (Coasting 6s), ยกระดับความแม่นยำและความละเอียด 576px ในโหมดคลิป | `git checkout v1.3.5-high-precision-anti-interference-tracker -- .` |
 | `v1.3.6-saved-history-detail-modal-and-account-sync` | แตะเลือกแมตช์ในประวัติดูสถิติ & 2D Heatmap & บทวิเคราะห์ AI ทันที, รองรับเปลี่ยนชื่อแมตช์, แสดงสถานะ Saved ✓ (ไม่ระบุ Supabase), แยกบัญชีผู้ใช้ และซิงค์ข้อมูลจาก Cache เบราว์เซอร์อัตโนมัติ | `git checkout v1.3.6-saved-history-detail-modal-and-account-sync -- .` |
 | `v1.3.7-restore-v131-player-tracker` | นำโค้ด Player Tracker ของ v1.3.1 กลับมาใส่ในเวอร์ชันปัจจุบัน (กว้างเต็มจอ, ขอบเขต tolU/tolV กว้างจับคนติดง่ายไม่หลุด, ระดับวงแหวนแนบพื้นเท้า และคงฟังก์ชัน v1.3.6 ทั้งหมดไว้ครบถ้วน) | `git checkout v1.3.7-restore-v131-player-tracker -- .` |
-| `v1.3.8-draggable-net-and-short-service-handles` | **เวอร์ชันล่าสุด: ปลดล็อคให้ลากปรับจุดใกล้เน็ตได้ 100% (จุดหน้าเน็ต FL/FR/NL/NR และหัวเน็ต Net-L/Net-R), อัปเดต Homography เชื่อมโยงเส้นสนามทันที, เพิ่มเส้นดักจับสัมผัสหน้าเน็ตและขยายเป้าสัมผัส 11% พร้อมวงแหวน Active Focus ขณะลาก)** | `git checkout v1.3.8-draggable-net-and-short-service-handles -- .` |
+| `v1.3.8-draggable-net-and-short-service-handles` | ปลดล็อคให้ลากปรับจุดใกล้เน็ตได้ 100% (จุดหน้าเน็ต FL/FR/NL/NR และหัวเน็ต Net-L/Net-R), อัปเดต Homography เชื่อมโยงเส้นสนามทันที, เพิ่มเส้นดักจับสัมผัสหน้าเน็ตและขยายเป้าสัมผัส 11% พร้อมวงแหวน Active Focus ขณะลาก | `git checkout v1.3.8-draggable-net-and-short-service-handles -- .` |
+| `v1.3.9-accurate-shuttle-speed-and-player-tracker` | **เวอร์ชันล่าสุด: ยกระดับความแม่นยำความเร็วลูกและ Player Tracker ตามแผน FIX_PLAN (One Euro Filter, Multi-point Regression Speed, Aerodynamic Drag v0, requestVideoFrameCallback, Court localStorage Persistence, Debug Overlay Key 'D', และ Export CSV)** | `git checkout v1.3.9-accurate-shuttle-speed-and-player-tracker -- .` |
 
 ---
 
 ## 🚀 รายการบันทึกการแก้ไขตามเวอร์ชัน
+
+### [v1.3.9-accurate-shuttle-speed-and-player-tracker] - 2026-11-03
+- **Phase 1 (System Audit):** จัดทำเอกสาร `AUDIT.md` ตรวจสอบและระบุพิกัดโค้ดอย่างละเอียด 8 หัวข้อสำคัญ
+- **Phase 2 (Exact Frame Timing):** ใช้ `video.requestVideoFrameCallback` + `meta.mediaTime` เพื่อคำนวณเวลา $dt$ ระดับฮาร์ดแวร์ ป้องกันค่าความเร็วผิดเพี้ยนจากคลิปวิดีโอมือถือประเภท VFR (Variable Frame Rate)
+- **Phase 3 (Court Homography & Persistence):** บันทึกการคาลิเบรตจุดสนาม 4 มุมลง `localStorage` อัตโนมัติ (`shuttlepro_court_corners`) พร้อมระบบโหลดซ้ำเมื่อเปิดแอปใหม่
+- **Phase 4 (Multi-point Regression & Aerodynamic Drag):** ติดตั้งคลาส `ShuttleSpeed` เก็บประวัติจุดพิกัดสนามจริง $X, Y$ ทำ Linear Regression ตัด Noise สัญญาณรบกวน พร้อมชดเชยแรงต้านอากาศย้อนหาความเร็วต้น $v_0 = v \cdot e^{k \cdot s}$ ($k \approx 0.212\text{ m}^{-1}$) และ Outlier Gating กรองค่า $> 500\text{ km/h}$
+- **Phase 5 (Shuttle Detection & High-Speed Tip):** เพิ่มคำแนะนำและป้ายแจ้งผู้ใช้ให้บันทึกวิดีโอแบบ 120fps หรือ 240fps (Slow-Mo) หากต้องการวัดความเร็วลูกสแมชความเร็วสูง
+- **Phase 6 (Smooth Player Tracking & Net Lock):**
+  - เปลี่ยนจุดวัดตำแหน่งผู้เล่นเป็นจุดกึ่งกลางข้อเท้าและจุดแตะพื้นคอร์ทจริง `(left_ankle + right_ankle)/2` และ `max(left_ankle.y, right_ankle.y)`
+  - ติดตั้ง `OneEuroFilter` (minCutoff=0.8, beta=0.010) แยกอิสระ 4 แกนต่อผู้เล่น ล็อคเท้านิ่งสนิทเมื่อยืนประจำตำแหน่ง และวิ่งตามทันทีโดยไม่มี Lag
+  - ล็อกแดนกติกาสนาม Team A ($Y \le 6.70$m) และ Team B ($Y > 6.70$m) พร้อม Audience Gating ตัดคนดูและกรรมการข้างสนามที่ยืนห่างเกิน 1.2m ด้านข้าง / 1.5m ด้านหลัง
+- **Phase 7 (Decoupled Performance):** Render Loop 60 FPS แยกอิสระโดยไม่บล็อกหรือ await inference
+- **Phase 8 (Debug Diagnostics & CSV Export):**
+  - เพิ่ม Debug Overlay กดปุ่ม `D` เพื่อเปิด/ปิดหน้าต่างตรวจสอบ FPS, Inference Latency, Frame dt, Shuttle Peak Speed, และพิกัดผู้เล่น
+  - เพิ่มปุ่มและฟังก์ชันส่งออก `exportReportCSV()` ดาวน์โหลดไฟล์ `.csv` สำหรับวิเคราะห์ข้อมูลใน Excel / Data Science
 
 ### [v1.3.8-draggable-net-and-short-service-handles] - 2026-11-03
 - **ปลดล็อคการลากปรับจุดใกล้เน็ต (Interactive Draggable Front-of-Net & Net Post Handles):**

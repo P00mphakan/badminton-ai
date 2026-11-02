@@ -29,6 +29,30 @@ let calibPausedVideo = false;
 let uploadedVideoDurationFixed = 0;
 let frameClockMs = 0;
 let lastProcessedMediaTime = -1;
+let rvfcHandle = null;
+let lastRvfcMediaTime = -1;
+let hasNewRvfcFrame = false;
+
+function startVideoFrameCallbackLoop() {
+    if (!webcamVideo || typeof webcamVideo.requestVideoFrameCallback !== 'function') return;
+    if (rvfcHandle) return;
+
+    function onVideoFrame(now, meta) {
+        lastRvfcMediaTime = meta.mediaTime;
+        hasNewRvfcFrame = true;
+        if (webcamVideo && typeof webcamVideo.requestVideoFrameCallback === 'function') {
+            rvfcHandle = webcamVideo.requestVideoFrameCallback(onVideoFrame);
+        } else {
+            rvfcHandle = null;
+        }
+    }
+    rvfcHandle = webcamVideo.requestVideoFrameCallback(onVideoFrame);
+}
+
+if (webcamVideo) {
+    webcamVideo.addEventListener('play', startVideoFrameCallbackLoop);
+    webcamVideo.addEventListener('loadedmetadata', startVideoFrameCallbackLoop);
+}
 
 function getSafeVideoDuration() {
     if (!webcamVideo) return 0;
@@ -1756,8 +1780,16 @@ function renderLiveScene() {
         liveCtx.drawImage(webcamVideo, rx, ry, rw, rh);
     }
 
-    const mt = webcamVideo.currentTime;
-    const isNewFrame = !isUploadedVideoActive || mt !== lastProcessedMediaTime;
+    const hasRvfc = typeof webcamVideo.requestVideoFrameCallback === 'function';
+    if (hasRvfc && !rvfcHandle && !webcamVideo.paused) {
+        startVideoFrameCallbackLoop();
+    }
+    const mt = (hasRvfc && lastRvfcMediaTime >= 0) ? lastRvfcMediaTime : webcamVideo.currentTime;
+    const isNewFrame = hasRvfc 
+        ? (hasNewRvfcFrame || !isUploadedVideoActive) 
+        : (!isUploadedVideoActive || mt !== lastProcessedMediaTime);
+    hasNewRvfcFrame = false;
+
     const isDraggingCalib = isCalibratingCourt && !!draggingHandleKey;
     if (isUploadedVideoActive && (mt < lastProcessedMediaTime || mt - lastProcessedMediaTime > 0.5)) {
         if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
@@ -1813,6 +1845,9 @@ function renderLiveScene() {
 
     if (isCalibratingCourt) {
         drawCalibrationHandlesAndLoupe(liveCtx, rw, rh);
+    }
+    if (isDebugOverlayEnabled) {
+        drawDebugOverlayHUD(liveCtx, rw, rh);
     }
     liveCtx.restore();
 }
@@ -2293,11 +2328,11 @@ function drawRealShuttleAndHawkeye(ctx, w, h) {
         ctx.fill();
 
         ctx.shadowBlur = 0;
-        ctx.font = 'bold 11px monospace';
+        ctx.font = 'bold 11px Prompt, monospace, sans-serif';
         ctx.fillStyle = sColor;
         const nowMs = (typeof trackerNow === 'function') ? trackerNow() : performance.now();
         if (shuttle.speedKmh > 0 && shuttle.lastSpeedAtMs && (nowMs - shuttle.lastSpeedAtMs < 2000)) {
-            ctx.fillText(`${shuttle.speedKmh} km/h`, sx + 12, sy + 4);
+            ctx.fillText(`~${shuttle.speedKmh} km/h (ความเร็วประมาณ)`, sx + 12, sy + 4);
         }
         ctx.restore();
     }
@@ -2342,6 +2377,67 @@ function drawRealShuttleAndHawkeye(ctx, w, h) {
     }
 }
 
+let isDebugOverlayEnabled = false;
+let lastFrameDtMs = 16.7;
+let lastFrameTimestamp = performance.now();
+
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'd' || e.key === 'D') {
+        const tag = e.target?.tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+            isDebugOverlayEnabled = !isDebugOverlayEnabled;
+            if (typeof showToast === 'function') {
+                showToast(isDebugOverlayEnabled ? '🛠️ เปิด Debug Diagnostics Overlay (กด D เพื่อปิด)' : '🛠️ ปิด Debug Overlay');
+            }
+        }
+    }
+});
+
+function drawDebugOverlayHUD(ctx, w, h) {
+    ctx.save();
+    const pad = 10;
+    const boxW = Math.min(270, w - 20);
+    const boxH = 150;
+    const boxX = pad;
+    const boxY = pad;
+
+    ctx.fillStyle = 'rgba(9, 13, 22, 0.90)';
+    ctx.beginPath();
+    ctx.roundRect(boxX, boxY, boxW, boxH, 10);
+    ctx.fill();
+    ctx.strokeStyle = '#06b6d4';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    ctx.font = 'bold 11px Prompt, monospace, sans-serif';
+    ctx.fillStyle = '#22d3ee';
+    ctx.fillText('⚡ DIAGNOSTICS OVERLAY [Key D]', boxX + 10, boxY + 18);
+
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#94a3b8';
+
+    const poseMs = typeof getLastPoseDurationMs === 'function' ? getLastPoseDurationMs() : 0;
+    const regKmh = (typeof shuttleSpeedCalc !== 'undefined' && shuttleSpeedCalc.estimate) ? (shuttleSpeedCalc.estimate()?.kmh || 0) : 0;
+
+    const lines = [
+        `FPS: ${currentFps} fps | dt: ${lastFrameDtMs.toFixed(1)} ms`,
+        `MoveNet MultiPose: ${poseMs.toFixed(1)} ms`,
+        `Shuttle: ${shuttle.detected ? 'TRACKED' : 'SEARCH'} | Raw/Reg: ${regKmh} km/h`,
+        `Shuttle Peak (Drag v0): ${shuttle.speedKmh} km/h | Pts: ${typeof shuttleTrack !== 'undefined' ? shuttleTrack.length : 0}`,
+        `Court: ${ShuttleCV.getCourtLocked() ? 'LOCKED' : 'CALIB'} | Conf: ${ShuttleCV.getCourtConfidence()}%`,
+        `A1: u=${players.A1.u.toFixed(2)}, v=${players.A1.v.toFixed(2)} | ${players.A1.currentSpeedKmh} km/h`,
+        `B1: u=${players.B1.u.toFixed(2)}, v=${players.B1.v.toFixed(2)} | ${players.B1.currentSpeedKmh} km/h`
+    ];
+
+    let lineY = boxY + 34;
+    lines.forEach(text => {
+        ctx.fillText(text, boxX + 10, lineY);
+        lineY += 15;
+    });
+
+    ctx.restore();
+}
+
 function updateCVConfidenceBadges() {
     const courtConfEl = document.getElementById('cvCourtConfText');
     const netConfEl = document.getElementById('cvNetConfText');
@@ -2380,6 +2476,8 @@ function animateLoop() {
     requestAnimationFrame(animateLoop);
     frameCount++;
     const now = performance.now();
+    lastFrameDtMs = now - lastFrameTimestamp;
+    lastFrameTimestamp = now;
     if (now - lastFpsUpdate >= 1000) {
         currentFps = frameCount;
         frameCount = 0;

@@ -2,4 +2,5 @@ js/env.local.js
 .DS_Store
 badme-ai test clip/
 .vercel
+repomix-output.xml
 

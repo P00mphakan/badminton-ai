@@ -284,8 +284,35 @@ window.ShuttleCV = (function () {
             courtCorners.netL = { x: midL.x, y: midL.y - netHeightNorm };
             courtCorners.netR = { x: midR.x, y: midR.y - netHeightNorm };
         }
+        saveCourtCornersStorage();
     }
 
+    function saveCourtCornersStorage() {
+        try {
+            localStorage.setItem('shuttlepro_court_corners', JSON.stringify({
+                corners: courtCorners,
+                mode: calibrationMode,
+                isManuallyEdited
+            }));
+        } catch (e) {}
+    }
+
+    function loadCourtCornersStorage() {
+        try {
+            const raw = localStorage.getItem('shuttlepro_court_corners');
+            if (!raw) return false;
+            const data = JSON.parse(raw);
+            if (data && data.corners) {
+                Object.assign(courtCorners, data.corners);
+                if (data.mode) calibrationMode = data.mode;
+                if (data.isManuallyEdited) isManuallyEdited = true;
+                return true;
+            }
+        } catch (e) {}
+        return false;
+    }
+
+    loadCourtCornersStorage();
     updateHomographyFromCorners();
 
     /****************************************************************
@@ -1223,7 +1250,10 @@ window.ShuttleCV = (function () {
                     courtCorners.netR = { x: 0.740, y: 0.520 };
                 }
             }
-            if (force) isManuallyEdited = false;
+            if (force) {
+                isManuallyEdited = false;
+                try { localStorage.removeItem('shuttlepro_court_corners'); } catch (e) {}
+            }
             updateHomographyFromCorners();
         },
         setCalibrationMode: (mode, isPortrait = true) => {

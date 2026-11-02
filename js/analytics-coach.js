@@ -2010,6 +2010,77 @@ function exportReportJSON() {
     showToast(`ส่งออก Match Data JSON "${matchTitle}" สำเร็จ`);
 }
 
+function exportReportCSV() {
+    const headers = [
+        'Time_Sec',
+        'Shuttle_ScreenX',
+        'Shuttle_ScreenY',
+        'Shuttle_CourtU',
+        'Shuttle_CourtV',
+        'Shuttle_Speed_KMH',
+        'Shot_Type',
+        'Hitter_ID',
+        'PlayerA1_CourtU',
+        'PlayerA1_CourtV',
+        'PlayerA1_Speed_KMH',
+        'PlayerB1_CourtU',
+        'PlayerB1_CourtV',
+        'PlayerB1_Speed_KMH'
+    ];
+
+    const rows = [];
+    if (shotHistory && shotHistory.length > 0) {
+        shotHistory.forEach(s => {
+            rows.push([
+                s.time || 0,
+                (s.screenX ?? 0.5).toFixed(4),
+                (s.screenY ?? 0.5).toFixed(4),
+                (s.u ?? 0.5).toFixed(4),
+                (s.v ?? 0.5).toFixed(4),
+                s.speedKmh || 0,
+                `"${(s.type || '').replace(/"/g, '""')}"`,
+                s.hitter || '-',
+                (players.A1.u ?? 0).toFixed(4),
+                (players.A1.v ?? 0).toFixed(4),
+                players.A1.currentSpeedKmh || 0,
+                (players.B1.u ?? 0).toFixed(4),
+                (players.B1.v ?? 0).toFixed(4),
+                players.B1.currentSpeedKmh || 0
+            ].join(','));
+        });
+    }
+
+    if (rows.length === 0) {
+        rows.push([
+            matchSeconds,
+            (shuttle.screenX ?? 0.5).toFixed(4),
+            (shuttle.screenY ?? 0.5).toFixed(4),
+            (shuttle.u ?? 0.5).toFixed(4),
+            (shuttle.v ?? 0.5).toFixed(4),
+            shuttle.speedKmh || 0,
+            `"${shuttle.shotType || 'Rally'}"`,
+            shuttle.lastHitter || '-',
+            players.A1.u.toFixed(4),
+            players.A1.v.toFixed(4),
+            players.A1.currentSpeedKmh,
+            players.B1.u.toFixed(4),
+            players.B1.v.toFixed(4),
+            players.B1.currentSpeedKmh
+        ].join(','));
+    }
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    const safeName = (matchTitle || 'match').replace(/[^a-zA-Z0-9ก-๙_-]/g, '_');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `shuttlepro-${safeName}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`ส่งออก Match Data CSV "${matchTitle}" สำเร็จ`);
+}
+
 /********************************************************************
  * APP STORE / PLAY STORE STYLE COMMUNITY REVIEWS & USER FEEDBACK
  * (Zero Simulated Reviews, Identified & Anonymous Modes, Public Feed)
@@ -2527,5 +2598,7 @@ window.openAuthModalForSignIn = openAuthModalForSignIn;
 window.autoSyncCachedMatchesToAccount = autoSyncCachedMatchesToAccount;
 window.saveCurrentMatchRecord = saveCurrentMatchRecord;
 window.fetchCloudMatches = fetchCloudMatches;
+window.exportReportJSON = exportReportJSON;
+window.exportReportCSV = exportReportCSV;
 window.exportSavedMatchById = exportSavedMatchById;
 window.deleteSavedMatchById = deleteSavedMatchById;
