@@ -2112,12 +2112,12 @@ function drawRealDetectedPlayers(ctx, w, h) {
         }
 
         // Authentic Neon Glowing Floor Tracker Ring (matches reference broadcast graphic)
-        // Perspective scale factor based on court depth
-        const depthScale = 0.45 + Math.max(0, Math.min(1, p.v)) * 0.75;
-        const ringRx = 38 * depthScale;
-        const ringRy = ringRx * 0.35;
+        // Perspective scale factor based on court depth (generously sized for athletic stance)
+        const depthScale = 0.50 + Math.max(0, Math.min(1, p.v)) * 0.75;
+        const ringRx = 50 * depthScale;
+        const ringRy = ringRx * 0.36;
         // Align ring firmly to the court floor plane under the shoe soles (never hovering at knee height)
-        const floorY = py + ringRy * 0.20;
+        const floorY = py + ringRy * 0.18;
 
         const isLocked = p.isLocked || (typeof isPlayersLocked !== 'undefined' && isPlayersLocked);
         const neonColor = p.color || '#00ff9d';
@@ -2137,9 +2137,9 @@ function drawRealDetectedPlayers(ctx, w, h) {
         // 2. Layer 1: Wide Diffuse Neon Bloom (Atmospheric glow aura)
         ctx.save();
         ctx.shadowColor = neonColor;
-        ctx.shadowBlur = 24 * depthScale;
+        ctx.shadowBlur = 26 * depthScale;
         ctx.strokeStyle = neonColor;
-        ctx.lineWidth = 4.5 * depthScale;
+        ctx.lineWidth = 4.8 * depthScale;
         ctx.globalAlpha = 0.85;
         ctx.beginPath();
         ctx.ellipse(px, floorY, ringRx, ringRy, 0, 0, Math.PI * 2);
@@ -2151,7 +2151,7 @@ function drawRealDetectedPlayers(ctx, w, h) {
         ctx.shadowColor = neonColor;
         ctx.shadowBlur = 12 * depthScale;
         ctx.strokeStyle = neonColor;
-        ctx.lineWidth = 2.8 * depthScale;
+        ctx.lineWidth = 3.0 * depthScale;
         ctx.globalAlpha = 0.95;
         ctx.beginPath();
         ctx.ellipse(px, floorY, ringRx, ringRy, 0, 0, Math.PI * 2);
@@ -2163,29 +2163,12 @@ function drawRealDetectedPlayers(ctx, w, h) {
         ctx.shadowColor = '#ffffff';
         ctx.shadowBlur = 4 * depthScale;
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.4 * depthScale;
+        ctx.lineWidth = 1.5 * depthScale;
         ctx.globalAlpha = 0.92;
         ctx.beginPath();
         ctx.ellipse(px, floorY, ringRx, ringRy, 0, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
-
-        // 5. Target Lock Crosshair Reticle (electric ticks when locked)
-        if (isLocked) {
-            ctx.save();
-            ctx.shadowColor = neonColor;
-            ctx.shadowBlur = 8;
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1.8 * depthScale;
-            const tick = 8 * depthScale;
-            ctx.beginPath();
-            ctx.moveTo(px, floorY - ringRy - tick); ctx.lineTo(px, floorY - ringRy + 2);
-            ctx.moveTo(px, floorY + ringRy + tick); ctx.lineTo(px, floorY + ringRy - 2);
-            ctx.moveTo(px - ringRx - tick, floorY); ctx.lineTo(px - ringRx + 2, floorY);
-            ctx.moveTo(px + ringRx + tick, floorY); ctx.lineTo(px + ringRx - 2, floorY);
-            ctx.stroke();
-            ctx.restore();
-        }
 
         const lockBadge = isLocked ? '🎯 ' : '';
         const label = `${lockBadge}${p.id} • ${p.currentSpeedKmh} km/h`;

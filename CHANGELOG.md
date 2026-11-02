@@ -24,11 +24,18 @@
 | `v1.2.2-court-geometry-and-ui-cleanup` | แก้ไขมิติมุมสนามตรงจุด 100%, แก้กราฟิกมาร์คคนตรงตัว, แก้ปัญหา UI 5 ชั้นทับซ้อน, และปรับปรุงสแกนเส้น | `git checkout v1.2.2-court-geometry-and-ui-cleanup -- .` |
 | `v1.3.0-physics-aerodynamics-tracking-update` | ฟิสิกส์แรงต้านอากาศ (Aerodynamic Drag Model), Spatial Gate Filter & Play Volume Box, ป้องกันเส้นบิดเบี้ยวด้วย orderFourCorners อัตโนมัติบน pointerup, และล็อก Letterbox Render | `git checkout v1.3.0-physics-aerodynamics-tracking-update -- .` |
 | `v1.3.1-fix-player-ring-and-target-lock` | ลดระดับวงแหวน Tracker ลงติดพื้นสนามใต้พื้นรองเท้า (Floor Mat Alignment) และแก้ไข Team Separation / In-Court Gating ให้ล็อคเป้าผู้เล่นครบ 4 คน (A1, A2, B1, B2) ได้แม่นยำ ไม่หลุด | `git checkout v1.3.1-fix-player-ring-and-target-lock -- .` |
-| `v1.3.2-restore-clean-1080p-video-recorder` | **เวอร์ชันล่าสุด: นำปุ่ม Record วิดีโอต้นฉบับ 1080p (Clean Feed แบบไม่มีกราฟิกทับ) กลับมาไว้ที่แถบควบคุมหลักและเมนูตั้งค่า พร้อมระบบบีบอัดความละเอียดสูงประหยัดความจุ (~21 MB/นาที)** | `git checkout v1.3.2-restore-clean-1080p-video-recorder -- .` |
+| `v1.3.2-restore-clean-1080p-video-recorder` | นำปุ่ม Record วิดีโอต้นฉบับ 1080p (Clean Feed แบบไม่มีกราฟิกทับ) กลับมาไว้ที่แถบควบคุมหลักและเมนูตั้งค่า พร้อมระบบบีบอัดความละเอียดสูงประหยัดความจุ (~21 MB/นาที) | `git checkout v1.3.2-restore-clean-1080p-video-recorder -- .` |
+| `v1.3.3-wider-clean-player-ring` | **เวอร์ชันล่าสุด: ขยายขนาดวงแหวน Player Tracker ให้กว้างขึ้นตามท่ายืนแบดมินตัน (~32% wider) และนำขีดเล็งกากบาทออก (Clean Solid Neon Halo)** | `git checkout v1.3.3-wider-clean-player-ring -- .` |
 
 ---
 
 ## 🚀 รายการบันทึกการแก้ไขตามเวอร์ชัน
+
+### [v1.3.3-wider-clean-player-ring] - 2026-11-02
+- **Wider Athletic Floor Ring & Crosshair Removal (`js/live-view.js`):**
+  - ขยายรัศมีวงแหวนเรืองแสงของตัวผู้เล่นให้กว้างขึ้นประมาณ 32% (`ringRx = 50 * depthScale`, `ringRy = ringRx * 0.36`) เพื่อครอบคลุมท่ายืนเตรียมพร้อม (Athletic Ready Stance) ของนักแบดมินตันได้อย่างสมดุลและสวยงาม
+  - นำขีดกากบาท 4 ทิศ (Crosshair Reticle Ticks) ออกทั้งหมดตามคำขอ เหลือเพียงวงแหวนนีออนสไตล์เรืองแสง 3 ชั้น (Floor Wash + Neon Bloom + White-Hot Core) ที่ดูสะอาดตาและไม่รกหน้าจอ
+  - ปรับระดับแกน Y ให้วางแนบสนิทกับเสื่อคอร์ทสีเขียวใต้ฝ่าเท้าผู้เล่นอย่างต่อเนื่อง
 
 ### [v1.3.2-restore-clean-1080p-video-recorder] - 2026-11-02
 - **Clean 1080p Raw Video Recorder UI Restored (`index.html`, `css/styles.css`, `js/live-view.js`):**
