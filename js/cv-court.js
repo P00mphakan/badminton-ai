@@ -81,7 +81,13 @@ window.ShuttleCV = (function () {
         br: { x: 1.120, y: 0.875 }, // Near Baseline Right Corner (u=1, v=1.0) - extends off-screen to right (+12%)
         bl: { x: -0.060, y: 0.865 }, // Near Baseline Left Corner (u=0, v=1.0) - extends off-screen to left (-6%)
         netL: { x: 0.320, y: 0.628 }, // Net Top Tape Left Post
-        netR: { x: 0.772, y: 0.630 }  // Net Top Tape Right Post
+        netR: { x: 0.772, y: 0.630 },  // Net Top Tape Right Post
+        // Front-of-Net Handles (Short Service Lines: Far v=0.3522 & Near v=0.6478)
+        // Solves edge-overflow: Completely within screen viewport, zero baseline obstruction!
+        sfl: { x: 0.355, y: 0.605 }, // Far Short Service Left (เส้นหน้าเน็ตฝั่งไกล-ซ้าย)
+        sfr: { x: 0.730, y: 0.607 }, // Far Short Service Right (เส้นหน้าเน็ตฝั่งไกล-ขวา)
+        snl: { x: 0.280, y: 0.655 }, // Near Short Service Left (เส้นหน้าเน็ตฝั่งใกล้-ซ้าย)
+        snr: { x: 0.816, y: 0.658 }  // Near Short Service Right (เส้นหน้าเน็ตฝั่งใกล้-ขวา)
     };
 
     // 3x3 Homography Matrices:
@@ -177,6 +183,16 @@ window.ShuttleCV = (function () {
     }
 
     function getAnchorRect() {
+        if (calibrationMode === 'front-net') {
+            // Anchored directly on the two Front-of-Net (Short Service) lines (v=0.3522 & v=0.6478)
+            // Completely eliminates out-of-frame boundary issues!
+            return [
+                { x: 0, y: 0.3522 },
+                { x: 1, y: 0.3522 },
+                { x: 1, y: 0.6478 },
+                { x: 0, y: 0.6478 }
+            ];
+        }
         if (calibrationMode === 'service') {
             return [
                 { x: 0, y: 0 },
@@ -195,14 +211,53 @@ window.ShuttleCV = (function () {
 
     function updateHomographyFromCorners() {
         const anchorRect = getAnchorRect();
-        const dstQuad = [
-            courtCorners.tl,
-            courtCorners.tr,
-            courtCorners.br,
-            courtCorners.bl
-        ];
+        let dstQuad;
+        if (calibrationMode === 'front-net') {
+            dstQuad = [
+                courtCorners.sfl,
+                courtCorners.sfr,
+                courtCorners.snr,
+                courtCorners.snl
+            ];
+        } else if (calibrationMode === 'service') {
+            dstQuad = [
+                courtCorners.tl,
+                courtCorners.tr,
+                courtCorners.snr,
+                courtCorners.snl
+            ];
+        } else {
+            dstQuad = [
+                courtCorners.tl,
+                courtCorners.tr,
+                courtCorners.br,
+                courtCorners.bl
+            ];
+        }
+
         H_courtToScreen = computeHomography4Pt(anchorRect, dstQuad);
         H_screenToCourt = invert3x3(H_courtToScreen);
+
+        // Keep all handles synchronized across modes
+        if (calibrationMode === 'front-net') {
+            const tl = projectPoint(H_courtToScreen, 0, 0);
+            const tr = projectPoint(H_courtToScreen, 1, 0);
+            const br = projectPoint(H_courtToScreen, 1, 1.0);
+            const bl = projectPoint(H_courtToScreen, 0, 1.0);
+            courtCorners.tl = { x: tl.x, y: tl.y };
+            courtCorners.tr = { x: tr.x, y: tr.y };
+            courtCorners.br = { x: br.x, y: br.y };
+            courtCorners.bl = { x: bl.x, y: bl.y };
+        } else {
+            const sfl = projectPoint(H_courtToScreen, 0, 0.3522);
+            const sfr = projectPoint(H_courtToScreen, 1, 0.3522);
+            const snl = projectPoint(H_courtToScreen, 0, 0.6478);
+            const snr = projectPoint(H_courtToScreen, 1, 0.6478);
+            courtCorners.sfl = { x: sfl.x, y: sfl.y };
+            courtCorners.sfr = { x: sfr.x, y: sfr.y };
+            courtCorners.snl = { x: snl.x, y: snl.y };
+            courtCorners.snr = { x: snr.x, y: snr.y };
+        }
 
         const midL = projectPoint(H_courtToScreen, 0, 0.5);
         const midR = projectPoint(H_courtToScreen, 1, 0.5);
@@ -983,26 +1038,49 @@ window.ShuttleCV = (function () {
                 if (key === 'netL' || key === 'netR') {
                     courtCorners._customNet = true;
                 }
+                // When dragging a front-of-net handle while in full mode, switch to front-net mode seamlessly
+                if (key.startsWith('s') && calibrationMode === 'full') {
+                    calibrationMode = 'front-net';
+                    const labelEl = document.getElementById('calibModeToggleLabel');
+                    if (labelEl) labelEl.textContent = 'เส้นหน้าเน็ต 2 ฝั่ง';
+                }
                 updateHomographyFromCorners();
             }
         },
         resetCornersDefault: (isPortrait = true, force = false) => {
             if (isManuallyEdited && !force) return;
             courtCorners._customNet = true;
-            if (calibrationMode === 'service') {
+            if (calibrationMode === 'front-net') {
+                if (isPortrait) {
+                    // Front-of-Net (Short Service Lines) mode: 100% in center of video frame, away from top/bottom edges
+                    courtCorners.sfl = { x: 0.355, y: 0.605 }; // Far Short Service L
+                    courtCorners.sfr = { x: 0.730, y: 0.607 }; // Far Short Service R
+                    courtCorners.snl = { x: 0.280, y: 0.655 }; // Near Short Service L
+                    courtCorners.snr = { x: 0.816, y: 0.658 }; // Near Short Service R
+                    courtCorners.netL = { x: 0.320, y: 0.628 };
+                    courtCorners.netR = { x: 0.772, y: 0.630 };
+                } else {
+                    courtCorners.sfl = { x: 0.350, y: 0.490 };
+                    courtCorners.sfr = { x: 0.650, y: 0.490 };
+                    courtCorners.snl = { x: 0.250, y: 0.670 };
+                    courtCorners.snr = { x: 0.750, y: 0.670 };
+                    courtCorners.netL = { x: 0.280, y: 0.540 };
+                    courtCorners.netR = { x: 0.720, y: 0.540 };
+                }
+            } else if (calibrationMode === 'service') {
                 if (isPortrait) {
                     // Near Short Service Line mode: 100% inside visible frame (ideal when near baseline is off-screen)
                     courtCorners.tl = { x: 0.382, y: 0.584 }; // Far Baseline L
                     courtCorners.tr = { x: 0.698, y: 0.586 }; // Far Baseline R
-                    courtCorners.bl = { x: 0.280, y: 0.655 }; // Near Short Service L
-                    courtCorners.br = { x: 0.816, y: 0.658 }; // Near Short Service R
+                    courtCorners.snl = { x: 0.280, y: 0.655 }; // Near Short Service L
+                    courtCorners.snr = { x: 0.816, y: 0.658 }; // Near Short Service R
                     courtCorners.netL = { x: 0.320, y: 0.628 };
                     courtCorners.netR = { x: 0.772, y: 0.630 };
                 } else {
                     courtCorners.tl = { x: 0.380, y: 0.460 };
                     courtCorners.tr = { x: 0.620, y: 0.460 };
-                    courtCorners.bl = { x: 0.240, y: 0.680 };
-                    courtCorners.br = { x: 0.760, y: 0.680 };
+                    courtCorners.snl = { x: 0.240, y: 0.680 };
+                    courtCorners.snr = { x: 0.760, y: 0.680 };
                     courtCorners.netL = { x: 0.280, y: 0.540 };
                     courtCorners.netR = { x: 0.720, y: 0.540 };
                 }
@@ -1028,7 +1106,7 @@ window.ShuttleCV = (function () {
             updateHomographyFromCorners();
         },
         setCalibrationMode: (mode, isPortrait = true) => {
-            if (mode === 'full' || mode === 'service') {
+            if (mode === 'full' || mode === 'service' || mode === 'front-net') {
                 calibrationMode = mode;
                 courtCorners._customNet = false;
                 isManuallyEdited = false;

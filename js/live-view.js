@@ -996,16 +996,28 @@ function triggerAutoSnapCourtCV() {
 function cycleCourtCalibMode() {
     if (!window.ShuttleCV) return;
     const cur = ShuttleCV.getCalibrationMode ? ShuttleCV.getCalibrationMode() : 'full';
-    const nextMode = cur === 'full' ? 'service' : 'full';
+    let nextMode = 'front-net';
+    let label = 'เส้นหน้าเน็ต 2 ฝั่ง';
+    let toast = 'สลับเป็นโหมด: เส้นหน้าเน็ต 2 ฝั่ง (จุดอยู่กลางจอ ไม่ติดขอบเว็บ)';
+
+    if (cur === 'full') {
+        nextMode = 'front-net';
+        label = 'เส้นหน้าเน็ต 2 ฝั่ง';
+        toast = 'สลับเป็นโหมด: เส้นหน้าเน็ต 2 ฝั่ง (ปรับ 4 จุดหน้าเน็ต ไม่ต้องลากเส้นหลัง)';
+    } else if (cur === 'front-net') {
+        nextMode = 'service';
+        label = '8.68m เสิร์ฟสั้นใกล้';
+        toast = 'สลับเป็นโหมด: เสิร์ฟสั้นใกล้ (เส้นหน้าเน็ตล่าง + เส้นหลังบน)';
+    } else {
+        nextMode = 'full';
+        label = '13.4m เต็มสนาม';
+        toast = 'สลับเป็นโหมด: 13.4m เต็มสนาม (4 มุมนอกสุด)';
+    }
+
     ShuttleCV.setCalibrationMode(nextMode, isPortraitViewport);
-    const label = nextMode === 'full' ? '13.4m เต็มสนาม' : '8.68m เสิร์ฟสั้น (คอร์ทล้น)';
     const labelEl = document.getElementById('calibModeToggleLabel');
     if (labelEl) labelEl.textContent = label;
-    if (nextMode === 'service') {
-        showToast('สลับเป็นโหมด: เสิร์ฟสั้นใกล้ (เหมาะเมื่อเส้นหลังฝั่งใกล้ล้นขอบจอ)');
-    } else {
-        showToast('สลับเป็นโหมด: 13.4m เต็มสนาม (รองรับการลากจุดล้นขอบจอ)');
-    }
+    showToast(toast);
 }
 
 function resetCourtCalibToDefault() {
@@ -1171,7 +1183,7 @@ liveCanvas.addEventListener('pointerdown', (e) => {
     if (!isCalibratingCourt) return;
     const pos = getPointerNormPos(e);
     const corners = ShuttleCV.getCorners();
-    const handleKeys = ['tl', 'tr', 'br', 'bl', 'netL', 'netR'];
+    const handleKeys = ['tl', 'tr', 'br', 'bl', 'sfl', 'sfr', 'snl', 'snr', 'netL', 'netR'];
 
     let closestKey = null;
     let minDist = 0.085; // Wide 8.5% touch tolerance for easy fingertip grab
@@ -1804,36 +1816,58 @@ function drawHomographyCourtAndNet(ctx, w, h) {
 
 function drawCalibrationHandlesAndLoupe(ctx, w, h) {
     const corners = ShuttleCV.getCorners();
-    const isServiceMode = ShuttleCV.getCalibrationMode && ShuttleCV.getCalibrationMode() === 'service';
-    const labels = isServiceMode ? {
-        tl: 'เส้นหลังฝั่งไกล-ซ้าย (TL)',
-        tr: 'เส้นหลังฝั่งไกล-ขวา (TR)',
-        br: 'เส้นเสิร์ฟสั้นฝั่งใกล้-ขวา (SR)',
-        bl: 'เส้นเสิร์ฟสั้นฝั่งใกล้-ซ้าย (SL)',
-        netL: 'หัวเน็ทซ้าย (Net-L)',
-        netR: 'หัวเน็ทขวา (Net-R)'
-    } : {
-        tl: 'เส้นหลังฝั่งไกล-ซ้าย (TL)',
-        tr: 'เส้นหลังฝั่งไกล-ขวา (TR)',
-        br: 'เส้นหลังฝั่งใกล้-ขวา (BR)',
-        bl: 'เส้นหลังฝั่งใกล้-ซ้าย (BL)',
-        netL: 'หัวเน็ทซ้าย (Net-L)',
-        netR: 'หัวเน็ทขวา (Net-R)'
-    };
+    const calibMode = ShuttleCV.getCalibrationMode ? ShuttleCV.getCalibrationMode() : 'full';
+
+    let labels = {};
+    let modeBadgeText = '';
+
+    if (calibMode === 'front-net') {
+        labels = {
+            sfl: 'หน้าเน็ตไกล-ซ้าย (FL)',
+            sfr: 'หน้าเน็ตไกล-ขวา (FR)',
+            snl: 'หน้าเน็ตใกล้-ซ้าย (NL)',
+            snr: 'หน้าเน็ตใกล้-ขวา (NR)',
+            netL: 'หัวเน็ทซ้าย (Net-L)',
+            netR: 'หัวเน็ทขวา (Net-R)'
+        };
+        modeBadgeText = 'โหมด: เส้นหน้าเน็ต 2 ฝั่ง • ลาก 4 จุดที่เส้นหน้าเน็ต (ไม่ต้องแตะเส้นหลังสุด)';
+    } else if (calibMode === 'service') {
+        labels = {
+            tl: 'เส้นหลังฝั่งไกล-ซ้าย (TL)',
+            tr: 'เส้นหลังฝั่งไกล-ขวา (TR)',
+            snl: 'หน้าเน็ตใกล้-ซ้าย (NL)',
+            snr: 'หน้าเน็ตใกล้-ขวา (NR)',
+            netL: 'หัวเน็ทซ้าย (Net-L)',
+            netR: 'หัวเน็ทขวา (Net-R)'
+        };
+        modeBadgeText = 'โหมด: เสิร์ฟสั้นใกล้ + เส้นหลังไกล (8.68m)';
+    } else {
+        // full mode: show baseline corners + front-of-net handles so user can grab either!
+        labels = {
+            tl: 'เส้นหลังฝั่งไกล-ซ้าย (TL)',
+            tr: 'เส้นหลังฝั่งไกล-ขวา (TR)',
+            br: 'เส้นหลังฝั่งใกล้-ขวา (BR)',
+            bl: 'เส้นหลังฝั่งใกล้-ซ้าย (BL)',
+            sfl: 'หน้าเน็ตไกล-ซ้าย (FL)',
+            sfr: 'หน้าเน็ตไกล-ขวา (FR)',
+            snl: 'หน้าเน็ตใกล้-ซ้าย (NL)',
+            snr: 'หน้าเน็ตใกล้-ขวา (NR)',
+            netL: 'หัวเน็ทซ้าย (Net-L)',
+            netR: 'หัวเน็ทขวา (Net-R)'
+        };
+        modeBadgeText = 'โหมดเต็มสนาม: ลาก 4 มุมนอก หรือลากจุดเส้นหน้าเน็ต (เขียว) ได้โดยตรง';
+    }
 
     // Mode banner on canvas while calibrating
     ctx.save();
-    const modeBadgeText = isServiceMode
-        ? 'โหมด: เส้นเสิร์ฟสั้น (8.68m) • แตะเมนูเพื่อสลับเป็น 4 มุมนอกสุด (13.4m)'
-        : 'โหมดมาตรฐาน: 4 มุมคอร์ทนอกสุด (13.40m) • ลาก 4 มุมให้ตรงขอบสนามจริง';
-    ctx.fillStyle = 'rgba(9, 13, 22, 0.85)';
+    ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
     ctx.beginPath();
-    ctx.roundRect(w / 2 - 160, 16, 320, 24, 12);
+    ctx.roundRect(w / 2 - 180, 16, 360, 24, 12);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+    ctx.strokeStyle = calibMode === 'front-net' ? 'rgba(52, 211, 153, 0.7)' : 'rgba(251, 191, 36, 0.6)';
     ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.fillStyle = '#fbbf24';
+    ctx.fillStyle = calibMode === 'front-net' ? '#34d399' : '#fbbf24';
     ctx.font = 'bold 10px Prompt, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(modeBadgeText, w / 2, 32);
@@ -1845,7 +1879,8 @@ function drawCalibrationHandlesAndLoupe(ctx, w, h) {
         const px = pt.x * w;
         const py = pt.y * h;
         const isNet = key.startsWith('net');
-        const color = isNet ? '#38bdf8' : '#fbbf24';
+        const isShortService = key.startsWith('s');
+        const color = isNet ? '#38bdf8' : (isShortService ? '#34d399' : '#fbbf24');
 
         const isOffscreen = pt.x < 0.02 || pt.x > 0.98 || pt.y < 0.02 || pt.y > 0.98;
         const padX = 22;
