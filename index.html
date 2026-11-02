@@ -322,40 +322,21 @@
                     </div>
                 </div>
 
-                <!-- ===== BOTTOM-LEFT VERTICAL DOCK (Live • Record • Upload • Hamburger Menu + Collapse/Expand Arrow) ===== -->
-                <div id="floatingBottomDock" class="hud-bottom absolute inset-x-0 z-20 px-2.5 pointer-events-none flex items-end justify-between gap-2">
-                    <!-- Left Edge Expand Arrow Tab (Visible when .dock-vertical-card is collapsed) -->
+                <!-- ===== BOTTOM ACTION DOCK (Hero Match Button + Quick Setup Tools + Video Controls + Floating Calib Bar) ===== -->
+                <div id="floatingBottomDock" class="hud-bottom absolute inset-x-0 z-20 px-2.5 pointer-events-none flex flex-col gap-2">
+                    <!-- Left Edge Expand Arrow Tab (Kept for compatibility with collapse state) -->
                     <button id="btnExpandVerticalDock" onclick="toggleVerticalDockCollapse(false)" class="hidden dock-expand-tab pointer-events-auto" title="แสดงแถบปุ่มควบคุม" aria-label="แสดงแถบปุ่มควบคุม">
                         <span id="collapsedDockRecDot" class="hidden w-2 h-2 rounded-full bg-rose-500 animate-ping mb-1"></span>
                         <i class="ph-bold ph-caret-right text-base text-emerald-300"></i>
                     </button>
 
-                    <!-- Left Vertical 4-Button Column with Low-Opacity Translucent Card + Collapse Arrow -->
-                    <div id="verticalDockCard" class="dock-vertical-card rounded-[22px] p-1.5 flex flex-col items-center gap-1 pointer-events-auto relative">
-                        <button onclick="toggleVerticalDockCollapse(true)" class="dock-collapse-btn" title="ซ่อนแถบปุ่มด้านซ้าย" aria-label="ซ่อนแถบปุ่มด้านซ้าย">
-                            <i class="ph-bold ph-caret-left text-xs"></i>
-                            <span class="text-[8.5px] font-semibold">ซ่อน</span>
-                        </button>
-                        <button id="btnToggleCamera" onclick="toggleWebcam()" class="dock-btn">
-                            <span class="dock-icon !bg-emerald-500/85 !border-emerald-300/40 text-slate-950"><i class="ph-bold ph-video-camera"></i></span>
-                            <span id="cameraBtnText" class="dock-label">Live</span>
-                        </button>
-                        <button id="btnRecordRawVideo" onclick="toggleRawVideoRecording()" class="dock-btn">
-                            <span id="recRawIconWrap" class="dock-icon"><i id="recRawIcon" class="ph-fill ph-record text-rose-400"></i></span>
-                            <span id="recRawLabel" class="dock-label">Record</span>
-                        </button>
-                        <button onclick="triggerVideoUploadSelect()" class="dock-btn">
-                            <span class="dock-icon"><i class="ph-bold ph-upload-simple text-cyan-300"></i></span>
-                            <span class="dock-label">Upload</span>
-                        </button>
-                        <button onclick="toggleMoreSheet()" class="dock-btn" aria-label="เปิดเมนูควบคุม">
-                            <span class="dock-icon"><i class="ph-bold ph-list text-amber-300"></i></span>
-                            <span class="dock-label">เมนู</span>
-                        </button>
+                    <!-- Hidden legacy vertical container placeholder for script references -->
+                    <div id="verticalDockCard" class="hidden">
+                        <button id="btnRecordRawVideo" onclick="toggleRawVideoRecording()"><span id="recRawIconWrap"><i id="recRawIcon"></i></span><span id="recRawLabel"></span></button>
                     </div>
 
-                    <!-- Right / Center Auxiliary Area: Floating Lens Selector, Active Calibration Save Pill & Uploaded Video Seek Bar -->
-                    <div class="flex-1 min-w-0 flex flex-col items-end gap-2">
+                    <!-- Top Auxiliary Layer: Lens selector, Calibration Toolbar, and Video Seek Bar -->
+                    <div class="w-full flex flex-col sm:flex-row items-end sm:items-center justify-between gap-2">
                         <!-- Floating Camera Lens / Zoom Selector Pills (0.5x, 1x, 2x, 5x) -->
                         <div id="cameraLensSelector" class="hidden camera-lens-bar pointer-events-auto">
                             <button onclick="setCameraZoomOrLens(0.5)" id="btnLens05" class="lens-pill" title="0.5x เลนส์มุมกว้างพิเศษ (Ultra Wide)">.5</button>
@@ -364,14 +345,28 @@
                             <button onclick="setCameraZoomOrLens(5.0)" id="btnLens50" class="lens-pill" title="5x ซูมไกล (Super Zoom)">5x</button>
                         </div>
 
-                        <!-- Quick Save Calibration Button (Visible only while dragging court corners) -->
-                        <button id="floatingSaveCalibBtn" onclick="toggleCourtCalibrationMode()" class="hidden pointer-events-auto px-3.5 py-2 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold text-xs shadow-lg shadow-emerald-500/30 flex items-center gap-1.5 animate-bounce">
-                            <i class="ph-fill ph-check-fat text-sm"></i>
-                            <span>บันทึกเส้นสนาม</span>
-                        </button>
+                        <!-- Active Court Calibration Multi-Action Toolbar (Visible only in calibration mode) -->
+                        <div id="courtCalibrationToolbar" class="hidden pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-950/90 backdrop-blur-md px-2.5 py-1.5 rounded-2xl border border-amber-500/40 shadow-xl">
+                            <button id="floatingSaveCalibBtn" onclick="toggleCourtCalibrationMode()" class="px-3 py-1.5 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/30 flex items-center gap-1 hover:bg-emerald-400">
+                                <i class="ph-fill ph-check-fat text-xs"></i>
+                                <span>บันทึกเส้น ✓</span>
+                            </button>
+                            <button id="calibModeToggleBtn" onclick="cycleCourtCalibMode()" class="px-2.5 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold text-xs flex items-center gap-1 hover:bg-amber-500/30">
+                                <i class="ph-bold ph-arrows-clockwise text-xs"></i>
+                                <span>13.4m เต็มสนาม</span>
+                            </button>
+                            <button onclick="resetCourtCalibToDefault()" class="px-2 py-1.5 rounded-xl bg-white/10 text-slate-300 hover:text-white font-semibold text-xs flex items-center gap-1">
+                                <i class="ph-bold ph-arrow-counter-clockwise text-xs"></i>
+                                <span>รีเซ็ต</span>
+                            </button>
+                            <button onclick="triggerAutoSnapCourtCV()" class="px-2 py-1.5 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold text-xs flex items-center gap-1">
+                                <i class="ph-bold ph-scan text-xs"></i>
+                                <span>สแกนเส้น</span>
+                            </button>
+                        </div>
 
                         <!-- Slim video timeline (uploaded clip only) -->
-                        <div id="videoPlaybackControls" class="hidden hud-glass rounded-2xl px-3 py-1.5 w-full max-w-sm pointer-events-auto">
+                        <div id="videoPlaybackControls" class="hidden hud-glass rounded-2xl px-3 py-1.5 w-full max-w-sm pointer-events-auto ml-auto">
                             <div class="flex items-center gap-2">
                                 <span id="uploadedFileName" class="text-[10px] text-slate-300 truncate flex-1 min-w-0">clip.mp4</span>
                                 <button onclick="cycleVideoSpeed()" id="btnVideoSpeed" class="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-bold text-emerald-300">1.0x</button>
@@ -386,15 +381,61 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Bottom Hero Player Bar (Hero Match Button + Quick Setup Tools Bar) -->
+                    <div class="w-full flex flex-col items-center gap-1.5">
+                        <!-- Primary Action: Start/Finish Match & Send to AI Coach -->
+                        <button id="btnHeroMatchAction" onclick="toggleMatchSession()" class="hero-match-btn is-idle w-full max-w-md pointer-events-auto" title="แตะเมื่อเริ่มเล่น เพื่อตรวจจับแต้ม สปีดตบ และตำแหน่งวิ่ง">
+                            <div class="flex items-center gap-2.5 min-w-0">
+                                <div class="hero-icon-bubble shrink-0">
+                                    <i id="heroMatchActionIcon" class="ph-fill ph-play-circle text-xl text-slate-950"></i>
+                                </div>
+                                <div class="text-left min-w-0 flex-1">
+                                    <div class="flex items-center gap-1.5">
+                                        <span id="heroMatchActionText" class="text-xs sm:text-sm font-black tracking-wide leading-tight">เริ่มแมตช์ &amp; วิเคราะห์สด</span>
+                                        <span id="recDot" class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                    </div>
+                                    <div id="heroMatchActionSub" class="text-[9.5px] sm:text-[10px] opacity-85 truncate font-medium">บันทึกวิดีโอ + วิเคราะห์สปีดตบ/แต้มสด</div>
+                                </div>
+                                <div class="text-right shrink-0">
+                                    <span class="text-[9px] px-2 py-0.5 rounded-full bg-slate-950/40 font-mono text-emerald-200">1-TAP AI</span>
+                                </div>
+                            </div>
+                        </button>
+
+                        <!-- Secondary Quick Setup Pills: Camera, Upload, Court, Demo, Menu -->
+                        <div class="pointer-events-auto flex items-center justify-center gap-1 max-w-md w-full overflow-x-auto py-0.5">
+                            <button id="btnToggleCamera" onclick="toggleWebcam()" class="dock-pill-btn" title="เปิด/ปิดกล้องสด">
+                                <i class="ph-bold ph-video-camera text-emerald-400"></i>
+                                <span id="cameraBtnText">Live</span>
+                            </button>
+                            <button onclick="triggerVideoUploadSelect()" class="dock-pill-btn" title="อัปโหลดคลิปจากมือถือ/คอม">
+                                <i class="ph-bold ph-upload-simple text-cyan-300"></i>
+                                <span>คลิป</span>
+                            </button>
+                            <button id="btnCalibrateCourtPill" onclick="toggleCourtCalibrationMode()" class="dock-pill-btn" title="ทาบเส้นสนาม 4 มุม">
+                                <i class="ph-bold ph-crosshair text-amber-300"></i>
+                                <span>ทาบเส้น</span>
+                            </button>
+                            <button onclick="loadDemoBadmintonClip()" class="dock-pill-btn" title="โหลดคลิปตัวอย่าง Demo (IMG_7847 4K)">
+                                <i class="ph-fill ph-play text-purple-300"></i>
+                                <span>Demo 4K</span>
+                            </button>
+                            <button onclick="toggleMoreSheet()" class="dock-pill-btn" title="เปิดเมนูตั้งค่าทั้งหมด" aria-label="เปิดเมนู">
+                                <i class="ph-bold ph-list text-slate-300"></i>
+                                <span>เมนู</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- ===== HAMBURGER MENU CARD (Readable Mobile Card Layout + Touch Swipe Down to Close) ===== -->
+            <!-- ===== HAMBURGER MENU CARD (Organized Chronologically: Setup -> Lines -> Match -> AI Coach) ===== -->
             <div id="moreSheet" class="hidden fixed inset-0 z-40">
                 <div class="absolute inset-0 bg-black/60 backdrop-blur-[2px]" onclick="closeMoreSheet()"></div>
-                <div id="moreSheetPanel" class="sheet-panel absolute inset-x-0 bottom-0 rounded-t-[28px] px-4 pt-2 max-h-[84dvh] overflow-y-auto max-w-lg mx-auto shadow-2xl">
+                <div id="moreSheetPanel" class="sheet-panel absolute inset-x-0 bottom-0 rounded-t-[28px] px-4 pt-2 max-h-[85dvh] overflow-y-auto max-w-lg mx-auto shadow-2xl space-y-2.5">
                     <!-- Drag Handle Area (Swipe Down on Mobile to Dismiss) -->
-                    <div id="moreSheetDragZone" class="pt-1 pb-2.5 cursor-grab active:cursor-grabbing select-none touch-none">
+                    <div id="moreSheetDragZone" class="pt-1 pb-1 cursor-grab active:cursor-grabbing select-none touch-none">
                         <div class="w-12 h-1.5 rounded-full bg-slate-500/80 mx-auto mb-2"></div>
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-2">
@@ -412,55 +453,69 @@
                         </div>
                     </div>
 
-                    <!-- User Account Banner inside Hamburger Menu -->
-                    <div class="sheet-section-card !p-2.5 flex items-center justify-between gap-2 bg-slate-900/95 border border-emerald-500/25">
-                        <div class="flex items-center gap-2.5 min-w-0">
-                            <div class="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-                                <i id="sheetUserIcon" class="ph-fill ph-user-circle text-xl"></i>
-                            </div>
-                            <div class="min-w-0">
-                                <div class="text-[10px] text-emerald-400 font-semibold" id="sheetUserStatusSub">ผู้ใช้งานปัจจุบัน</div>
-                                <div id="sheetAuthLabel" class="text-xs font-bold text-white truncate">ยังไม่ได้เข้าสู่ระบบ</div>
-                            </div>
-                        </div>
-                        <button onclick="closeMoreSheet(); toggleAuthModal()" class="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold shrink-0">
-                            จัดการบัญชี
-                        </button>
-                    </div>
-
-                    <!-- App Store Style Community Reviews Card -->
-                    <div class="sheet-section-card !p-3 bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 border border-amber-500/35 flex items-center justify-between gap-2.5">
-                        <div class="flex items-center gap-2.5 min-w-0">
-                            <div class="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-md shadow-amber-500/20">
-                                <i class="ph-fill ph-star text-lg"></i>
-                            </div>
-                            <div class="min-w-0">
-                                <div class="flex items-center gap-1.5">
-                                    <span class="text-xs font-bold text-white">รีวิว &amp; ข้อเสนอแนะ</span>
-                                    <span class="text-[9.5px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30">Community</span>
+                    <!-- User Account Banner & Community Reviews -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div class="sheet-section-card !p-2.5 flex items-center justify-between gap-2 bg-slate-900/95 border border-emerald-500/25">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <div class="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                                    <i id="sheetUserIcon" class="ph-fill ph-user-circle text-lg"></i>
                                 </div>
-                                <div class="text-[10px] text-slate-400 truncate">App Community Feed • รีวิวและข้อเสนอแนะจริง</div>
+                                <div class="min-w-0">
+                                    <div class="text-[9.5px] text-emerald-400 font-semibold" id="sheetUserStatusSub">ผู้ใช้งานปัจจุบัน</div>
+                                    <div id="sheetAuthLabel" class="text-xs font-bold text-white truncate">ยังไม่ได้เข้าสู่ระบบ</div>
+                                </div>
                             </div>
+                            <button onclick="closeMoreSheet(); toggleAuthModal()" class="px-2.5 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold shrink-0">
+                                จัดการบัญชี
+                            </button>
                         </div>
-                        <button onclick="closeMoreSheet(); switchTab('reviews')" class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shrink-0 flex items-center gap-1 shadow-md shadow-amber-500/20">
-                            <span>เปิดดู</span>
-                            <i class="ph-bold ph-caret-right text-xs"></i>
-                        </button>
+
+                        <div class="sheet-section-card !p-2.5 bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 border border-amber-500/35 flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <div class="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                                    <i class="ph-fill ph-star text-base"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="text-xs font-bold text-white truncate">รีวิว &amp; ข้อเสนอแนะ</div>
+                                    <div class="text-[9.5px] text-slate-400 truncate">App Community Feed</div>
+                                </div>
+                            </div>
+                            <button onclick="closeMoreSheet(); switchTab('reviews')" class="px-2.5 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-bold shrink-0 flex items-center gap-1">
+                                <span>เปิดดู</span>
+                                <i class="ph-bold ph-caret-right text-xs"></i>
+                            </button>
+                        </div>
                     </div>
 
-                    <!-- Camera Lens & Native Sensor Pixels Card -->
+                    <!-- STEP 1: CAMERA & VIDEO SETUP -->
                     <div class="sheet-section-card">
                         <div class="sheet-title justify-between">
                             <span class="flex items-center gap-1.5">
-                                <i class="ph-bold ph-camera text-emerald-400"></i>
-                                <span>เลนส์กล้อง &amp; ความละเอียดเซนเซอร์</span>
+                                <span class="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-[11px] font-black flex items-center justify-center">1</span>
+                                <span class="font-bold text-white text-xs">ขั้นตอนที่ 1 • ตั้งกล้อง &amp; คลิปวิดีโอ</span>
                             </span>
                             <span id="sheetActiveLensBadge" class="text-[10px] font-mono font-semibold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full">1.0x • Native</span>
                         </div>
 
+                        <!-- Source Quick Select -->
+                        <div class="grid grid-cols-3 gap-1.5 mb-2.5 text-center">
+                            <button onclick="closeMoreSheet(); toggleWebcam()" class="sheet-btn !py-2">
+                                <i class="ph-bold ph-video-camera text-emerald-400 text-base"></i>
+                                <span class="text-[11px] font-bold">กล้อง Live</span>
+                            </button>
+                            <button onclick="closeMoreSheet(); triggerVideoUploadSelect()" class="sheet-btn !py-2">
+                                <i class="ph-bold ph-upload-simple text-cyan-300 text-base"></i>
+                                <span class="text-[11px] font-bold">อัปโหลดคลิป</span>
+                            </button>
+                            <button onclick="closeMoreSheet(); loadDemoBadmintonClip()" class="sheet-btn !py-2">
+                                <i class="ph-fill ph-play text-purple-300 text-base"></i>
+                                <span class="text-[11px] font-bold">Demo 4K</span>
+                            </button>
+                        </div>
+
                         <!-- Lens Selection (0.5x, 1x, 2x, 5x) -->
-                        <div class="mb-3">
-                            <div class="text-[11px] text-slate-300 font-semibold mb-1.5 flex items-center justify-between">
+                        <div class="mb-2.5">
+                            <div class="text-[11px] text-slate-300 font-semibold mb-1 flex items-center justify-between">
                                 <span>เลนส์ซูม (Camera Lens / Zoom):</span>
                                 <span id="sheetActiveLensDesc" class="text-slate-400 text-[10px]">เลนส์มาตรฐาน (1.0x)</span>
                             </div>
@@ -484,13 +539,13 @@
                             </div>
                         </div>
 
-                        <!-- Resolution Selection (Native, 1080p, 720p) -->
+                        <!-- Resolution Selection (Native, 1080p, 720p) + Orientation -->
                         <div>
-                            <div class="text-[11px] text-slate-300 font-semibold mb-1.5 flex items-center justify-between">
+                            <div class="text-[11px] text-slate-300 font-semibold mb-1 flex items-center justify-between">
                                 <span>พิกเซลเซนเซอร์ (Camera Sensor Pixels):</span>
                                 <span id="sheetNativeResolutionText" class="text-cyan-300 font-mono text-[10px]">Native อัตโนมัติ</span>
                             </div>
-                            <div class="grid grid-cols-3 gap-1.5 text-center">
+                            <div class="grid grid-cols-3 gap-1.5 text-center mb-2">
                                 <button onclick="setCameraResolutionPreference('native')" id="btnResNative" class="sheet-res-btn is-active">
                                     <span class="text-[11px] font-bold">Native สูงสุด</span>
                                     <span class="text-[9px] opacity-75">ตามสเปกมือถือ</span>
@@ -504,6 +559,15 @@
                                     <span class="text-[9px] opacity-75">ประหยัดพลังงาน</span>
                                 </button>
                             </div>
+                            <div class="flex items-center justify-between gap-2">
+                                <button onclick="cycleCameraOrientation()" class="sheet-btn !flex-row !justify-start !px-3 !py-1.5 flex-1">
+                                    <i class="ph-bold ph-frame-corners text-purple-300 text-base shrink-0"></i>
+                                    <div class="text-left min-w-0">
+                                        <div id="btnOrientationLabel" class="text-xs font-bold text-white leading-tight">มุมมอง: Auto</div>
+                                        <div class="text-[9.5px] text-slate-400 truncate">แตะเพื่อสลับแนวตั้ง/แนวนอน</div>
+                                    </div>
+                                </button>
+                            </div>
                             <div class="mt-2 text-[9.5px] text-slate-400 flex items-center gap-1.5 bg-slate-950/60 p-2 rounded-xl border border-slate-800">
                                 <i class="ph-bold ph-info text-cyan-400 shrink-0"></i>
                                 <span id="sheetCamStatusDetail">พร้อมตรวจจับและใช้ความละเอียดพิกเซลสูงสุดตามสเปกเซนเซอร์ของมือถือ</span>
@@ -511,105 +575,127 @@
                         </div>
                     </div>
 
-                    <!-- Card 1: Court Calibration & Tracking Controls (Consolidated from Dock) -->
+                    <!-- STEP 2: COURT CALIBRATION & HAWKEYE -->
                     <div class="sheet-section-card">
-                        <div class="sheet-title">
-                            <i class="ph-fill ph-crosshair text-amber-400 text-sm"></i>
-                            <span>ตั้งค่าเส้นสนาม &amp; การตรวจจับ AI</span>
+                        <div class="sheet-title justify-between">
+                            <span class="flex items-center gap-1.5">
+                                <span class="w-5 h-5 rounded-full bg-amber-400 text-slate-950 text-[11px] font-black flex items-center justify-center">2</span>
+                                <span class="font-bold text-white text-xs">ขั้นตอนที่ 2 • ทาบเส้นสนาม &amp; Hawkeye</span>
+                            </span>
+                            <span class="text-[10px] text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono">BWF Standard</span>
                         </div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <button id="btnCalibrateCourt" onclick="closeMoreSheet(); toggleCourtCalibrationMode()" class="sheet-btn !flex-row !justify-start !px-3 !py-2.5">
+                        <div class="grid grid-cols-2 gap-2 mb-2.5">
+                            <button id="btnCalibrateCourt" onclick="closeMoreSheet(); toggleCourtCalibrationMode()" class="sheet-btn !flex-row !justify-start !px-3 !py-2">
                                 <i id="calibIcon" class="ph-bold ph-crosshair text-amber-300 text-lg shrink-0"></i>
                                 <div class="text-left min-w-0">
                                     <div id="calibLabel" class="text-xs font-bold text-white leading-tight">ตั้งเส้นสนาม</div>
                                     <div class="text-[10px] text-slate-400 truncate">ลาก 4 มุม + เน็ต (3x)</div>
                                 </div>
                             </button>
-                            <button onclick="closeMoreSheet(); triggerAutoSnapCourtCV()" class="sheet-btn !flex-row !justify-start !px-3 !py-2.5">
-                                <i class="ph-bold ph-scan text-emerald-300 text-lg shrink-0"></i>
+                            <button onclick="cycleCourtCalibMode()" class="sheet-btn !flex-row !justify-start !px-3 !py-2">
+                                <i class="ph-bold ph-arrows-clockwise text-emerald-300 text-lg shrink-0"></i>
+                                <div class="text-left min-w-0">
+                                    <div class="text-xs font-bold text-white leading-tight">สลับโหมดเส้น</div>
+                                    <div class="text-[10px] text-slate-400 truncate">13.4m / 8.68m</div>
+                                </div>
+                            </button>
+                            <button onclick="closeMoreSheet(); triggerAutoSnapCourtCV()" class="sheet-btn !flex-row !justify-start !px-3 !py-2">
+                                <i class="ph-bold ph-scan text-cyan-300 text-lg shrink-0"></i>
                                 <div class="text-left min-w-0">
                                     <div class="text-xs font-bold text-white leading-tight">สแกนเส้นคอร์ท</div>
                                     <div class="text-[10px] text-slate-400 truncate">ดูดเส้นขาวอัตโนมัติ</div>
                                 </div>
                             </button>
-                            <button id="btnPauseResume" onclick="toggleTrackingPause()" class="sheet-btn !flex-row !justify-start !px-3 !py-2.5">
-                                <i id="pauseIcon" class="ph-fill ph-pause text-cyan-300 text-lg shrink-0"></i>
+                            <button onclick="resetCourtCalibToDefault()" class="sheet-btn !flex-row !justify-start !px-3 !py-2">
+                                <i class="ph-bold ph-arrow-counter-clockwise text-rose-300 text-lg shrink-0"></i>
                                 <div class="text-left min-w-0">
-                                    <div id="pauseBtnText" class="text-xs font-bold text-white leading-tight">หยุดชั่วคราว</div>
-                                    <div class="text-[10px] text-slate-400 truncate">พัก/เล่นต่อการจับภาพ</div>
+                                    <div class="text-xs font-bold text-white leading-tight">รีเซ็ตเส้นสนาม</div>
+                                    <div class="text-[10px] text-slate-400 truncate">คืนค่าเริ่มต้นตามมุมมอง</div>
                                 </div>
                             </button>
-                            <button onclick="cycleCameraOrientation()" class="sheet-btn !flex-row !justify-start !px-3 !py-2.5">
-                                <i class="ph-bold ph-frame-corners text-purple-300 text-lg shrink-0"></i>
-                                <div class="text-left min-w-0">
-                                    <div id="btnOrientationLabel" class="text-xs font-bold text-white leading-tight">มุมมอง: Auto</div>
-                                    <div class="text-[10px] text-slate-400 truncate">สลับแนวตั้ง/แนวนอน</div>
-                                </div>
-                            </button>
+                        </div>
+
+                        <!-- Graphic Layers on Canvas -->
+                        <div class="pt-1 border-t border-slate-800">
+                            <div class="text-[10.5px] text-slate-400 font-semibold mb-1.5">เลเยอร์กราฟิกบนสนาม (Overlays):</div>
+                            <div class="grid grid-cols-3 gap-2">
+                                <label class="sheet-toggle"><input type="checkbox" id="chkShowCourtLines" checked class="accent-emerald-500 w-4 h-4"><span>เส้นคอร์ท</span></label>
+                                <label class="sheet-toggle"><input type="checkbox" id="chkShowTrails" checked class="accent-emerald-500 w-4 h-4"><span>เส้นวิ่ง</span></label>
+                                <label class="sheet-toggle"><input type="checkbox" id="chkShowSkeleton" checked class="accent-emerald-500 w-4 h-4"><span>โครงร่าง</span></label>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Card 2: Scoreboard & Umpire -->
+                    <!-- STEP 3: SCOREBOARD & LIVE MATCH -->
                     <div class="sheet-section-card">
                         <div class="sheet-title justify-between">
                             <span class="flex items-center gap-1.5">
-                                <i class="ph-fill ph-trophy text-cyan-400 text-sm"></i>
-                                <span>ปรับสกอร์บอร์ด &amp; กรรมการ</span>
+                                <span class="w-5 h-5 rounded-full bg-cyan-400 text-slate-950 text-[11px] font-black flex items-center justify-center">3</span>
+                                <span class="font-bold text-white text-xs">ขั้นตอนที่ 3 • สกอร์บอร์ด &amp; การแข่งขัน</span>
                             </span>
                             <span id="boardServiceBoxText" class="text-[10px] font-semibold text-amber-300 bg-amber-500/15 px-2 py-0.5 rounded-full">ทีม A เสิร์ฟ</span>
                         </div>
-                        <div class="grid grid-cols-[1fr_1fr_auto] gap-2 mb-2.5">
-                            <div class="sheet-btn !flex-row justify-between !px-3 !py-2">
+
+                        <!-- Big Hero Match Action inside Sheet -->
+                        <button onclick="closeMoreSheet(); toggleMatchSession()" class="sheet-btn !flex-row !justify-center !py-2.5 !bg-gradient-to-r !from-emerald-500/20 !to-teal-500/20 border !border-emerald-500/40 text-emerald-300 font-bold mb-2">
+                            <i class="ph-fill ph-play-circle text-lg"></i>
+                            <span id="sheetMatchSessionText">เริ่มแมตช์ &amp; วิเคราะห์สด</span>
+                        </button>
+
+                        <div class="grid grid-cols-[1fr_1fr_auto] gap-2 mb-2">
+                            <div class="sheet-btn !flex-row justify-between !px-3 !py-1.5">
                                 <span class="text-cyan-300 font-bold text-xs">ทีม A</span>
                                 <div class="flex gap-1.5">
                                     <button onclick="manualAdjustScore('A', -1)" class="score-adj">−</button>
                                     <button onclick="manualAdjustScore('A', 1)" class="score-adj score-adj-plus">+</button>
                                 </div>
                             </div>
-                            <div class="sheet-btn !flex-row justify-between !px-3 !py-2">
+                            <div class="sheet-btn !flex-row justify-between !px-3 !py-1.5">
                                 <span class="text-rose-300 font-bold text-xs">ทีม B</span>
                                 <div class="flex gap-1.5">
                                     <button onclick="manualAdjustScore('B', -1)" class="score-adj">−</button>
                                     <button onclick="manualAdjustScore('B', 1)" class="score-adj score-adj-plus">+</button>
                                 </div>
                             </div>
-                            <button onclick="undoLastPoint()" class="sheet-btn !px-3.5 !py-2"><i class="ph-bold ph-arrow-u-up-left text-amber-300 text-base"></i><span class="text-[11px]">Undo</span></button>
+                            <button onclick="undoLastPoint()" class="sheet-btn !px-3.5 !py-1.5" title="ยกเลิกคะแนนล่าสุด"><i class="ph-bold ph-arrow-u-up-left text-amber-300 text-base"></i><span class="text-[10px]">Undo</span></button>
                         </div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <button onclick="toggleMatchTypeSinglesDoubles()" class="sheet-btn !flex-row !justify-center !py-2">
+                        <div class="grid grid-cols-3 gap-2">
+                            <button onclick="toggleMatchTypeSinglesDoubles()" class="sheet-btn !flex-row !justify-center !py-1.5">
                                 <i class="ph-bold ph-users text-cyan-300 text-base"></i>
                                 <span id="btnMatchFormat">คู่ 6.10m</span>
                             </button>
-                            <button id="btnVoiceReferee" onclick="toggleVoiceReferee()" class="sheet-btn !flex-row !justify-center !py-2">
+                            <button id="btnVoiceReferee" onclick="toggleVoiceReferee()" class="sheet-btn !flex-row !justify-center !py-1.5">
                                 <i class="ph-fill ph-speaker-high text-emerald-300 text-base"></i>
-                                <span>เสียงขานกรรมการ</span>
+                                <span>เสียงขานไทย</span>
+                            </button>
+                            <button id="btnPauseResume" onclick="toggleTrackingPause()" class="sheet-btn !flex-row !justify-center !py-1.5">
+                                <i id="pauseIcon" class="ph-fill ph-pause text-amber-300 text-base"></i>
+                                <span id="pauseBtnText">หยุดชั่วคราว</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Card 3: Graphic Layers -->
-                    <div class="sheet-section-card">
-                        <div class="sheet-title">
-                            <i class="ph-fill ph-stack text-emerald-400 text-sm"></i>
-                            <span>เลเยอร์กราฟิกบนสนาม</span>
-                        </div>
-                        <div class="grid grid-cols-3 gap-2">
-                            <label class="sheet-toggle"><input type="checkbox" id="chkShowCourtLines" checked class="accent-emerald-500 w-4 h-4"><span>เส้นคอร์ท</span></label>
-                            <label class="sheet-toggle"><input type="checkbox" id="chkShowTrails" checked class="accent-emerald-500 w-4 h-4"><span>เส้นวิ่ง</span></label>
-                            <label class="sheet-toggle"><input type="checkbox" id="chkShowSkeleton" checked class="accent-emerald-500 w-4 h-4"><span>โครงร่าง</span></label>
-                        </div>
-                    </div>
-
-                    <!-- Card 4: Match Title, Save & Reset -->
+                    <!-- STEP 4: AI COACH, STATS & EXPORT -->
                     <div class="sheet-section-card !mb-1">
-                        <div class="sheet-title">
-                            <i class="ph-fill ph-floppy-disk text-purple-400 text-sm"></i>
-                            <span>จัดการแมตช์ &amp; บันทึกข้อมูล</span>
+                        <div class="sheet-title justify-between">
+                            <span class="flex items-center gap-1.5">
+                                <span class="w-5 h-5 rounded-full bg-purple-400 text-slate-950 text-[11px] font-black flex items-center justify-center">4</span>
+                                <span class="font-bold text-white text-xs">ขั้นตอนที่ 4 • สรุปสถิติ &amp; โค้ช AI</span>
+                            </span>
+                            <span class="text-[10px] text-purple-300 font-mono">Post-Match</span>
                         </div>
-                        <div class="grid grid-cols-3 gap-2">
-                            <button onclick="closeMoreSheet(); openMatchTitleModal()" class="sheet-btn"><i class="ph-bold ph-pencil-simple text-emerald-300 text-base"></i><span>ตั้งชื่อแมตช์</span></button>
-                            <button onclick="saveCurrentMatchRecord()" class="sheet-btn"><i class="ph-bold ph-cloud-arrow-up text-cyan-300 text-base"></i><span>บันทึกแมตช์</span></button>
-                            <button onclick="startNewMatch()" class="sheet-btn"><i class="ph-bold ph-arrow-counter-clockwise text-rose-300 text-base"></i><span>เริ่มแมตช์ใหม่</span></button>
+
+                        <!-- Direct AI Coach CTA -->
+                        <button onclick="closeMoreSheet(); finishMatchAndSendToCoach()" class="sheet-btn !flex-row !justify-center !py-2.5 !bg-gradient-to-r !from-purple-500/20 !to-indigo-500/20 border !border-purple-500/40 text-purple-300 font-bold mb-2">
+                            <i class="ph-fill ph-robot text-lg"></i>
+                            <span>จบแมตช์ &amp; ส่งวิเคราะห์ที่ โค้ช AI ทันที</span>
+                        </button>
+
+                        <div class="grid grid-cols-4 gap-1.5">
+                            <button onclick="closeMoreSheet(); openMatchTitleModal()" class="sheet-btn !py-2"><i class="ph-bold ph-pencil-simple text-emerald-300 text-base"></i><span class="text-[10px]">ชื่อแมตช์</span></button>
+                            <button onclick="saveCurrentMatchRecord()" class="sheet-btn !py-2"><i class="ph-bold ph-cloud-arrow-up text-cyan-300 text-base"></i><span class="text-[10px]">บันทึกผล</span></button>
+                            <button onclick="exportReportJSON()" class="sheet-btn !py-2"><i class="ph-bold ph-download-simple text-amber-300 text-base"></i><span class="text-[10px]">ส่งออก JSON</span></button>
+                            <button onclick="startNewMatch()" class="sheet-btn !py-2"><i class="ph-bold ph-arrow-counter-clockwise text-rose-300 text-base"></i><span class="text-[10px]">แมตช์ใหม่</span></button>
                         </div>
                     </div>
                 </div>
@@ -1023,12 +1109,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261102a" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261102a"></script>
-    <script src="js/cv-court.js?v=20261102a"></script>
-    <script src="js/pose-tracker.js?v=20261102a"></script>
-    <script src="js/scoreboard.js?v=20261102a"></script>
-    <script src="js/live-view.js?v=20261102a"></script>
-    <script src="js/analytics-coach.js?v=20261102a"></script>
+    <script src="js/env.local.js?v=20261102b" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261102b"></script>
+    <script src="js/cv-court.js?v=20261102b"></script>
+    <script src="js/pose-tracker.js?v=20261102b"></script>
+    <script src="js/scoreboard.js?v=20261102b"></script>
+    <script src="js/live-view.js?v=20261102b"></script>
+    <script src="js/analytics-coach.js?v=20261102b"></script>
 </body>
 </html>

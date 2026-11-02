@@ -18,11 +18,37 @@
 | `v1.0.7-fix-G` | กู้คืนหลังเพิ่ม Safe Markdown & Table Renderer (No XSS) | `git checkout v1.0.7-fix-G -- .` |
 | `v1.0.8-fix-H` | กู้คืนหลังเพิ่ม Data Quality Validation ใน AI JSON & Prompt | `git checkout v1.0.8-fix-H -- .` |
 | `v1.0.9-fix-J` | กู้คืนหลังปรับป้ายชื่อจุดคาลิเบรต (TL, TR, SL, SR, Net-L, Net-R) | `git checkout v1.0.9-fix-J -- .` |
-| `v1.1.0-fieldtest-complete` | **เวอร์ชันเสถียรล่าสุด ผ่านการทดสอบและแก้ปัญหาครบทุกข้อ** | `git checkout v1.1.0-fieldtest-complete -- .` |
+| `v1.1.0-fieldtest-complete` | เวอร์ชันเสถียรหลังแก้ปัญหาจากคลิปทดสอบจริง | `git checkout v1.1.0-fieldtest-complete -- .` |
+| `v1.2.0-court-math-ui-redesign` | **เวอร์ชันเสถียร: แก้ไขคณิตศาสตร์เส้นสนามตรง 100%, แก้บั๊กแอปค้าง, UI Redesign สำหรับนักแบด 1-Tap AI** | `git checkout v1.2.0-court-math-ui-redesign -- .` |
 
 ---
 
 ## 🚀 รายการบันทึกการแก้ไขตามเวอร์ชัน
+
+### [v1.2.0-court-math-ui-redesign] - 2026-11-02
+- **Court Perspective Math (DLT Homography) (`js/cv-court.js`):**
+  - เพิ่มระบบ Dual Calibration Mode: `full` (BWF 13.40m × 6.10m 4 มุมคอร์ทแท้จริง $v=0 \dots 1.0$) และ `service` (8.68m ถึงเส้นเสิร์ฟหน้า $v=0.6478$ สำหรับกล้องมุมต่ำมาก)
+  - แก้ต้นตอเส้นสนามเบี้ยว: รหัสเดิมสมมติให้จุดใกล้คือเส้นเสิร์ฟสั้น แต่ผู้ใช้ลากไปวางที่เส้นหลังจริง ทำให้เกิดการคูณยืด $1.54\times$ และกางออกเป็นพัด
+  - เพิ่ม Horizon Guarding ใน `projectPoint`: ป้องกัน $w \le 1e-4$ หรือพิกัดหารศูนย์ ไม่ให้เกิดค่าอนันต์ทำลาย Canvas 2D engine
+  - ปรับ Default Court Corners ให้ตรงมิติคลิปถ่ายแนวตั้งหลังเส้นสนามทันที (`IMG_7847.MOV` geometry)
+- **Drag Performance & Freezing Fix (`js/live-view.js`):**
+  - แก้บั๊กแอปค้างเมื่อลากจุด: พักการประมวลผล MoveNet Pose & CV Frame-diff ชั่วขณะที่มีการลาก เพื่อมอบ CPU/GPU 100% ให้ UI วาดลื่นไหล 60 FPS
+  - ย้ายการผูก Pointer Event ไปยัง Canvas พร้อมเพิ่ม `lostpointercapture`, `pointercancel` และ Global safety listeners ป้องกัน State ล็อกค้าง
+  - เพิ่ม 3x Magnifier Loupe Guarding: ดัก Boundary Box และ `try/catch` ไม่ให้หลุดเฟรมวิดีโอ
+- **UI/UX Redesign - The Badminton Player Journey (`index.html`, `css/styles.css`):**
+  - **1-Tap Hero Match Button (`#btnHeroMatchAction`):** ปุ่มหลักเริ่มแมตช์/จบแมตช์ เด่นชัด กดง่ายแม้มือเปียกเหงื่อ:
+    - สถานะเตรียมพร้อม (Idle): สีมรกต `▶ เริ่มแมตช์ & วิเคราะห์สด`
+    - สถานะแข่งขัน (Running): สีกุหลาบกระพริบ `⏹ จบแมตช์ & ส่ง AI วิเคราะห์ (00:00)` จบแมตช์แล้วส่งสรุปสถิติตรงเข้าแท็บโค้ช AI ทันทีอัตโนมัติ
+  - **Quick Setup Tools Bar:** แถบปุ่มลัดด้านล่าง `[ Live ]` `[ คลิป ]` `[ ทาบเส้น ]` `[ Demo 4K ]` `[ เมนู ]`
+  - **Court Calibration Toolbar:** เมื่ออยู่ในโหมดทาบเส้น แสดงปุ่มลอย `[ 💾 บันทึกเส้น ✓ ]` `[ 🔄 สลับโหมด 13.4m/8.68m ]` `[ ↺ รีเซ็ต ]` `[ ⚡ สแกนเส้น ]`
+  - **Reorganized 4-Step Hamburger Sheet (`#moreSheetPanel`):** จัดหมวดหมู่ 4 ขั้นตอนตามลำดับการใช้งานจริง:
+    - *ขั้นตอนที่ 1 • ตั้งกล้อง & คลิปวิดีโอ* (Live, Upload, Demo 4K, Lens, Resolution, Orientation)
+    - *ขั้นตอนที่ 2 • ทาบเส้นสนาม & Hawkeye* (ตั้งเส้น, สลับโหมด, Auto-snap, รีเซ็ต, กราฟิกเลเยอร์)
+    - *ขั้นตอนที่ 3 • สกอร์บอร์ด & การแข่งขัน* (เริ่มแมตช์, แต้มทีม A/B, เดี่ยว/คู่, เสียงขานไทย, Pause)
+    - *ขั้นตอนที่ 4 • สรุปสถิติ & โค้ช AI* (ส่งวิเคราะห์ AI ทันที, ตั้งชื่อแมตช์, บันทึกผล, Export JSON, แมตช์ใหม่)
+- **Demo Clip Integration (`IMG_7847.MOV`):**
+  - เพิ่มฟังก์ชัน `loadDemoBadmintonClip()` เรียกดูคลิปตัวอย่างการเล่นจริง 4K 60fps ได้ในคลิกเดียว พร้อมล็อกเส้นสนามตรงจุดทันที
+- **Cache-Buster Update:** ปรับ Version Tag ใน `index.html` เป็น `?v=20261102b` ครบทุกโมดูล
 
 ### [v1.1.0-fieldtest-complete] - 2026-11-02
 - **Cache-Buster Update:** ปรับ Version Tag ใน `index.html` เป็น `?v=20261102a` ครบทุกโมดูล

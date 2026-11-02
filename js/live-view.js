@@ -915,6 +915,7 @@ function toggleCourtCalibrationMode() {
     const icon = document.getElementById('calibIcon');
     const label = document.getElementById('calibLabel');
     const floatSaveBtn = document.getElementById('floatingSaveCalibBtn');
+    const calibToolbar = document.getElementById('courtCalibrationToolbar');
     if (isCalibratingCourt) {
         // Freeze the clip while dragging so the handles stay on the same frame
         calibPausedVideo = isUploadedVideoActive && !webcamVideo.paused;
@@ -922,6 +923,7 @@ function toggleCourtCalibrationMode() {
         if (icon) icon.className = 'ph-fill ph-check-fat text-emerald-400 text-lg shrink-0';
         if (label) label.textContent = 'บันทึกเส้นสนาม';
         if (floatSaveBtn) floatSaveBtn.classList.remove('hidden');
+        if (calibToolbar) calibToolbar.classList.remove('hidden');
         showToast('ลากจุดมุมคอร์ท 4 จุด และหัวเน็ท 2 ข้างให้ตรงเส้นจริง แล้วกด "บันทึกเส้นสนาม"');
     } else {
         if (ShuttleCV.updateHomography) {
@@ -935,7 +937,8 @@ function toggleCourtCalibrationMode() {
         if (icon) icon.className = 'ph-bold ph-crosshair text-amber-300 text-lg shrink-0';
         if (label) label.textContent = 'ตั้งเส้นสนาม';
         if (floatSaveBtn) floatSaveBtn.classList.add('hidden');
-        showToast('ล็อกพิกัดเส้นสนาม 13.40m × 6.10m เรียบร้อยแล้ว');
+        if (calibToolbar) calibToolbar.classList.add('hidden');
+        showToast('ล็อกพิกัดเส้นสนามเรียบร้อยแล้ว');
     }
 }
 
@@ -964,17 +967,170 @@ function triggerAutoSnapCourtCV() {
     }, 40);
 }
 
+function cycleCourtCalibMode() {
+    if (!window.ShuttleCV) return;
+    const cur = ShuttleCV.getCalibrationMode ? ShuttleCV.getCalibrationMode() : 'full';
+    const nextMode = cur === 'full' ? 'service' : 'full';
+    ShuttleCV.setCalibrationMode(nextMode, isPortraitViewport);
+    const label = nextMode === 'full' ? '4 มุมนอกสุด (13.4m)' : 'เส้นเสิร์ฟสั้นใกล้ (8.68m)';
+    showToast(`สลับเป็นโหมด: ${label}`);
+}
+
+function resetCourtCalibToDefault() {
+    if (!window.ShuttleCV) return;
+    ShuttleCV.resetCornersDefault(isPortraitViewport, true);
+    showToast('รีเซ็ตพิกัดมุมสนามเป็นค่ามาตรฐานเรียบร้อย');
+}
+
+/* =========================================================================
+ * MATCH SESSION MANAGEMENT (Hero Start / Finish & Send to AI Coach)
+ * ========================================================================= */
+let isMatchSessionRunning = false;
+let matchSessionStartTime = 0;
+let matchSessionTimerId = null;
+
+function toggleMatchSession() {
+    if (!isMatchSessionRunning) {
+        startMatchSession();
+    } else {
+        finishMatchAndSendToCoach();
+    }
+}
+
+function startMatchSession() {
+    if (!isWebcamActive && !isUploadedVideoActive) {
+        toggleWebcam();
+        showToast('กำลังเปิดกล้องสดและเริ่มการวิเคราะห์แมตช์...');
+    }
+    isMatchSessionRunning = true;
+    matchSessionStartTime = Date.now();
+    isTrackingPaused = false;
+
+    // Reset or ensure timer display starts
+    if (matchSessionTimerId) clearInterval(matchSessionTimerId);
+    matchSessionTimerId = setInterval(() => {
+        if (!isMatchSessionRunning) return;
+        const elapsedSec = Math.floor((Date.now() - matchSessionStartTime) / 1000);
+        const timerEl = document.getElementById('liveMatchTimer');
+        if (timerEl && typeof formatTimeSec === 'function') {
+            timerEl.textContent = formatTimeSec(elapsedSec);
+        }
+    }, 1000);
+
+    updateMatchSessionUI();
+    showToast('▶ เริ่มแมตช์ & วิเคราะห์สดแล้ว! AI กำลังตรวจจับคะแนน, สปีดลูกตบ และการวิ่ง');
+}
+
+function finishMatchAndSendToCoach() {
+    if (!isMatchSessionRunning && scoreboard.scoreA === 0 && scoreboard.scoreB === 0) {
+        showToast('ยังไม่มีข้อมูลแมตช์ • กด "เริ่มแมตช์ & วิเคราะห์" เพื่อเริ่มเล่น');
+        return;
+    }
+
+    isMatchSessionRunning = false;
+    if (matchSessionTimerId) {
+        clearInterval(matchSessionTimerId);
+        matchSessionTimerId = null;
+    }
+    updateMatchSessionUI();
+
+    showToast('🏁 จบแมตช์เรียบร้อย! กำลังส่งต่อสถิติให้โค้ช AI วิเคราะห์...');
+
+    // Automatically switch to Tab 4 (โค้ช AI) and run comprehensive tactical analysis
+    setTimeout(() => {
+        if (typeof switchTab === 'function') {
+            switchTab('coach');
+        }
+        setTimeout(() => {
+            if (typeof generateAICoachAdvice === 'function') {
+                generateAICoachAdvice('full', true);
+            }
+        }, 350);
+    }, 450);
+}
+
+function updateMatchSessionUI() {
+    const heroBtn = document.getElementById('btnHeroMatchAction');
+    const heroIcon = document.getElementById('heroMatchActionIcon');
+    const heroText = document.getElementById('heroMatchActionText');
+    const heroSub = document.getElementById('heroMatchActionSub');
+    const recDot = document.getElementById('recDot');
+    const sheetActionText = document.getElementById('sheetMatchSessionText');
+
+    if (isMatchSessionRunning) {
+        if (heroBtn) {
+            heroBtn.className = 'hero-match-btn is-running flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-rose-600 to-amber-500 text-white font-extrabold text-xs sm:text-sm shadow-xl shadow-rose-500/30 active:scale-95 transition-all animate-pulse pointer-events-auto';
+        }
+        if (heroIcon) heroIcon.className = 'ph-fill ph-stop-circle text-lg text-white';
+        if (heroText) heroText.textContent = 'จบแมตช์ & ส่ง AI วิเคราะห์';
+        if (heroSub) heroSub.textContent = 'แตะเมื่อจบเกม เพื่อให้โค้ช AI สรุปรายงานแท็กติกทันที';
+        if (recDot) recDot.className = 'w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping';
+        if (sheetActionText) sheetActionText.textContent = 'กำลังแข่งขัน (แตะเพื่อจบแมตช์)';
+    } else {
+        if (heroBtn) {
+            heroBtn.className = 'hero-match-btn is-idle flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-extrabold text-xs sm:text-sm shadow-xl shadow-emerald-500/30 active:scale-95 transition-all pointer-events-auto';
+        }
+        if (heroIcon) heroIcon.className = 'ph-fill ph-play-circle text-lg text-slate-950';
+        if (heroText) heroText.textContent = 'เริ่มแมตช์ & วิเคราะห์สด';
+        if (heroSub) heroSub.textContent = 'แตะเมื่อเริ่มเล่น เพื่อตรวจจับแต้ม สปีดตบ และตำแหน่งวิ่ง';
+        if (recDot) recDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+        if (sheetActionText) sheetActionText.textContent = 'เริ่มแมตช์ & วิเคราะห์สด';
+    }
+}
+
+function loadDemoBadmintonClip() {
+    const demoRelPath = 'badme-ai test clip/Demo clip/IMG_7847.MOV';
+    showToast('กำลังโหลดคลิปตัวอย่างสนามจริง (IMG_7847)...');
+
+    webcamVideo.pause();
+    webcamVideo.src = demoRelPath;
+    webcamVideo.load();
+
+    webcamVideo.oncanplay = () => {
+        isUploadedVideoActive = true;
+        isWebcamActive = false;
+        webcamVideo.play().catch(() => {});
+
+        if (window.ShuttleCV && ShuttleCV.setCalibrationMode) {
+            ShuttleCV.setCalibrationMode('full', true);
+            ShuttleCV.setCourtTrusted(true);
+            ShuttleCV.setCourtLocked(true);
+        }
+
+        const fileNameEl = document.getElementById('uploadedFileName');
+        if (fileNameEl) fileNameEl.textContent = 'IMG_7847 (Demo 4K)';
+        const controls = document.getElementById('videoPlaybackControls');
+        if (controls) controls.classList.remove('hidden');
+
+        showToast('โหลดคลิป Demo สำเร็จ! ทาบเส้นสนาม 13.4m ตรงจุดอัตโนมัติ');
+    };
+
+    webcamVideo.onerror = () => {
+        triggerVideoUploadSelect();
+        showToast('กรุณาเลือกไฟล์คลิปวิดีโอจากเครื่องของคุณ');
+    };
+}
+
 function getPointerNormPos(evt) {
     const rect = liveCanvas.getBoundingClientRect();
-    const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
-    const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
-    const px = clientX - rect.left;
-    const py = clientY - rect.top;
-    const rw = videoRenderRect.w || rect.width;
-    const rh = videoRenderRect.h || rect.height;
+    let clientX = evt.clientX;
+    let clientY = evt.clientY;
+    if (clientX === undefined && evt.touches && evt.touches.length > 0) {
+        clientX = evt.touches[0].clientX;
+        clientY = evt.touches[0].clientY;
+    } else if (clientX === undefined && evt.changedTouches && evt.changedTouches.length > 0) {
+        clientX = evt.changedTouches[0].clientX;
+        clientY = evt.changedTouches[0].clientY;
+    }
+    const px = (clientX !== undefined ? clientX : rect.left + rect.width / 2) - rect.left;
+    const py = (clientY !== undefined ? clientY : rect.top + rect.height / 2) - rect.top;
+    const rw = videoRenderRect.w || rect.width || 1;
+    const rh = videoRenderRect.h || rect.height || 1;
+    const rx = videoRenderRect.x || 0;
+    const ry = videoRenderRect.y || 0;
     return {
-        x: Math.max(0.01, Math.min(0.99, (px - videoRenderRect.x) / rw)),
-        y: Math.max(0.01, Math.min(0.99, (py - videoRenderRect.y) / rh))
+        x: Math.max(0.01, Math.min(0.99, (px - rx) / rw)),
+        y: Math.max(0.01, Math.min(0.99, (py - ry) / rh))
     };
 }
 
@@ -985,9 +1141,10 @@ liveCanvas.addEventListener('pointerdown', (e) => {
     const handleKeys = ['tl', 'tr', 'br', 'bl', 'netL', 'netR'];
 
     let closestKey = null;
-    let minDist = 0.065;
+    let minDist = 0.085; // Wide 8.5% touch tolerance for easy fingertip grab
     handleKeys.forEach(k => {
         const pt = corners[k];
+        if (!pt) return;
         const d = Math.hypot(pt.x - pos.x, pt.y - pos.y);
         if (d < minDist) {
             minDist = d;
@@ -998,7 +1155,9 @@ liveCanvas.addEventListener('pointerdown', (e) => {
     if (closestKey) {
         draggingHandleKey = closestKey;
         dragPointerPos = pos;
-        liveCanvas.setPointerCapture(e.pointerId);
+        try {
+            liveCanvas.setPointerCapture(e.pointerId);
+        } catch (err) {}
         e.preventDefault();
     }
 });
@@ -1011,13 +1170,23 @@ liveCanvas.addEventListener('pointermove', (e) => {
     e.preventDefault();
 });
 
-liveCanvas.addEventListener('pointerup', (e) => {
+function handleCalibrationPointerEnd(e) {
     if (draggingHandleKey) {
+        if (e && e.pointerId) {
+            try {
+                liveCanvas.releasePointerCapture(e.pointerId);
+            } catch (err) {}
+        }
         draggingHandleKey = null;
         dragPointerPos = null;
-        liveCanvas.releasePointerCapture(e.pointerId);
     }
-});
+}
+
+liveCanvas.addEventListener('pointerup', handleCalibrationPointerEnd);
+liveCanvas.addEventListener('pointercancel', handleCalibrationPointerEnd);
+liveCanvas.addEventListener('lostpointercapture', handleCalibrationPointerEnd);
+window.addEventListener('pointerup', handleCalibrationPointerEnd);
+window.addEventListener('pointercancel', handleCalibrationPointerEnd);
 
 /**
  * Original 3D Perspective Badminton Court & AI Analysis Hologram Graphic
@@ -1441,10 +1610,12 @@ function renderLiveScene() {
 
     const mt = webcamVideo.currentTime;
     const isNewFrame = !isUploadedVideoActive || mt !== lastProcessedMediaTime;
+    const isDraggingCalib = isCalibratingCourt && !!draggingHandleKey;
     if (isUploadedVideoActive && (mt < lastProcessedMediaTime || mt - lastProcessedMediaTime > 0.5)) {
         if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
     }
-    if (!isTrackingPaused && isNewFrame) {
+    // Skip heavy AI pose estimation while actively dragging calibration handles (grants 100% CPU/GPU to smooth 60 FPS drag)
+    if (!isDraggingCalib && !isTrackingPaused && isNewFrame) {
         lastProcessedMediaTime = mt;
         frameClockMs = isUploadedVideoActive ? mt * 1000 : performance.now();
         runRealPoseEstimation(webcamVideo);
@@ -1509,12 +1680,21 @@ function drawHomographyCourtAndNet(ctx, w, h) {
     function drawMetricLine(u1, v1, u2, v2, dashed = false, customColor = null) {
         const p1 = ShuttleCV.courtNormalizedToScreen(u1, v1);
         const p2 = ShuttleCV.courtNormalizedToScreen(u2, v2);
+        // Horizon / Singularity guarding: never draw points that invert or diverge behind camera
+        if (p1.valid === false || p2.valid === false) return;
+        const x1 = p1.x * w, y1 = p1.y * h;
+        const x2 = p2.x * w, y2 = p2.y * h;
+        if (!isFinite(x1) || !isFinite(y1) || !isFinite(x2) || !isFinite(y2)) return;
+        // Strictly prevent runaway coordinate canvas crashes
+        if (x1 < -w * 2 || x1 > w * 3 || y1 < -h * 2 || y1 > h * 3) return;
+        if (x2 < -w * 2 || x2 > w * 3 || y2 < -h * 2 || y2 > h * 3) return;
+
         ctx.save();
         if (customColor) ctx.strokeStyle = customColor;
         if (dashed) ctx.setLineDash([6, 5]);
         ctx.beginPath();
-        ctx.moveTo(p1.x * w, p1.y * h);
-        ctx.lineTo(p2.x * w, p2.y * h);
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
         ctx.stroke();
         ctx.restore();
     }
@@ -1546,50 +1726,79 @@ function drawHomographyCourtAndNet(ctx, w, h) {
     const netTopL = corners.netL;
     const netTopR = corners.netR;
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
-    ctx.beginPath();
-    ctx.moveTo(netFloorL.x * w, netFloorL.y * h);
-    ctx.lineTo(netFloorR.x * w, netFloorR.y * h);
-    ctx.lineTo(netTopR.x * w, netTopR.y * h);
-    ctx.lineTo(netTopL.x * w, netTopL.y * h);
-    ctx.closePath();
-    ctx.fill();
+    if (netFloorL.valid !== false && netFloorR.valid !== false && netTopL && netTopR) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+        ctx.beginPath();
+        ctx.moveTo(netFloorL.x * w, netFloorL.y * h);
+        ctx.lineTo(netFloorR.x * w, netFloorR.y * h);
+        ctx.lineTo(netTopR.x * w, netTopR.y * h);
+        ctx.lineTo(netTopL.x * w, netTopL.y * h);
+        ctx.closePath();
+        ctx.fill();
 
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(netFloorL.x * w, netFloorL.y * h);
-    ctx.lineTo(netTopL.x * w, netTopL.y * h);
-    ctx.moveTo(netFloorR.x * w, netFloorR.y * h);
-    ctx.lineTo(netTopR.x * w, netTopR.y * h);
-    ctx.stroke();
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(netFloorL.x * w, netFloorL.y * h);
+        ctx.lineTo(netTopL.x * w, netTopL.y * h);
+        ctx.moveTo(netFloorR.x * w, netFloorR.y * h);
+        ctx.lineTo(netTopR.x * w, netTopR.y * h);
+        ctx.stroke();
 
-    ctx.shadowColor = '#22d3ee';
-    ctx.shadowBlur = 8;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 3.5;
-    ctx.beginPath();
-    ctx.moveTo(netTopL.x * w, netTopL.y * h);
-    ctx.lineTo(netTopR.x * w, netTopR.y * h);
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+        ctx.shadowColor = '#22d3ee';
+        ctx.shadowBlur = 8;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.moveTo(netTopL.x * w, netTopL.y * h);
+        ctx.lineTo(netTopR.x * w, netTopR.y * h);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+    }
 
     ctx.restore();
 }
 
 function drawCalibrationHandlesAndLoupe(ctx, w, h) {
     const corners = ShuttleCV.getCorners();
-    const labels = {
+    const isServiceMode = ShuttleCV.getCalibrationMode && ShuttleCV.getCalibrationMode() === 'service';
+    const labels = isServiceMode ? {
         tl: 'เส้นหลังฝั่งไกล-ซ้าย (TL)',
         tr: 'เส้นหลังฝั่งไกล-ขวา (TR)',
         br: 'เส้นเสิร์ฟสั้นฝั่งใกล้-ขวา (SR)',
         bl: 'เส้นเสิร์ฟสั้นฝั่งใกล้-ซ้าย (SL)',
         netL: 'หัวเน็ทซ้าย (Net-L)',
         netR: 'หัวเน็ทขวา (Net-R)'
+    } : {
+        tl: 'เส้นหลังฝั่งไกล-ซ้าย (TL)',
+        tr: 'เส้นหลังฝั่งไกล-ขวา (TR)',
+        br: 'เส้นหลังฝั่งใกล้-ขวา (BR)',
+        bl: 'เส้นหลังฝั่งใกล้-ซ้าย (BL)',
+        netL: 'หัวเน็ทซ้าย (Net-L)',
+        netR: 'หัวเน็ทขวา (Net-R)'
     };
+
+    // Mode banner on canvas while calibrating
+    ctx.save();
+    const modeBadgeText = isServiceMode
+        ? 'โหมด: เส้นเสิร์ฟสั้น (8.68m) • แตะเมนูเพื่อสลับเป็น 4 มุมนอกสุด (13.4m)'
+        : 'โหมดมาตรฐาน: 4 มุมคอร์ทนอกสุด (13.40m) • ลาก 4 มุมให้ตรงขอบสนามจริง';
+    ctx.fillStyle = 'rgba(9, 13, 22, 0.85)';
+    ctx.beginPath();
+    ctx.roundRect(w / 2 - 160, 16, 320, 24, 12);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.6)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = 'bold 10px Prompt, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(modeBadgeText, w / 2, 32);
+    ctx.restore();
 
     Object.entries(labels).forEach(([key, label]) => {
         const pt = corners[key];
+        if (!pt) return;
         const px = pt.x * w;
         const py = pt.y * h;
         const isNet = key.startsWith('net');
@@ -1611,7 +1820,7 @@ function drawCalibrationHandlesAndLoupe(ctx, w, h) {
 
         ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
         ctx.beginPath();
-        ctx.roundRect(px - 60, py - 28, 120, 16, 5);
+        ctx.roundRect(px - 65, py - 28, 130, 16, 5);
         ctx.fill();
         ctx.fillStyle = color;
         ctx.font = 'bold 9px Prompt, sans-serif';
@@ -1621,59 +1830,61 @@ function drawCalibrationHandlesAndLoupe(ctx, w, h) {
     });
 
     // NOTE: uploaded clips play through the same <video id="webcamVideo"> element (there is no separate uploadedVideo element)
-    if (draggingHandleKey && dragPointerPos && webcamVideo.readyState >= 2) {
-        const activeVideo = webcamVideo;
-        const loupeRadius = 56;
-        const zoom = 3.0;
-        const targetX = dragPointerPos.x * w;
-        const targetY = dragPointerPos.y * h;
-        const loupeX = Math.max(loupeRadius + 12, Math.min(w - loupeRadius - 12, targetX));
-        const loupeY = targetY > loupeRadius * 2.4 ? targetY - loupeRadius - 28 : targetY + loupeRadius + 28;
-
-        const vW = activeVideo.videoWidth || w;
-        const vH = activeVideo.videoHeight || h;
-        const srcW = (loupeRadius * 2 / zoom) * (vW / w);
-        const srcH = (loupeRadius * 2 / zoom) * (vH / h);
-        const rawSrcX = dragPointerPos.x * vW - srcW / 2;
-        const rawSrcY = dragPointerPos.y * vH - srcH / 2;
-        // Strict boundary clamping prevents Canvas IndexSizeError crash when dragging near edges
-        const safeSrcX = Math.max(0, Math.min(vW - 10, rawSrcX));
-        const safeSrcY = Math.max(0, Math.min(vH - 10, rawSrcY));
-        const safeSrcW = Math.max(4, Math.min(vW - safeSrcX, srcW));
-        const safeSrcH = Math.max(4, Math.min(vH - safeSrcY, srcH));
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(loupeX, loupeY, loupeRadius, 0, Math.PI * 2);
-        ctx.clip();
-
-        ctx.fillStyle = '#090d16';
-        ctx.fillRect(loupeX - loupeRadius, loupeY - loupeRadius, loupeRadius * 2, loupeRadius * 2);
+    // Safe Loupe 3x Magnifier: Protected against any video shift or coordinate exception
+    if (draggingHandleKey && dragPointerPos && webcamVideo && webcamVideo.readyState >= 2) {
         try {
-            ctx.drawImage(
-                activeVideo,
-                safeSrcX, safeSrcY, safeSrcW, safeSrcH,
-                loupeX - loupeRadius, loupeY - loupeRadius, loupeRadius * 2, loupeRadius * 2
-            );
+            const activeVideo = webcamVideo;
+            const loupeRadius = 56;
+            const zoom = 3.0;
+            const targetX = dragPointerPos.x * w;
+            const targetY = dragPointerPos.y * h;
+            const loupeX = Math.max(loupeRadius + 12, Math.min(w - loupeRadius - 12, targetX));
+            const loupeY = targetY > loupeRadius * 2.4 ? targetY - loupeRadius - 28 : targetY + loupeRadius + 28;
+
+            const vW = activeVideo.videoWidth || w || 1;
+            const vH = activeVideo.videoHeight || h || 1;
+            const srcW = (loupeRadius * 2 / zoom) * (vW / (w || 1));
+            const srcH = (loupeRadius * 2 / zoom) * (vH / (h || 1));
+            const rawSrcX = dragPointerPos.x * vW - srcW / 2;
+            const rawSrcY = dragPointerPos.y * vH - srcH / 2;
+            const safeSrcX = Math.max(0, Math.min(vW - 10, rawSrcX));
+            const safeSrcY = Math.max(0, Math.min(vH - 10, rawSrcY));
+            const safeSrcW = Math.max(4, Math.min(vW - safeSrcX, srcW));
+            const safeSrcH = Math.max(4, Math.min(vH - safeSrcY, srcH));
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(loupeX, loupeY, loupeRadius, 0, Math.PI * 2);
+            ctx.clip();
+
+            ctx.fillStyle = '#090d16';
+            ctx.fillRect(loupeX - loupeRadius, loupeY - loupeRadius, loupeRadius * 2, loupeRadius * 2);
+            if (safeSrcW > 2 && safeSrcH > 2) {
+                ctx.drawImage(
+                    activeVideo,
+                    safeSrcX, safeSrcY, safeSrcW, safeSrcH,
+                    loupeX - loupeRadius, loupeY - loupeRadius, loupeRadius * 2, loupeRadius * 2
+                );
+            }
+
+            ctx.strokeStyle = '#fbbf24';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(loupeX - loupeRadius, loupeY);
+            ctx.lineTo(loupeX + loupeRadius, loupeY);
+            ctx.moveTo(loupeX, loupeY - loupeRadius);
+            ctx.lineTo(loupeX + loupeRadius, loupeY);
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.beginPath();
+            ctx.arc(loupeX, loupeY, loupeRadius, 0, Math.PI * 2);
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#fbbf24';
+            ctx.stroke();
         } catch (err) {
-            // Silently protect live loop if video source dimension shifts momentarily
+            console.warn('[Loupe Magnifier Guard] Ignored transient render error:', err);
         }
-
-        ctx.strokeStyle = '#fbbf24';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(loupeX - loupeRadius, loupeY);
-        ctx.lineTo(loupeX + loupeRadius, loupeY);
-        ctx.moveTo(loupeX, loupeY - loupeRadius);
-        ctx.lineTo(loupeX, loupeY + loupeRadius);
-        ctx.stroke();
-        ctx.restore();
-
-        ctx.beginPath();
-        ctx.arc(loupeX, loupeY, loupeRadius, 0, Math.PI * 2);
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = '#fbbf24';
-        ctx.stroke();
     }
 }
 
@@ -1950,3 +2161,11 @@ setInterval(() => {
         if (liveEl) liveEl.textContent = tStr;
     }
 }, 1000);
+
+// Global window exposure for HTML UI event bindings
+window.cycleCourtCalibMode = cycleCourtCalibMode;
+window.resetCourtCalibToDefault = resetCourtCalibToDefault;
+window.toggleMatchSession = toggleMatchSession;
+window.startMatchSession = startMatchSession;
+window.finishMatchAndSendToCoach = finishMatchAndSendToCoach;
+window.loadDemoBadmintonClip = loadDemoBadmintonClip;

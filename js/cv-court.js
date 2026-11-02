@@ -68,16 +68,20 @@ window.ShuttleCV = (function () {
     let isCourtTrustedFlag = false; // set true after a successful refineCourtToLines() or explicit calibration save
     let autoLockEnabled = true;
 
+    // Calibration Mode:
+    // 'full' (default): Anchored on the 4 extreme BWF court corners (TL u=0,v=0, TR u=1,v=0, BR u=1,v=1, BL u=0,v=1) -> 13.40m length
+    // 'service': Anchored on Far Baseline (v=0) & Near Short-Service Line (v=0.6478) -> 8.68m length (for low-angle cameras where near baseline is off-screen)
+    let calibrationMode = 'full';
+
     // Calibrated / Detected Court Keypoints in normalized screen coordinates [0..1]
-    // Anchored on the 4 visible corners: Far Baseline (tl, tr at v=0) & Near Short-Service Line (bl, br at v=0.6478)
-    // Pre-calibrated to match real baseline camera geometry (IMG_7847.MOV)
+    // Default values pre-calibrated to match standard portrait baseline perspective (e.g. IMG_7847.MOV)
     let courtCorners = {
-        tl: { x: 0.355, y: 0.613 }, // Far Baseline Left Corner (u=0, v=0)
-        tr: { x: 0.715, y: 0.615 }, // Far Baseline Right Corner (u=1, v=0)
-        br: { x: 0.932, y: 0.688 }, // Near Short-Service Right Corner (u=1, v=0.6478)
-        bl: { x: 0.142, y: 0.684 }, // Near Short-Service Left Corner (u=0, v=0.6478)
-        netL: { x: 0.248, y: 0.569 }, // Net Top Tape Left Post
-        netR: { x: 0.822, y: 0.571 }  // Net Top Tape Right Post
+        tl: { x: 0.355, y: 0.585 }, // Far Baseline Left Corner (u=0, v=0)
+        tr: { x: 0.715, y: 0.585 }, // Far Baseline Right Corner (u=1, v=0)
+        br: { x: 0.940, y: 0.975 }, // Near Baseline Right Corner (u=1, v=1.0)
+        bl: { x: 0.100, y: 0.975 }, // Near Baseline Left Corner (u=0, v=1.0)
+        netL: { x: 0.180, y: 0.560 }, // Net Top Tape Left Post
+        netR: { x: 0.825, y: 0.560 }  // Net Top Tape Right Post
     };
 
     // 3x3 Homography Matrices:
@@ -158,20 +162,39 @@ window.ShuttleCV = (function () {
 
     function projectPoint(H, x, y) {
         const w = H[6] * x + H[7] * y + H[8];
-        if (Math.abs(w) < 1e-8) return { x: 0.5, y: 0.5 };
+        if (Math.abs(w) < 1e-7) {
+            return { x: 0.5, y: 0.5, valid: false };
+        }
+        const invW = 1 / w;
+        const px = (H[0] * x + H[1] * y + H[2]) * invW;
+        const py = (H[3] * x + H[4] * y + H[5]) * invW;
+        const isValid = w > 1e-4 && isFinite(px) && isFinite(py);
         return {
-            x: (H[0] * x + H[1] * y + H[2]) / w,
-            y: (H[3] * x + H[4] * y + H[5]) / w
+            x: isValid ? px : 0.5,
+            y: isValid ? py : 0.5,
+            valid: isValid
         };
     }
 
-    function updateHomographyFromCorners() {
-        const anchorRect = [
+    function getAnchorRect() {
+        if (calibrationMode === 'service') {
+            return [
+                { x: 0, y: 0 },
+                { x: 1, y: 0 },
+                { x: 1, y: 0.6478 },
+                { x: 0, y: 0.6478 }
+            ];
+        }
+        return [
             { x: 0, y: 0 },
             { x: 1, y: 0 },
-            { x: 1, y: 0.6478 },
-            { x: 0, y: 0.6478 }
+            { x: 1, y: 1.0 },
+            { x: 0, y: 1.0 }
         ];
+    }
+
+    function updateHomographyFromCorners() {
+        const anchorRect = getAnchorRect();
         const dstQuad = [
             courtCorners.tl,
             courtCorners.tr,
@@ -773,7 +796,8 @@ window.ShuttleCV = (function () {
             if (!lastStats || !lastStats.ok) return lastStats || { ok: false };
 
             // Sanity: refined court must stay close to current calibration
-            const anchors = [[0, 0], [1, 0], [1, 0.6478], [0, 0.6478]];
+            const nearV = calibrationMode === 'service' ? 0.6478 : 1.0;
+            const anchors = [[0, 0], [1, 0], [1, nearV], [0, nearV]];
             const maxShift = Math.max(...anchors.map(([u, v]) => {
                 const a = projectPoint(H_before, u, v);
                 const b = projectPoint(H, u, v);
@@ -785,7 +809,7 @@ window.ShuttleCV = (function () {
 
             // Apply: update corner handles from refined homography
             const tl = projectPoint(H, 0, 0), tr = projectPoint(H, 1, 0);
-            const br = projectPoint(H, 1, 0.6478), bl = projectPoint(H, 0, 0.6478);
+            const br = projectPoint(H, 1, nearV), bl = projectPoint(H, 0, nearV);
             courtCorners.tl = { x: tl.x, y: tl.y };
             courtCorners.tr = { x: tr.x, y: tr.y };
             courtCorners.br = { x: br.x, y: br.y };
@@ -914,26 +938,59 @@ window.ShuttleCV = (function () {
                 updateHomographyFromCorners();
             }
         },
-        resetCornersDefault: (isPortrait = true) => {
-            if (isManuallyEdited) return;
+        resetCornersDefault: (isPortrait = true, force = false) => {
+            if (isManuallyEdited && !force) return;
             courtCorners._customNet = true;
-            if (isPortrait) {
-                courtCorners.tl = { x: 0.355, y: 0.613 };
-                courtCorners.tr = { x: 0.715, y: 0.615 };
-                courtCorners.br = { x: 0.932, y: 0.688 };
-                courtCorners.bl = { x: 0.142, y: 0.684 };
-                courtCorners.netL = { x: 0.248, y: 0.569 };
-                courtCorners.netR = { x: 0.822, y: 0.571 };
+            if (calibrationMode === 'service') {
+                if (isPortrait) {
+                    courtCorners.tl = { x: 0.355, y: 0.613 };
+                    courtCorners.tr = { x: 0.715, y: 0.615 };
+                    courtCorners.br = { x: 0.932, y: 0.688 };
+                    courtCorners.bl = { x: 0.142, y: 0.684 };
+                    courtCorners.netL = { x: 0.248, y: 0.569 };
+                    courtCorners.netR = { x: 0.822, y: 0.571 };
+                } else {
+                    courtCorners.tl = { x: 0.310, y: 0.500 };
+                    courtCorners.tr = { x: 0.690, y: 0.500 };
+                    courtCorners.br = { x: 0.850, y: 0.675 };
+                    courtCorners.bl = { x: 0.150, y: 0.675 };
+                    courtCorners.netL = { x: 0.235, y: 0.425 };
+                    courtCorners.netR = { x: 0.765, y: 0.425 };
+                }
             } else {
-                courtCorners.tl = { x: 0.310, y: 0.500 };
-                courtCorners.tr = { x: 0.690, y: 0.500 };
-                courtCorners.br = { x: 0.850, y: 0.675 };
-                courtCorners.bl = { x: 0.150, y: 0.675 };
-                courtCorners.netL = { x: 0.235, y: 0.425 };
-                courtCorners.netR = { x: 0.765, y: 0.425 };
+                // Full Court BWF 13.40m x 6.10m 4 outer corners mode (Standard)
+                if (isPortrait) {
+                    courtCorners.tl = { x: 0.355, y: 0.585 };
+                    courtCorners.tr = { x: 0.715, y: 0.585 };
+                    courtCorners.br = { x: 0.940, y: 0.975 };
+                    courtCorners.bl = { x: 0.100, y: 0.975 };
+                    courtCorners.netL = { x: 0.180, y: 0.560 };
+                    courtCorners.netR = { x: 0.825, y: 0.560 };
+                } else {
+                    courtCorners.tl = { x: 0.310, y: 0.480 };
+                    courtCorners.tr = { x: 0.690, y: 0.480 };
+                    courtCorners.br = { x: 0.880, y: 0.880 };
+                    courtCorners.bl = { x: 0.120, y: 0.880 };
+                    courtCorners.netL = { x: 0.220, y: 0.450 };
+                    courtCorners.netR = { x: 0.780, y: 0.450 };
+                }
             }
+            if (force) isManuallyEdited = false;
             updateHomographyFromCorners();
         },
+        setCalibrationMode: (mode, isPortrait = true) => {
+            if (mode === 'full' || mode === 'service') {
+                calibrationMode = mode;
+                courtCorners._customNet = false;
+                isManuallyEdited = false;
+                if (window.ShuttleCV && window.ShuttleCV.resetCornersDefault) {
+                    window.ShuttleCV.resetCornersDefault(isPortrait, true);
+                } else {
+                    updateHomographyFromCorners();
+                }
+            }
+        },
+        getCalibrationMode: () => calibrationMode,
         // Court is "valid" ONLY when calibrated/locked -> players & shuttle are never tracked against a guessed court
         isCourtValidOrLocked: () => isCourtLocked,
         getCourtConfidence: () => courtConfidence,
