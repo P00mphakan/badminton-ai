@@ -8,7 +8,12 @@
  ********************************************************************/
 
 function trackerNow() {
-    return (typeof frameClockMs === 'number' && frameClockMs > 0) ? frameClockMs : performance.now();
+    if (typeof isUploadedVideoActive !== 'undefined' && isUploadedVideoActive) {
+        if (typeof frameClockMs === 'number' && isFinite(frameClockMs)) {
+            return frameClockMs;
+        }
+    }
+    return performance.now();
 }
 
 /**
@@ -26,15 +31,18 @@ class OneEuroFilter {
         this.dx = 0;
     }
     alpha(cutoff) {
-        const te = 1.0 / this.freq;
-        const tau = 1.0 / (2 * Math.PI * cutoff);
+        const te = 1.0 / Math.max(1, this.freq);
+        const tau = 1.0 / (2 * Math.PI * Math.max(0.001, cutoff));
         return 1.0 / (1.0 + tau / te);
     }
     filter(val, dt) {
         if (!isFinite(val)) return val;
-        if (dt && dt > 0) this.freq = 1.0 / dt;
+        if (dt && dt > 0.001 && dt < 1.0) {
+            this.freq = 1.0 / dt;
+        }
         if (this.x === null || !isFinite(this.x)) {
             this.x = val;
+            this.dx = 0;
             return val;
         }
         const dVal = (val - this.x) * this.freq;
@@ -43,7 +51,7 @@ class OneEuroFilter {
         const cutoff = this.minCutoff + this.beta * Math.abs(this.dx);
         const a = this.alpha(cutoff);
         this.x = this.x + a * (val - this.x);
-        return this.x;
+        return isFinite(this.x) ? this.x : val;
     }
     reset() {
         this.x = null;
@@ -288,23 +296,20 @@ function evaluatePoseCandidate(pose, crop) {
         : ((corners.netL.y + corners.netR.y) / 2 + 0.08);
 
     // Team assignment:
-    // Far Court (Team A): court depth Y <= 6.70m (v <= 0.50)
-    // Near Court (Team B): court depth Y > 6.70m (v > 0.50)
+    // Far Court (Team A): court depth Y <= 6.70m (v <= 0.51)
+    // Near Court (Team B): court depth Y > 6.70m (v > 0.51)
     let team;
     if (uv && isFinite(uv.y)) {
-        team = (uv.y <= 0.50) ? 'A' : 'B';
+        team = (uv.y <= 0.51) ? 'A' : 'B';
     } else {
         team = (footY < netBaseY) ? 'A' : 'B';
     }
 
     // In-court gating & Audience rejection:
-    // Court is 6.10m x 13.40m.
-    // Cut off spectators/judges standing outside court (margin: max 1.2m sideways, 1.5m behind baselines)
-    // In normalized court coordinates:
-    // tolU = 1.20 / 6.10 = 0.20
-    // tolV = 1.50 / 13.40 = 0.11
+    // Allow players to defend behind baseline (up to 4.5m) and jump into tramlines
+    // Tolerate lateral displacement (tolU = 0.45) and depth displacement (tolV = 0.65) so players never drop lock
     if (ShuttleCV.isCourtTrusted() && uv && isFinite(uv.x) && isFinite(uv.y)) {
-        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.20, 0.11);
+        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.45, 0.65);
         if (!inCourt) {
             return { mask: box, player: null };
         }
@@ -398,8 +403,8 @@ function assignCandidatesToSlots(team, cands, now) {
 }
 
 function updatePlayerSlot(slot, c, now) {
-    const wasTracked = slot.detected && now - slot.lastSeenMs < 700;
-    const dt = wasTracked ? (now - slot.lastSeenMs) / 1000 : 0.033;
+    const wasTracked = slot.detected && slot.lastSeenMs > 0 && now >= slot.lastSeenMs && (now - slot.lastSeenMs < 700);
+    const dt = wasTracked ? Math.max(0.005, Math.min(0.25, (now - slot.lastSeenMs) / 1000)) : 0.033;
 
     // One Euro Filter initialization & filtering (removes foot jitter while maintaining instant sprint response)
     if (!slot._filterU) {
@@ -415,19 +420,25 @@ function updatePlayerSlot(slot, c, now) {
         slot._filterSY.reset();
     }
 
-    const newU = slot._filterU.filter(c.u, dt);
-    const newV = slot._filterV.filter(c.v, dt);
-    const ring = ShuttleCV.courtNormalizedToScreen(newU, newV);
+    const ring = ShuttleCV.courtNormalizedToScreen(c.u, c.v);
     const targetSX = (c.footX !== undefined) ? c.footX : ring.x;
     const targetSY = (c.footY !== undefined) ? c.footY : ring.y;
-    const newScreenX = slot._filterSX.filter(targetSX, dt);
-    const newScreenY = slot._filterSY.filter(targetSY, dt);
+
+    const filteredU = slot._filterU.filter(c.u, dt);
+    const filteredV = slot._filterV.filter(c.v, dt);
+    const filteredSX = slot._filterSX.filter(targetSX, dt);
+    const filteredSY = slot._filterSY.filter(targetSY, dt);
+
+    const newU = isFinite(filteredU) ? filteredU : c.u;
+    const newV = isFinite(filteredV) ? filteredV : c.v;
+    const newScreenX = isFinite(filteredSX) ? filteredSX : targetSX;
+    const newScreenY = isFinite(filteredSY) ? filteredSY : targetSY;
 
     // Maintain a rolling 500ms window for noise-resilient speed calculation
     if (!slot._posWindow) slot._posWindow = [];
     slot._posWindow.push({ u: newU, v: newV, t: now });
     // Keep window within 500ms
-    while (slot._posWindow.length > 1 && now - slot._posWindow[0].t > 500) {
+    while (slot._posWindow.length > 1 && (now - slot._posWindow[0].t > 500 || now < slot._posWindow[0].t)) {
         slot._posWindow.shift();
     }
 
@@ -445,11 +456,11 @@ function updatePlayerSlot(slot, c, now) {
 
         // 2. Velocity derived from net displacement over the 500ms window
         const firstPt = slot._posWindow[0];
-        const dtWindow = (now - firstPt.t) / 1000;
+        const dtWindow = Math.max(0.01, (now - firstPt.t) / 1000);
         const netDisplacementM = Math.hypot((newU - firstPt.u) * ShuttleCV.COURT_WIDTH_M, (newV - firstPt.v) * ShuttleCV.COURT_LENGTH_M);
 
         let inst = 0;
-        if (netDisplacementM > noiseM && dtWindow >= 0.15) {
+        if (netDisplacementM > noiseM && dtWindow >= 0.15 && dtWindow <= 1.0) {
             inst = Math.min(28, (netDisplacementM / dtWindow) * 3.6);
         }
 
@@ -505,7 +516,7 @@ async function runRealPoseEstimation(videoEl) {
         }
         // เมื่อล็อคเป้าแล้ว: ขยายเวลา Coasting เป็น 2400ms เผื่อจังหวะคู่ขาวิ่งตัดหน้าหรือกระโดดตบ
         const timeoutMs = (isPlayersLocked && p.isLocked) ? 2400 : 1800;
-        if (p.detected && now - p.lastSeenMs > timeoutMs) {
+        if (p.detected && (now - p.lastSeenMs > timeoutMs || p.lastSeenMs > now)) {
             p.detected = false;
             p.currentSpeedKmh = 0;
             p._posWindow = [];
@@ -514,7 +525,8 @@ async function runRealPoseEstimation(videoEl) {
     });
 
     if (!poseModelReady || !poseDetector || poseInferenceBusy) return;
-    if (now - lastPoseTimestamp < 35) return;
+    if (lastPoseTimestamp > now || now - lastPoseTimestamp > 5000) lastPoseTimestamp = 0;
+    if (lastPoseTimestamp > 0 && (now - lastPoseTimestamp < 33)) return;
     lastPoseTimestamp = now;
 
     const vW = videoEl.videoWidth || 1280;
@@ -650,8 +662,15 @@ class ShuttleSpeed {
         const last = this.buf.length ? this.buf[this.buf.length - 1] : null;
         if (last) {
             const dt = t - last.t;
+            if (dt <= 0.002 || dt > 0.6) {
+                this.buf = [{ t, X, Y }];
+                return null;
+            }
             const jump = Math.hypot(X - last.X, Y - last.Y);
-            if (dt <= 0.002 || (jump / dt) > (MAX_KMH / 3.6)) return null; // outlier gating
+            if ((jump / dt) > (MAX_KMH / 3.6)) {
+                this.buf = [{ t, X, Y }];
+                return null; // outlier gating
+            }
         }
         this.buf.push({ t, X, Y });
         if (this.buf.length > 6) this.buf.shift();
@@ -908,6 +927,14 @@ function processRealShuttleAndRally(cvResult) {
         return;
     }
 
+    if (shuttleTrack.length > 0) {
+        const lastT = shuttleTrack[shuttleTrack.length - 1].t;
+        if (now < lastT || now - lastT > 1000) {
+            shuttleTrack = [];
+            activeShot = null;
+        }
+    }
+
     // 2.2 Spatial Gate Filter: candidate points must reside within Play Volume Box
     const rawCands = cvResult?.shuttleCandidates || (cvResult?.shuttleCandidate ? [cvResult.shuttleCandidate] : []);
     const cands = rawCands.filter(c => {
@@ -1097,4 +1124,23 @@ window.getLastPoseDurationMs = function() {
 };
 window.resetPoseTimestamps = function() {
     lastPoseTimestamp = 0;
+    if (typeof players !== 'undefined' && players) {
+        Object.values(players).forEach(p => {
+            p.lastSeenMs = 0;
+            p._posWindow = [];
+            p._anchor = null;
+        });
+    }
+};
+window.resetShuttleTracker = function() {
+    shuttleTrack = [];
+    activeShot = null;
+    pendingRallyEnd = null;
+    if (typeof shuttleSpeedCalc !== 'undefined' && shuttleSpeedCalc) {
+        shuttleSpeedCalc.reset();
+    }
+    if (typeof shuttle !== 'undefined' && shuttle) {
+        shuttle.detected = false;
+        shuttle.trail = [];
+    }
 };

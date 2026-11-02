@@ -50,8 +50,21 @@ function startVideoFrameCallbackLoop() {
 }
 
 if (webcamVideo) {
-    webcamVideo.addEventListener('play', startVideoFrameCallbackLoop);
+    webcamVideo.addEventListener('play', () => {
+        lastProcessedMediaTime = -1;
+        hasNewRvfcFrame = true;
+        if (typeof resetPoseTimestamps === 'function') resetPoseTimestamps();
+        if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
+        startVideoFrameCallbackLoop();
+    });
     webcamVideo.addEventListener('loadedmetadata', startVideoFrameCallbackLoop);
+    webcamVideo.addEventListener('seeked', () => {
+        lastProcessedMediaTime = -1;
+        if (webcamVideo) lastRvfcMediaTime = webcamVideo.currentTime;
+        hasNewRvfcFrame = true;
+        if (typeof resetPoseTimestamps === 'function') resetPoseTimestamps();
+        if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
+    });
 }
 
 function getSafeVideoDuration() {
@@ -1785,14 +1798,13 @@ function renderLiveScene() {
         startVideoFrameCallbackLoop();
     }
     const mt = (hasRvfc && lastRvfcMediaTime >= 0) ? lastRvfcMediaTime : webcamVideo.currentTime;
-    const isNewFrame = hasRvfc 
-        ? (hasNewRvfcFrame || !isUploadedVideoActive) 
-        : (!isUploadedVideoActive || mt !== lastProcessedMediaTime);
+    const isNewFrame = !isUploadedVideoActive || (hasRvfc ? (hasNewRvfcFrame || mt !== lastProcessedMediaTime) : (mt !== lastProcessedMediaTime));
     hasNewRvfcFrame = false;
 
     const isDraggingCalib = isCalibratingCourt && !!draggingHandleKey;
-    if (isUploadedVideoActive && (mt < lastProcessedMediaTime || mt - lastProcessedMediaTime > 0.5)) {
+    if (isUploadedVideoActive && (mt < lastProcessedMediaTime || mt - lastProcessedMediaTime > 2.0)) {
         if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
+        if (typeof resetPoseTimestamps === 'function') resetPoseTimestamps();
     }
     // Skip heavy AI pose estimation while actively dragging calibration handles (grants 100% CPU/GPU to smooth 60 FPS drag)
     if (!isDraggingCalib && !isTrackingPaused && isNewFrame) {
