@@ -2086,52 +2086,71 @@ function drawRealDetectedPlayers(ctx, w, h) {
             ctx.restore();
         }
 
-        // Perspective scale factor based on court depth (far court v~0.25 -> 0.72x, near court v~0.75 -> 1.18x)
-        const depthScale = 0.62 + Math.max(0, Math.min(1, p.v)) * 0.65;
-        const ringRx = 18 * depthScale;
-        const ringRy = 7 * depthScale;
-
-        // Tactical torso bracket above the floor ring
-        const boxW = 30 * depthScale;
-        const boxH = 56 * depthScale;
-        const bx = px - boxW / 2;
-        const by = py - boxH;
-        const cLen = 6 * depthScale;
-
-        ctx.save();
-        ctx.strokeStyle = p.color + 'aa';
-        ctx.lineWidth = 1.6;
-        ctx.beginPath();
-        ctx.moveTo(bx, by + cLen); ctx.lineTo(bx, by); ctx.lineTo(bx + cLen, by);
-        ctx.moveTo(bx + boxW - cLen, by); ctx.lineTo(bx + boxW, by); ctx.lineTo(bx + boxW, by + cLen);
-        ctx.moveTo(bx, by + boxH - cLen); ctx.lineTo(bx, by + boxH); ctx.lineTo(bx + cLen, by + boxH);
-        ctx.moveTo(bx + boxW - cLen, by + boxH); ctx.lineTo(bx + boxW, by + boxH); ctx.lineTo(bx + boxW, by + boxH - cLen);
-        ctx.stroke();
+        // Authentic Neon Glowing Floor Tracker Ring (matches reference broadcast graphic)
+        // Perspective scale factor based on court depth
+        const depthScale = 0.65 + Math.max(0, Math.min(1, p.v)) * 0.70;
+        const ringRx = 40 * depthScale;
+        const ringRy = ringRx * 0.38;
 
         const isLocked = p.isLocked || (typeof isPlayersLocked !== 'undefined' && isPlayersLocked);
+        const neonColor = p.color || '#00ff9d';
 
-        // Dual concentric glowing floor rings (Pro Hawkeye / Broadcast style)
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = isLocked ? 16 : 10;
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = isLocked ? 2.8 : 2.4;
+        // 1. Holographic Floor Wash (Illuminates the blue court mat within the player's stance)
+        ctx.save();
+        const floorGrad = ctx.createRadialGradient(px, py, ringRx * 0.15, px, py, ringRx);
+        floorGrad.addColorStop(0, neonColor + '22');
+        floorGrad.addColorStop(0.7, neonColor + '0f');
+        floorGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = floorGrad;
+        ctx.beginPath();
+        ctx.ellipse(px, py, ringRx, ringRy, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // 2. Layer 1: Wide Diffuse Neon Bloom (Atmospheric glow aura)
+        ctx.save();
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = 24 * depthScale;
+        ctx.strokeStyle = neonColor;
+        ctx.lineWidth = 4.5 * depthScale;
+        ctx.globalAlpha = 0.85;
         ctx.beginPath();
         ctx.ellipse(px, py, ringRx, ringRy, 0, 0, Math.PI * 2);
         ctx.stroke();
+        ctx.restore();
 
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = '#ffffffcc';
-        ctx.lineWidth = 1.2;
+        // 3. Layer 2: Concentrated Electric Neon Halo
+        ctx.save();
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = 12 * depthScale;
+        ctx.strokeStyle = neonColor;
+        ctx.lineWidth = 2.8 * depthScale;
+        ctx.globalAlpha = 0.95;
         ctx.beginPath();
-        ctx.ellipse(px, py, ringRx * 0.48, ringRy * 0.48, 0, 0, Math.PI * 2);
+        ctx.ellipse(px, py, ringRx, ringRy, 0, 0, Math.PI * 2);
         ctx.stroke();
+        ctx.restore();
 
+        // 4. Layer 3: White-Hot Laser Tube Core (Produces the authentic neon tube light)
+        ctx.save();
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 4 * depthScale;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.4 * depthScale;
+        ctx.globalAlpha = 0.92;
+        ctx.beginPath();
+        ctx.ellipse(px, py, ringRx, ringRy, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // 5. Target Lock Crosshair Reticle (electric ticks when locked)
         if (isLocked) {
-            // Target Lock Crosshair reticle ticks on floor ring
             ctx.save();
-            ctx.strokeStyle = p.color;
-            ctx.lineWidth = 2.0;
-            const tick = 6 * depthScale;
+            ctx.shadowColor = neonColor;
+            ctx.shadowBlur = 8;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.8 * depthScale;
+            const tick = 8 * depthScale;
             ctx.beginPath();
             ctx.moveTo(px, py - ringRy - tick); ctx.lineTo(px, py - ringRy + 2);
             ctx.moveTo(px, py + ringRy + tick); ctx.lineTo(px, py + ringRy - 2);
@@ -2144,18 +2163,18 @@ function drawRealDetectedPlayers(ctx, w, h) {
         const lockBadge = isLocked ? '🎯 ' : '';
         const label = `${lockBadge}${p.id} • ${p.currentSpeedKmh} km/h`;
         ctx.font = 'bold 10px Prompt, sans-serif';
-        const tw = ctx.measureText(label).width + 12;
-        const labelY = py + ringRy + 4;
+        const tw = ctx.measureText(label).width + 14;
+        const labelY = py + ringRy + 5;
         ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
         ctx.beginPath();
-        ctx.roundRect(px - tw / 2, labelY, tw, 16, 6);
+        ctx.roundRect(px - tw / 2, labelY, tw, 17, 6);
         ctx.fill();
-        ctx.strokeStyle = p.color + '66';
+        ctx.strokeStyle = neonColor + '88';
         ctx.lineWidth = 1;
         ctx.stroke();
-        ctx.fillStyle = p.color;
+        ctx.fillStyle = neonColor;
         ctx.textAlign = 'center';
-        ctx.fillText(label, px, labelY + 11.5);
+        ctx.fillText(label, px, labelY + 12);
         ctx.restore();
     });
 }
