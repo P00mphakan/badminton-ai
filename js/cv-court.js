@@ -73,15 +73,15 @@ window.ShuttleCV = (function () {
     // 'service': Anchored on Far Baseline (v=0) & Near Short-Service Line (v=0.6478) -> 8.68m length (for low-angle cameras where near baseline is off-screen)
     let calibrationMode = 'full';
 
-    // Calibrated / Detected Court Keypoints in normalized screen coordinates [0..1]
+    // Calibrated / Detected Court Keypoints in normalized screen coordinates (can extend beyond [0..1] for wide perspective)
     // Default values pre-calibrated to match standard portrait baseline perspective (e.g. IMG_7847.MOV, IMG_7130.MOV)
     let courtCorners = {
-        tl: { x: 0.360, y: 0.390 }, // Far Baseline Left Corner (u=0, v=0)
-        tr: { x: 0.720, y: 0.390 }, // Far Baseline Right Corner (u=1, v=0)
-        br: { x: 0.900, y: 0.880 }, // Near Baseline Right Corner (u=1, v=1.0)
-        bl: { x: 0.180, y: 0.880 }, // Near Baseline Left Corner (u=0, v=1.0)
-        netL: { x: 0.250, y: 0.465 }, // Net Top Tape Left Post
-        netR: { x: 0.830, y: 0.465 }  // Net Top Tape Right Post
+        tl: { x: 0.382, y: 0.584 }, // Far Baseline Left Corner (u=0, v=0)
+        tr: { x: 0.698, y: 0.586 }, // Far Baseline Right Corner (u=1, v=0)
+        br: { x: 1.120, y: 0.875 }, // Near Baseline Right Corner (u=1, v=1.0) - extends off-screen to right (+12%)
+        bl: { x: -0.060, y: 0.865 }, // Near Baseline Left Corner (u=0, v=1.0) - extends off-screen to left (-6%)
+        netL: { x: 0.320, y: 0.628 }, // Net Top Tape Left Post
+        netR: { x: 0.772, y: 0.630 }  // Net Top Tape Right Post
     };
 
     // 3x3 Homography Matrices:
@@ -831,21 +831,32 @@ window.ShuttleCV = (function () {
 
             if (!lastStats || !lastStats.ok) return lastStats || { ok: false };
 
-            // Sanity: refined court must stay reasonably close to the view (allow up to 22% shift)
+            // Sanity & Perspective Validation: Never accept an inverted, tilted, or distorted court
             const nearV = calibrationMode === 'service' ? 0.6478 : 1.0;
+            const tl = projectPoint(H, 0, 0), tr = projectPoint(H, 1, 0);
+            const br = projectPoint(H, 1, nearV), bl = projectPoint(H, 0, nearV);
+
+            // Geometric validity checks
+            const isLeftRightValid = (tl.x < tr.x) && (bl.x < br.x);
+            const isFarNearValid = (tl.y < bl.y) && (tr.y < br.y);
+            const isPerspectiveValid = (br.x - bl.x) > (tr.x - tl.x) * 1.02;
+            const isTiltReasonable = Math.abs(tl.y - tr.y) < 0.08;
+
+            if (!isLeftRightValid || !isFarNearValid || !isPerspectiveValid || !isTiltReasonable) {
+                return { ok: false, reason: 'geometric-violation' };
+            }
+
             const anchors = [[0, 0], [1, 0], [1, nearV], [0, nearV]];
             const maxShift = Math.max(...anchors.map(([u, v]) => {
                 const a = projectPoint(H_before, u, v);
                 const b = projectPoint(H, u, v);
                 return Math.hypot(a.x - b.x, a.y - b.y);
             }));
-            if (maxShift > 0.22 || lastStats.rmsPx > 12) {
+            if (maxShift > 0.25 || lastStats.rmsPx > 10) {
                 return { ok: false, reason: 'unstable', maxShift: +maxShift.toFixed(3), rmsPx: lastStats.rmsPx };
             }
 
             // Apply: update corner handles from refined homography
-            const tl = projectPoint(H, 0, 0), tr = projectPoint(H, 1, 0);
-            const br = projectPoint(H, 1, nearV), bl = projectPoint(H, 0, nearV);
             courtCorners.tl = { x: tl.x, y: tl.y };
             courtCorners.tr = { x: tr.x, y: tr.y };
             courtCorners.br = { x: br.x, y: br.y };
@@ -965,8 +976,9 @@ window.ShuttleCV = (function () {
         getCorners: () => courtCorners,
         setCorner: (key, x, y) => {
             if (courtCorners[key]) {
-                courtCorners[key].x = Math.max(0.01, Math.min(0.99, x));
-                courtCorners[key].y = Math.max(0.01, Math.min(0.99, y));
+                // Allow handles to extend beyond screen [0, 1] to support wide angle cameras & baseline frame overflow
+                courtCorners[key].x = Math.max(-0.60, Math.min(1.60, x));
+                courtCorners[key].y = Math.max(-0.20, Math.min(1.60, y));
                 isManuallyEdited = true;
                 if (key === 'netL' || key === 'netR') {
                     courtCorners._customNet = true;
@@ -979,36 +991,37 @@ window.ShuttleCV = (function () {
             courtCorners._customNet = true;
             if (calibrationMode === 'service') {
                 if (isPortrait) {
-                    courtCorners.tl = { x: 0.360, y: 0.390 };
-                    courtCorners.tr = { x: 0.720, y: 0.390 };
-                    courtCorners.br = { x: 0.825, y: 0.610 };
-                    courtCorners.bl = { x: 0.255, y: 0.610 };
-                    courtCorners.netL = { x: 0.250, y: 0.465 };
-                    courtCorners.netR = { x: 0.830, y: 0.465 };
+                    // Near Short Service Line mode: 100% inside visible frame (ideal when near baseline is off-screen)
+                    courtCorners.tl = { x: 0.382, y: 0.584 }; // Far Baseline L
+                    courtCorners.tr = { x: 0.698, y: 0.586 }; // Far Baseline R
+                    courtCorners.bl = { x: 0.280, y: 0.655 }; // Near Short Service L
+                    courtCorners.br = { x: 0.816, y: 0.658 }; // Near Short Service R
+                    courtCorners.netL = { x: 0.320, y: 0.628 };
+                    courtCorners.netR = { x: 0.772, y: 0.630 };
                 } else {
-                    courtCorners.tl = { x: 0.380, y: 0.260 };
-                    courtCorners.tr = { x: 0.620, y: 0.260 };
-                    courtCorners.br = { x: 0.740, y: 0.560 };
-                    courtCorners.bl = { x: 0.260, y: 0.560 };
-                    courtCorners.netL = { x: 0.280, y: 0.420 };
-                    courtCorners.netR = { x: 0.720, y: 0.420 };
+                    courtCorners.tl = { x: 0.380, y: 0.460 };
+                    courtCorners.tr = { x: 0.620, y: 0.460 };
+                    courtCorners.bl = { x: 0.240, y: 0.680 };
+                    courtCorners.br = { x: 0.760, y: 0.680 };
+                    courtCorners.netL = { x: 0.280, y: 0.540 };
+                    courtCorners.netR = { x: 0.720, y: 0.540 };
                 }
             } else {
-                // Full Court BWF 13.40m x 6.10m 4 outer corners mode (Standard)
+                // Full Court BWF 13.40m x 6.10m
                 if (isPortrait) {
-                    courtCorners.tl = { x: 0.360, y: 0.390 };
-                    courtCorners.tr = { x: 0.720, y: 0.390 };
-                    courtCorners.br = { x: 0.900, y: 0.880 };
-                    courtCorners.bl = { x: 0.180, y: 0.880 };
-                    courtCorners.netL = { x: 0.250, y: 0.465 };
-                    courtCorners.netR = { x: 0.830, y: 0.465 };
+                    courtCorners.tl = { x: 0.382, y: 0.584 }; // Far Baseline L
+                    courtCorners.tr = { x: 0.698, y: 0.586 }; // Far Baseline R
+                    courtCorners.bl = { x: -0.060, y: 0.865 }; // Near Baseline L (off-screen left -6%)
+                    courtCorners.br = { x: 1.120, y: 0.875 };  // Near Baseline R (off-screen right +12%)
+                    courtCorners.netL = { x: 0.320, y: 0.628 };
+                    courtCorners.netR = { x: 0.772, y: 0.630 };
                 } else {
-                    courtCorners.tl = { x: 0.380, y: 0.260 };
-                    courtCorners.tr = { x: 0.620, y: 0.260 };
-                    courtCorners.br = { x: 0.840, y: 0.840 };
-                    courtCorners.bl = { x: 0.160, y: 0.840 };
-                    courtCorners.netL = { x: 0.280, y: 0.420 };
-                    courtCorners.netR = { x: 0.720, y: 0.420 };
+                    courtCorners.tl = { x: 0.380, y: 0.460 };
+                    courtCorners.tr = { x: 0.620, y: 0.460 };
+                    courtCorners.bl = { x: 0.120, y: 0.900 };
+                    courtCorners.br = { x: 0.880, y: 0.900 };
+                    courtCorners.netL = { x: 0.280, y: 0.540 };
+                    courtCorners.netR = { x: 0.720, y: 0.540 };
                 }
             }
             if (force) isManuallyEdited = false;

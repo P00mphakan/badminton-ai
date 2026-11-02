@@ -983,12 +983,12 @@ function triggerAutoSnapCourtCV() {
                 ShuttleCV.setCourtTrusted(true);
                 showToast(`ดูดเข้าหาเส้นขาวสนามจริงสำเร็จ! (ความคลาดเคลื่อน ±${refineRes.rmsPx} px)`);
             } else {
-                showToast('สแกนเส้นไม่สำเร็จ • ให้เล็งมุม 4 จุดใกล้เส้นขาวแล้วกดสแกนอีกครั้ง');
+                showToast('สแกนเส้นไม่สำเร็จ • แนะนำให้กดปุ่ม "รีเซ็ต" เพื่อดึงเส้นตั้งต้นที่แม่นยำ หรือสลับโหมด "เสิร์ฟสั้น"');
             }
         } catch (e) {
             console.warn('Auto court scan failed:', e);
             ShuttleCV.setCourtLocked(true);
-            showToast('สแกนเส้นไม่สำเร็จ • กรุณากด "ตั้งเส้นสนาม" เพื่อทาบเส้นคอร์ทด้วยมือ');
+            showToast('สแกนเส้นไม่สำเร็จ • กรุณากดปุ่ม "รีเซ็ต" เพื่อดึงเส้นมาตรฐาน');
         }
     }, 40);
 }
@@ -998,10 +998,14 @@ function cycleCourtCalibMode() {
     const cur = ShuttleCV.getCalibrationMode ? ShuttleCV.getCalibrationMode() : 'full';
     const nextMode = cur === 'full' ? 'service' : 'full';
     ShuttleCV.setCalibrationMode(nextMode, isPortraitViewport);
-    const label = nextMode === 'full' ? '13.4m เต็มสนาม' : '6.7m เสิร์ฟสั้น';
+    const label = nextMode === 'full' ? '13.4m เต็มสนาม' : '8.68m เสิร์ฟสั้น (คอร์ทล้น)';
     const labelEl = document.getElementById('calibModeToggleLabel');
     if (labelEl) labelEl.textContent = label;
-    showToast(`สลับเป็นโหมด: ${label}`);
+    if (nextMode === 'service') {
+        showToast('สลับเป็นโหมด: เสิร์ฟสั้นใกล้ (เหมาะเมื่อเส้นหลังฝั่งใกล้ล้นขอบจอ)');
+    } else {
+        showToast('สลับเป็นโหมด: 13.4m เต็มสนาม (รองรับการลากจุดล้นขอบจอ)');
+    }
 }
 
 function resetCourtCalibToDefault() {
@@ -1157,8 +1161,9 @@ function getPointerNormPos(evt) {
     const rx = videoRenderRect.x || 0;
     const ry = videoRenderRect.y || 0;
     return {
-        x: Math.max(0.01, Math.min(0.99, (px - rx) / rw)),
-        y: Math.max(0.01, Math.min(0.99, (py - ry) / rh))
+        // Allow drag positions to extend smoothly beyond [0, 1] screen frame for court overflow
+        x: Math.max(-0.60, Math.min(1.60, (px - rx) / rw)),
+        y: Math.max(-0.20, Math.min(1.60, (py - ry) / rh))
     };
 }
 
@@ -1173,9 +1178,15 @@ liveCanvas.addEventListener('pointerdown', (e) => {
     handleKeys.forEach(k => {
         const pt = corners[k];
         if (!pt) return;
+        // Direct distance to corner point
         const d = Math.hypot(pt.x - pos.x, pt.y - pos.y);
-        if (d < minDist) {
-            minDist = d;
+        // Also check distance to edge-clamped indicator (for corners that extend off-screen)
+        const clampX = Math.max(0.04, Math.min(0.96, pt.x));
+        const clampY = Math.max(0.04, Math.min(0.96, pt.y));
+        const dClamp = Math.hypot(clampX - pos.x, clampY - pos.y);
+        const effectiveDist = Math.min(d, dClamp);
+        if (effectiveDist < minDist) {
+            minDist = effectiveDist;
             closestKey = k;
         }
     });
@@ -1836,28 +1847,88 @@ function drawCalibrationHandlesAndLoupe(ctx, w, h) {
         const isNet = key.startsWith('net');
         const color = isNet ? '#38bdf8' : '#fbbf24';
 
+        const isOffscreen = pt.x < 0.02 || pt.x > 0.98 || pt.y < 0.02 || pt.y > 0.98;
+        const padX = 22;
+        const padY = 22;
+        const hx = Math.max(padX, Math.min(w - padX, px));
+        const hy = Math.max(padY, Math.min(h - padY, py));
+
         ctx.save();
-        ctx.beginPath();
-        ctx.arc(px, py, 12, 0, Math.PI * 2);
-        ctx.fillStyle = color + '33';
-        ctx.fill();
-        ctx.lineWidth = 2.5;
-        ctx.strokeStyle = color;
-        ctx.stroke();
 
-        ctx.beginPath();
-        ctx.arc(px, py, 3.5, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
+        if (isOffscreen) {
+            // Dotted guide line projecting toward off-screen corner
+            ctx.beginPath();
+            ctx.setLineDash([4, 4]);
+            ctx.moveTo(hx, hy);
+            ctx.lineTo(px, py);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.setLineDash([]);
 
-        ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
-        ctx.beginPath();
-        ctx.roundRect(px - 65, py - 28, 130, 16, 5);
-        ctx.fill();
-        ctx.fillStyle = color;
-        ctx.font = 'bold 9px Prompt, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(label, px, py - 17);
+            // Edge Handle indicator (touchable on-screen anchor)
+            ctx.beginPath();
+            ctx.arc(hx, hy, 14, 0, Math.PI * 2);
+            ctx.fillStyle = color + '44';
+            ctx.fill();
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = color;
+            ctx.stroke();
+
+            // Inner center dot
+            ctx.beginPath();
+            ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+
+            // Edge badge showing overflow direction
+            let overflowNote = '';
+            if (pt.x < 0) overflowNote = `ล้นซ้าย ${Math.round(Math.abs(pt.x) * 100)}%`;
+            else if (pt.x > 1) overflowNote = `ล้นขวา +${Math.round((pt.x - 1) * 100)}%`;
+            else if (pt.y > 1) overflowNote = `ล้นล่าง +${Math.round((pt.y - 1) * 100)}%`;
+            else overflowNote = 'นอกจอ';
+
+            const badgeText = `${label.split(' ')[0]} (${overflowNote})`;
+            ctx.fillStyle = 'rgba(9, 13, 22, 0.92)';
+            ctx.beginPath();
+            const badgeW = 120;
+            const badgeX = Math.max(6, Math.min(w - badgeW - 6, hx - badgeW / 2));
+            const badgeY = hy > h / 2 ? hy - 32 : hy + 18;
+            ctx.roundRect(badgeX, badgeY, badgeW, 18, 5);
+            ctx.fill();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.fillStyle = '#fef08a';
+            ctx.font = 'bold 9px Prompt, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(badgeText, badgeX + badgeW / 2, badgeY + 12);
+        } else {
+            // Normal On-screen Handle
+            ctx.beginPath();
+            ctx.arc(px, py, 12, 0, Math.PI * 2);
+            ctx.fillStyle = color + '33';
+            ctx.fill();
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = color;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+
+            ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
+            ctx.beginPath();
+            ctx.roundRect(px - 65, py - 28, 130, 16, 5);
+            ctx.fill();
+            ctx.fillStyle = color;
+            ctx.font = 'bold 9px Prompt, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(label, px, py - 17);
+        }
+
         ctx.restore();
     });
 
@@ -1868,8 +1939,8 @@ function drawCalibrationHandlesAndLoupe(ctx, w, h) {
             const activeVideo = webcamVideo;
             const loupeRadius = 56;
             const zoom = 3.0;
-            const targetX = dragPointerPos.x * w;
-            const targetY = dragPointerPos.y * h;
+            const targetX = Math.max(0, Math.min(w, dragPointerPos.x * w));
+            const targetY = Math.max(0, Math.min(h, dragPointerPos.y * h));
             const loupeX = Math.max(loupeRadius + 12, Math.min(w - loupeRadius - 12, targetX));
             const loupeY = targetY > loupeRadius * 2.4 ? targetY - loupeRadius - 28 : targetY + loupeRadius + 28;
 
