@@ -209,8 +209,9 @@ window.ShuttleCV = (function () {
         ];
     }
 
-    function orderFourCorners(tl, tr, br, bl) {
-        const pts = [tl, tr, br, bl];
+    function orderFourCorners(arg1, tr, br, bl) {
+        // Accept either an array of 4 points or 4 separate point arguments
+        const pts = Array.isArray(arg1) ? arg1 : [arg1, tr, br, bl];
         const cx = pts.reduce((s, p) => s + p.x, 0) / 4;
         const cy = pts.reduce((s, p) => s + p.y, 0) / 4;
         const cw = [...pts].sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
@@ -606,17 +607,39 @@ window.ShuttleCV = (function () {
         return true;
     }
 
-    // Court airspace = court floor quad (with 0.6m margin) lifted up to 6.5m (shuttle flight volume)
+    // 2.2 Play Volume Box: x in [-1.2, 7.3] m, y in [-1.5, 14.9] m, z in [0, 8.0] m
+    const PLAY_VOLUME = {
+        minX: -1.2,
+        maxX: 7.3,
+        minY: -1.5,
+        maxY: 14.9,
+        minZ: 0.0,
+        maxZ: 8.0
+    };
+
+    function isInsidePlayVolume(xM, yM, zM = 0) {
+        return xM >= PLAY_VOLUME.minX && xM <= PLAY_VOLUME.maxX &&
+               yM >= PLAY_VOLUME.minY && yM <= PLAY_VOLUME.maxY &&
+               zM >= PLAY_VOLUME.minZ && zM <= PLAY_VOLUME.maxZ;
+    }
+
+    function isInsidePlayVolumeUV(u, v, zM = 0) {
+        const xM = u * COURT_WIDTH_M;
+        const yM = v * COURT_LENGTH_M;
+        return isInsidePlayVolume(xM, yM, zM);
+    }
+
+    // Court airspace = court floor quad (with 1.2m width margin, 1.5m length margin) lifted up to 8.0m (shuttle flight volume)
     function getCourtAirspacePolygon() {
-        const mU = 0.6 / COURT_WIDTH_M;
-        const mV = 0.6 / COURT_LENGTH_M;
+        const mU = 1.2 / COURT_WIDTH_M;
+        const mV = 1.5 / COURT_LENGTH_M;
         const floorPts = [
             [-mU, -mV], [1 + mU, -mV], [1 + mU, 1 + mV], [-mU, 1 + mV]
         ];
         const pts = [];
         floorPts.forEach(([u, v]) => {
             const p = projectPoint(H_courtToScreen, u, v);
-            const lift = expectedPlayerHeightScreen(v) * (6.5 / 1.75);
+            const lift = expectedPlayerHeightScreen(v) * (8.0 / 1.75);
             pts.push({ x: p.x, y: p.y });
             pts.push({ x: p.x, y: p.y - lift });
         });
@@ -1054,6 +1077,20 @@ window.ShuttleCV = (function () {
                 courtCorners.br = ordered.br;
                 courtCorners.bl = ordered.bl;
                 updateHomographyFromCorners();
+            } else if (calibrationMode === 'front-net') {
+                const ordered = orderFourCorners(courtCorners.sfl, courtCorners.sfr, courtCorners.snr, courtCorners.snl);
+                courtCorners.sfl = ordered.tl;
+                courtCorners.sfr = ordered.tr;
+                courtCorners.snr = ordered.br;
+                courtCorners.snl = ordered.bl;
+                updateHomographyFromCorners();
+            } else if (calibrationMode === 'service') {
+                const ordered = orderFourCorners(courtCorners.tl, courtCorners.tr, courtCorners.snr, courtCorners.snl);
+                courtCorners.tl = ordered.tl;
+                courtCorners.tr = ordered.tr;
+                courtCorners.snr = ordered.br;
+                courtCorners.snl = ordered.bl;
+                updateHomographyFromCorners();
             }
         },
         setCorner: (key, x, y) => {
@@ -1163,10 +1200,18 @@ window.ShuttleCV = (function () {
         expectedPlayerHeightScreen,
         metersPerScreenUnit,
         isInsideCourt,
+        PLAY_VOLUME,
+        isInsidePlayVolume,
+        isInsidePlayVolumeUV,
         getCourtAirspacePolygon,
         screenToCourtNormalized,
         courtNormalizedToScreen,
         screenToCourtMeters,
-        evaluateLineCall
+        evaluateLineCall,
+        orderFourCorners
     };
 })();
+
+if (typeof window !== 'undefined') {
+    window.orderFourCorners = window.ShuttleCV?.orderFourCorners;
+}

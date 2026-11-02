@@ -21,11 +21,32 @@
 | `v1.1.0-fieldtest-complete` | เวอร์ชันเสถียรหลังแก้ปัญหาจากคลิปทดสอบจริง | `git checkout v1.1.0-fieldtest-complete -- .` |
 | `v1.2.0-court-math-ui-redesign` | เวอร์ชันเสถียร: แก้ไขคณิตศาสตร์เส้นสนามตรง 100%, แก้บั๊กแอปค้าง, UI Redesign สำหรับนักแบด 1-Tap AI | `git checkout v1.2.0-court-math-ui-redesign -- .` |
 | `v1.2.1-fix-dock-overlap` | เวอร์ชันแก้ปัญหาแถบปุ่มลัดทับซ้อนกับแถบเมนูด้านล่าง | `git checkout v1.2.1-fix-dock-overlap -- .` |
-| `v1.2.2-court-geometry-and-ui-cleanup` | **เวอร์ชันล่าสุด: แก้ไขมิติมุมสนามตรงจุด 100%, แก้กราฟิกมาร์คคนตรงตัว, แก้ปัญหา UI 5 ชั้นทับซ้อน, และปรับปรุงสแกนเส้น** | `git checkout v1.2.2-court-geometry-and-ui-cleanup -- .` |
+| `v1.2.2-court-geometry-and-ui-cleanup` | แก้ไขมิติมุมสนามตรงจุด 100%, แก้กราฟิกมาร์คคนตรงตัว, แก้ปัญหา UI 5 ชั้นทับซ้อน, และปรับปรุงสแกนเส้น | `git checkout v1.2.2-court-geometry-and-ui-cleanup -- .` |
+| `v1.3.0-physics-aerodynamics-tracking-update` | **เวอร์ชันล่าสุด: ฟิสิกส์แรงต้านอากาศ (Aerodynamic Drag Model), Spatial Gate Filter & Play Volume Box, ป้องกันเส้นบิดเบี้ยวด้วย orderFourCorners อัตโนมัติบน pointerup, และล็อก Letterbox Render** | `git checkout v1.3.0-physics-aerodynamics-tracking-update -- .` |
 
 ---
 
 ## 🚀 รายการบันทึกการแก้ไขตามเวอร์ชัน
+
+### [v1.3.0-physics-aerodynamics-tracking-update] - 2026-11-02
+- **Physics Engine (`js/pose-tracker.js`):**
+  - ติดตั้งสูตรอากาศพลศาสตร์ BWF Standard Shuttlecock: $F_d = \frac{1}{2} \rho C_d A v^2$ และ $v_0 = \frac{L(e^{D/L} - 1)}{T}$ โดยใช้ $v_t = 7.0\text{ m/s}$, $g = 9.81\text{ m/s}^2$, $L \approx 4.99\text{ m}$ พร้อมฟังก์ชันมาตรฐาน `calculateSmashInitialSpeed(distanceMeters, flightTimeSec)` ชดเชยแรงต้านอากาศ ไม่คำนวณแบบหารระยะทางตรงๆ
+  - ส่งออกฟังก์ชัน `window.calculateSmashInitialSpeed` และ `ShuttleCV.calculateSmashInitialSpeed` สำหรับทดสอบและเชื่อมต่อระบบวิเคราะห์
+- **Shuttlecock Tracking & Interference Rejection (`js/cv-court.js`, `js/pose-tracker.js`):**
+  - กำหนด **Play Volume Box** $x \in [-1.2, 7.3]\text{ m}, y \in [-1.5, 14.9]\text{ m}, z \in [0, 8.0]\text{ m}$ พร้อมฟังก์ชันตรวจสอบ `isInsidePlayVolume(x, y, z)` และ `isInsidePlayVolumeUV(u, v)`
+  - ปรับปรุง `getCourtAirspacePolygon()` ใน `js/cv-court.js` ให้ขยายปริมาตรอากาศคลุมพื้นที่ Play Volume Box 8.0 เมตร
+  - ตรวจจับลูกขนไก่ด้วย 3-Frame Temporal Difference $|F_t - F_{t-1}| \cap |F_{t-1} - F_{t-2}|$ กรองจุดแสงรบกวนด้วย Hot-Cell Filter
+  - ใน `onTrackConfirmed`: ลูกขนไก่ที่ถูกต้องจะต้องมีจุดเริ่มต้นสัมผัสหน้าไม้ (Hit Point) ใกล้เคียงกับผู้เล่นในสนามเราเท่านั้น ($d \le 2.2$) คัดทิ้งลูกที่ลอยมาจากคอร์ทข้างเคียง
+- **Court Calibration & Homography (`js/cv-court.js`, `js/live-view.js`):**
+  - ฟังก์ชัน `orderFourCorners(pts)` จัดเรียง 4 จุดมุมสนามอัตโนมัติตามเข็มนาฬิกา (Centroid -> Clockwise Sort -> Top-Left Anchor) ป้องกันปัญหาเส้นสนามบิดเบี้ยวไขว้กันเป็นรูปโบว์ไทด์ (Bow-tie)
+  - ทำงานอัตโนมัติทุกครั้งเมื่อผู้ใช้ปล่อยนิ้ว (`pointerup`, `pointercancel`, `lostpointercapture`) ทั้งโหมดเต็มสนาม, โหมดเส้นหน้าเน็ต และโหมดเสิร์ฟสั้น
+  - แก้ไขเส้น Crosshair แนวตั้งในแว่นขยาย Loupe 3x Magnifier ให้ตรงจุดกึ่งกลาง
+- **Letterbox Offset Alignment Guard (`js/live-view.js`):**
+  - กราฟิก Court lines, Skeletons, Floor Rings, Shuttle Trail, และ Loupe ทั้งหมดถูกเรนเดอร์และ `clip()` ให้อยู่ภายในกรอบวิดีโอจริง (`videoRenderRect`) 100% ป้องกันกราฟิกหลุดออกแถบดำ Letterbox บนคลิปวิดีโอแนวตั้ง (9:16)
+- **Deployment & Production Quality:**
+  - สร้าง `vercel.json` รองรับ Clean URLs และ Static Deployment
+  - อัปเดต Cache Buster เป็น `?v=20261102k`
+  - ยืนยัน Zero Mock Data / Production Mode Only 100%
 
 ### [v1.2.2-court-geometry-and-ui-cleanup] - 2026-11-02
 - **Zero-Overlap Modal State UI (`index.html`, `js/live-view.js`):**

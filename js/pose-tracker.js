@@ -516,7 +516,39 @@ async function runRealPoseEstimation(videoEl) {
  *    - Cross-validated Initial Speed (Screen-Space Metric Velocity + Drag Model)
  *      Prevents perspective/exponential blow-up (no fake 300-400 km/h spikes!)
  * ================================================================ */
-const SHUTTLE_DRAG_LENGTH_M = 5.4;
+const SHUTTLE_DRAG_LENGTH_M = 4.99; // Aerodynamic length L = (VT * VT) / G (~4.99m for VT=7.0m/s)
+
+/**
+ * 1. Physics Engine: การคำนวณความเร็วลูกตบ (Smash Exit Velocity)
+ * Aerodynamic Drag Formula:
+ * Fd = 1/2 * rho * Cd * A * v^2
+ * dv/dt = -k * v^2 where k = g / (v_t^2) = 1 / L
+ * D = L * ln(1 + v0 * T / L)
+ * v0 = L * (exp(D / L) - 1) / T
+ *
+ * @param {number} distanceMeters - Travel distance in meters (D)
+ * @param {number} flightTimeSec - Flight time in seconds (T)
+ * @returns {number} Initial smash velocity v0 in km/h (capped at 550 km/h)
+ */
+function calculateSmashInitialSpeed(distanceMeters, flightTimeSec) {
+    if (flightTimeSec <= 0.04 || distanceMeters <= 0.5) return 0;
+    
+    const VT = 7.0;             // Terminal velocity (m/s)
+    const G = 9.81;            // Gravity (m/s^2)
+    const L = (VT * VT) / G;   // Aerodynamic length (~4.99 m)
+    
+    // จำกัดอัตราส่วน D/L สูงสุดที่ 2.2 เพื่อป้องกัน Floating-point overflow
+    const expTerm = Math.exp(Math.min(2.2, distanceMeters / L)) - 1.0;
+    const v0_mps = (L * expTerm) / flightTimeSec;
+    
+    const speedKmh = v0_mps * 3.6;
+    return Math.min(550, Math.max(0, Math.round(speedKmh)));
+}
+
+if (typeof window !== 'undefined') {
+    window.calculateSmashInitialSpeed = calculateSmashInitialSpeed;
+    if (window.ShuttleCV) window.ShuttleCV.calculateSmashInitialSpeed = calculateSmashInitialSpeed;
+}
 const INPAINT_MAX_GAP_MS = 210; // Bridge up to ~5-6 frames of occlusion/blur like InpaintNet
 let shuttleTrack = [];          // [{ sx, sy, t, inpainted }]
 let activeShot = null;          // { hitter, tHit, startU, startV }
@@ -609,8 +641,15 @@ function startShotFromContact(contactPt, nextPt, now, forcedHitter = null) {
 function onTrackConfirmed(now) {
     const first = shuttleTrack[0];
     const second = shuttleTrack[Math.min(2, shuttleTrack.length - 1)];
+    const near = nearestPlayerToPoint(first.sx, first.sy);
+    // 2.2 Interference Rejection:
+    // Shuttlecock hit must originate near an active on-court match player
+    if (!near || near.d > 2.2 || !near.p) {
+        shuttleTrack = [];
+        return;
+    }
     shuttle.trail = [];
-    startShotFromContact(first, second, now);
+    startShotFromContact(first, second, now, near.p);
 }
 
 function measureTrackInitialSpeedMps(track, hitterV) {
@@ -646,11 +685,10 @@ function finalizeShot(shot, endU, endV, tEnd, isLanding) {
     // Require minimum flight duration (0.24s) and court travel (1.8m) so partial tracks never inflate v0
     if (tf < 0.24 || tf > 3.2 || dH < 1.8) return;
 
-    // 1. Mean chord speed & conservative aerodynamic drag estimate
-    const vMean = x / tf; // m/s
-    const L = SHUTTLE_DRAG_LENGTH_M;
-    // Cap exponential drag amplification factor to at most 2.15x mean speed (prevents e^(x/L) blow-up!)
-    const vDrag = Math.min(vMean * 2.15, (L * (Math.exp(Math.min(x, 9.5) / L) - 1)) / tf);
+    // 1. Aerodynamic drag model exit speed (BWF standard aerodynamic length L ~ 4.99m)
+    const smashSpeedKmh = calculateSmashInitialSpeed(x, tf);
+    const vDrag = smashSpeedKmh / 3.6; // m/s
+    if (vDrag <= 0) return;
 
     // 2. Direct pixel-to-meter velocity from early shuttle track at hitter's depth plane
     const vTrack = measureTrackInitialSpeedMps(shuttleTrack, shot.startV);
@@ -712,7 +750,15 @@ function processRealShuttleAndRally(cvResult) {
         return;
     }
 
-    const cands = cvResult?.shuttleCandidates || (cvResult?.shuttleCandidate ? [cvResult.shuttleCandidate] : []);
+    // 2.2 Spatial Gate Filter: candidate points must reside within Play Volume Box
+    const rawCands = cvResult?.shuttleCandidates || (cvResult?.shuttleCandidate ? [cvResult.shuttleCandidate] : []);
+    const cands = rawCands.filter(c => {
+        if (typeof ShuttleCV.isInsidePlayVolumeUV === 'function') {
+            const uv = ShuttleCV.screenToCourtNormalized(c.x, c.y);
+            if (uv && !ShuttleCV.isInsidePlayVolumeUV(uv.x, uv.y)) return false;
+        }
+        return true;
+    });
     let chosen = null;
 
     // Trim trailing inpainted points if gap exceeded INPAINT_MAX_GAP_MS

@@ -2018,7 +2018,7 @@ function drawCalibrationHandlesAndLoupe(ctx, w, h) {
             ctx.moveTo(loupeX - loupeRadius, loupeY);
             ctx.lineTo(loupeX + loupeRadius, loupeY);
             ctx.moveTo(loupeX, loupeY - loupeRadius);
-            ctx.lineTo(loupeX + loupeRadius, loupeY);
+            ctx.lineTo(loupeX, loupeY + loupeRadius);
             ctx.stroke();
             ctx.restore();
 
