@@ -906,18 +906,18 @@ function exitUploadedVideoMode() {
     showToast('ปิดโหมดวิเคราะห์คลิปวิดีโอแล้ว');
 }
 
-function toggleCourtCalibrationMode() {
+function toggleCourtCalibrationMode(forceState) {
     if (!isWebcamActive && !isUploadedVideoActive) {
         showToast('กรุณาเปิดกล้องสดหรืออัปโหลดคลิปสนามก่อนตั้งเส้นสนาม');
         return;
     }
-    isCalibratingCourt = !isCalibratingCourt;
+    isCalibratingCourt = (typeof forceState === 'boolean') ? forceState : !isCalibratingCourt;
     const icon = document.getElementById('calibIcon');
     const label = document.getElementById('calibLabel');
     const floatSaveBtn = document.getElementById('floatingSaveCalibBtn');
     const calibToolbar = document.getElementById('courtCalibrationToolbar');
-    const heroDockWrap = document.getElementById('heroPlayerDockWrap');
-    const videoControls = document.getElementById('videoPlaybackControls');
+    const restoreBtn = document.getElementById('btnRestoreCalibToolbar');
+    const viewportContainer = document.getElementById('cameraViewportContainer');
 
     if (isCalibratingCourt) {
         // Freeze the clip while dragging so the handles stay on the same frame
@@ -926,10 +926,13 @@ function toggleCourtCalibrationMode() {
         if (icon) icon.className = 'ph-fill ph-check-fat text-emerald-400 text-lg shrink-0';
         if (label) label.textContent = 'บันทึกเส้นสนาม';
         if (floatSaveBtn) floatSaveBtn.classList.remove('hidden');
-        if (calibToolbar) calibToolbar.classList.remove('hidden');
-        // Hide normal match hero bar and video scrubber during calibration to prevent any UI overlapping
-        if (heroDockWrap) heroDockWrap.classList.add('hidden');
-        if (videoControls) videoControls.classList.add('hidden');
+        if (calibToolbar) {
+            calibToolbar.classList.remove('hidden');
+            calibToolbar.classList.remove('is-dragging-handle');
+        }
+        if (restoreBtn) restoreBtn.classList.add('hidden');
+        // Add class to hide bottom dock and completely clear the court view
+        if (viewportContainer) viewportContainer.classList.add('is-calibrating-court');
         showToast('ลากจุดมุมคอร์ท 4 จุด และหัวเน็ท 2 ข้างให้ตรงเส้นจริง แล้วกด "บันทึกเส้น ✓"');
     } else {
         if (ShuttleCV.updateHomography) {
@@ -944,10 +947,24 @@ function toggleCourtCalibrationMode() {
         if (label) label.textContent = 'ตั้งเส้นสนาม';
         if (floatSaveBtn) floatSaveBtn.classList.add('hidden');
         if (calibToolbar) calibToolbar.classList.add('hidden');
-        // Restore normal match hero bar and video scrubber
-        if (heroDockWrap) heroDockWrap.classList.remove('hidden');
-        if (videoControls && isUploadedVideoActive) videoControls.classList.remove('hidden');
+        if (restoreBtn) restoreBtn.classList.add('hidden');
+        if (viewportContainer) viewportContainer.classList.remove('is-calibrating-court');
         showToast('ล็อกพิกัดเส้นสนามเรียบร้อยแล้ว');
+    }
+}
+
+function toggleCalibToolbarPeek() {
+    const calibToolbar = document.getElementById('courtCalibrationToolbar');
+    const restoreBtn = document.getElementById('btnRestoreCalibToolbar');
+    if (!calibToolbar) return;
+    const isHidden = calibToolbar.classList.contains('hidden');
+    if (isHidden) {
+        calibToolbar.classList.remove('hidden');
+        if (restoreBtn) restoreBtn.classList.add('hidden');
+    } else {
+        calibToolbar.classList.add('hidden');
+        if (restoreBtn) restoreBtn.classList.remove('hidden');
+        showToast('ย่อแถบเครื่องมือแล้ว • แตะปุ่ม "ทาบเส้น ⚙️" มุมบนขวาเพื่อแสดงอีกครั้ง');
     }
 }
 
@@ -956,7 +973,7 @@ function triggerAutoSnapCourtCV() {
         showToast('กรุณาเปิดกล้องสดหรืออัปโหลดคลิปก่อนสแกนเส้นสนาม');
         return;
     }
-    showToast('กำลังตรวจจับเส้นสนามอัตโนมัติ...');
+    showToast('กำลังสแกนหาเส้นขาวสนามจริงแบบแม่นยำสูง...');
     setTimeout(() => {
         try {
             const videoEl = webcamVideo; // uploaded clips & live camera share the same <video> element
@@ -964,9 +981,9 @@ function triggerAutoSnapCourtCV() {
             ShuttleCV.setCourtLocked(true);
             if (refineRes && refineRes.ok) {
                 ShuttleCV.setCourtTrusted(true);
-                showToast(`ดูดเข้าหาเส้นขาวสนามจริงสำเร็จ! (ความคลาดเคลื่อน ${refineRes.rmsPx} px)`);
+                showToast(`ดูดเข้าหาเส้นขาวสนามจริงสำเร็จ! (ความคลาดเคลื่อน ±${refineRes.rmsPx} px)`);
             } else {
-                showToast('สแกนเส้นไม่ผ่าน • กด "ตั้งเส้นสนาม" ลาก 4 มุมให้ตรงเส้นจริงก่อน (ระบบจะยังไม่ให้แต้มอัตโนมัติ)');
+                showToast('สแกนเส้นไม่สำเร็จ • ให้เล็งมุม 4 จุดใกล้เส้นขาวแล้วกดสแกนอีกครั้ง');
             }
         } catch (e) {
             console.warn('Auto court scan failed:', e);
@@ -981,7 +998,9 @@ function cycleCourtCalibMode() {
     const cur = ShuttleCV.getCalibrationMode ? ShuttleCV.getCalibrationMode() : 'full';
     const nextMode = cur === 'full' ? 'service' : 'full';
     ShuttleCV.setCalibrationMode(nextMode, isPortraitViewport);
-    const label = nextMode === 'full' ? '4 มุมนอกสุด (13.4m)' : 'เส้นเสิร์ฟสั้นใกล้ (8.68m)';
+    const label = nextMode === 'full' ? '13.4m เต็มสนาม' : '6.7m เสิร์ฟสั้น';
+    const labelEl = document.getElementById('calibModeToggleLabel');
+    if (labelEl) labelEl.textContent = label;
     showToast(`สลับเป็นโหมด: ${label}`);
 }
 
@@ -1164,6 +1183,8 @@ liveCanvas.addEventListener('pointerdown', (e) => {
     if (closestKey) {
         draggingHandleKey = closestKey;
         dragPointerPos = pos;
+        const calibToolbar = document.getElementById('courtCalibrationToolbar');
+        if (calibToolbar) calibToolbar.classList.add('is-dragging-handle');
         try {
             liveCanvas.setPointerCapture(e.pointerId);
         } catch (err) {}
@@ -1188,6 +1209,8 @@ function handleCalibrationPointerEnd(e) {
         }
         draggingHandleKey = null;
         dragPointerPos = null;
+        const calibToolbar = document.getElementById('courtCalibrationToolbar');
+        if (calibToolbar) calibToolbar.classList.remove('is-dragging-handle');
     }
 }
 
@@ -2174,6 +2197,7 @@ setInterval(() => {
 // Global window exposure for HTML UI event bindings
 window.cycleCourtCalibMode = cycleCourtCalibMode;
 window.resetCourtCalibToDefault = resetCourtCalibToDefault;
+window.toggleCalibToolbarPeek = toggleCalibToolbarPeek;
 window.toggleMatchSession = toggleMatchSession;
 window.startMatchSession = startMatchSession;
 window.finishMatchAndSendToCoach = finishMatchAndSendToCoach;

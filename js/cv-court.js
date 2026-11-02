@@ -706,26 +706,56 @@ window.ShuttleCV = (function () {
                 return g[yi * W + xi];
             };
 
-            // Painted BWF lines in normalized court coordinates (net line v=0.5 is not painted)
+            // Detect typical badminton court floor mat vs white court lines
+            const isCourtFloor = (xi, yi) => {
+                const rx = Math.round(xi), ry = Math.round(yi);
+                if (rx < 0 || ry < 0 || rx >= W || ry >= Hh) return false;
+                const idx = (ry * W + rx) * 4;
+                const r = d[idx], gr = d[idx + 1], b = d[idx + 2];
+                // Blue floor mat (like IMG_7847 / BWF events)
+                if (b > r + 14 && b > 55) return true;
+                // Green floor mat
+                if (gr > r + 14 && gr > b - 10 && gr > 45) return true;
+                // Wood / parquet gym floor
+                if (r > b + 14 && gr > b + 6) return true;
+                return false;
+            };
+
+            const isWhiteLine = (xi, yi) => {
+                const rx = Math.round(xi), ry = Math.round(yi);
+                if (rx < 0 || ry < 0 || rx >= W || ry >= Hh) return false;
+                const idx = (ry * W + rx) * 4;
+                const r = d[idx], gr = d[idx + 1], b = d[idx + 2];
+                const lum = g[ry * W + rx];
+                const diff = Math.max(r, gr, b) - Math.min(r, gr, b);
+                return lum >= 135 && diff < 55;
+            };
+
+            // Template lines adapted to calibrationMode ('full' = 13.4m, 'service' = near service line v=0.6478)
+            const maxV = calibrationMode === 'service' ? 0.6478 : 1.0;
             const lines = [];
-            [0, 0.0567, 0.3522, 0.6478, 0.9433, 1].forEach(v => lines.push({ a: [0, v], b: [1, v] }));
-            [0, 0.0754, 0.9246, 1].forEach(u => lines.push({ a: [u, 0], b: [u, 1] }));
+            const horizVs = [0, 0.0567, 0.3522, 0.6478];
+            if (calibrationMode !== 'service') horizVs.push(0.9433, 1.0);
+            horizVs.forEach(v => lines.push({ a: [0, v], b: [1, v] }));
+
+            [0, 0.0754, 0.9246, 1].forEach(u => lines.push({ a: [u, 0], b: [u, maxV] }));
             lines.push({ a: [0.5, 0], b: [0.5, 0.3522] });
-            lines.push({ a: [0.5, 0.6478], b: [0.5, 1] });
+            if (calibrationMode !== 'service') lines.push({ a: [0.5, 0.6478], b: [0.5, 1.0] });
 
             const H_before = H_courtToScreen.slice();
             let H = H_courtToScreen.slice();
             let lastStats = null;
-            const radii = [0.035, 0.015]; // 2 fast passes (coarse -> fine)
+            // 3-pass coarse-to-fine search: coarse capture (0.075) -> medium alignment (0.035) -> sub-pixel lock (0.015)
+            const radii = [0.075, 0.035, 0.015];
 
             for (let iter = 0; iter < radii.length; iter++) {
-                const searchR = Math.min(22, Math.max(6, Math.round(radii[iter] * Math.max(W, Hh))));
+                const searchR = Math.min(36, Math.max(6, Math.round(radii[iter] * Math.max(W, Hh))));
                 const src = [];
                 const dst = [];
                 const offsets = [];
 
                 lines.forEach(L => {
-                    const N = 14; // 14 samples per line for smooth real-time execution
+                    const N = 14;
                     for (let s = 1; s < N; s++) {
                         const t = s / N;
                         const u = L.a[0] + (L.b[0] - L.a[0]) * t;
@@ -739,25 +769,31 @@ window.ShuttleCV = (function () {
                         let dx = (p2.x - p.x) * W, dy = (p2.y - p.y) * Hh;
                         const len = Math.hypot(dx, dy) || 1;
                         dx /= len; dy /= len;
-                        const nx = -dy, ny = dx; // perpendicular
+                        const nx = -dy, ny = dx; // perpendicular unit vector
 
-                        // Multi-scale flank (thin far lines -> wide near lines under perspective)
-                        const flanks = [3, 7];
+                        // Multi-scale flanks
+                        const flanks = [3, 6, 10];
                         let bestT = 0, bestResp = -1e9;
                         for (let k = -searchR; k <= searchR; k++) {
                             const cx = px + nx * k, cy = py + ny * k;
                             const c = lumAt(cx, cy);
-                            if (c < 0) continue;
+                            if (c < 110) continue;
                             for (let f = 0; f < flanks.length; f++) {
                                 const flank = flanks[f];
-                                const l = lumAt(cx - nx * flank, cy - ny * flank);
-                                const r = lumAt(cx + nx * flank, cy + ny * flank);
+                                const lx = cx - nx * flank, ly = cy - ny * flank;
+                                const rx = cx + nx * flank, ry = cy + ny * flank;
+                                const l = lumAt(lx, ly);
+                                const r = lumAt(rx, ry);
                                 if (l < 0 || r < 0) continue;
-                                const resp = c - Math.max(l, r);
+
+                                let resp = c - Math.max(l, r);
+                                if (isWhiteLine(cx, cy)) resp += 14;
+                                if (isCourtFloor(lx, ly) || isCourtFloor(rx, ry)) resp += 10;
+
                                 if (resp > bestResp) { bestResp = resp; bestT = k; }
                             }
                         }
-                        if (bestResp >= 10) {
+                        if (bestResp >= 16) {
                             src.push({ x: u, y: v });
                             dst.push({ x: (px + nx * bestT) / W, y: (py + ny * bestT) / Hh });
                             offsets.push(Math.abs(bestT));
@@ -765,7 +801,7 @@ window.ShuttleCV = (function () {
                     }
                 });
 
-                if (src.length < 12) {
+                if (src.length < 10) {
                     lastStats = { ok: false, reason: 'few-lines', samples: src.length };
                     break;
                 }
@@ -773,10 +809,10 @@ window.ShuttleCV = (function () {
                 // Robust outlier rejection on perpendicular offsets
                 const sorted = offsets.slice().sort((a, b) => a - b);
                 const med = sorted[Math.floor(sorted.length / 2)];
-                const gate = med * 2.5 + 2;
+                const gate = med * 2.2 + 3;
                 const fSrc = [], fDst = [];
                 offsets.forEach((o, i) => { if (o <= gate) { fSrc.push(src[i]); fDst.push(dst[i]); } });
-                if (fSrc.length < 10) {
+                if (fSrc.length < 8) {
                     lastStats = { ok: false, reason: 'outliers', samples: fSrc.length };
                     break;
                 }
@@ -795,7 +831,7 @@ window.ShuttleCV = (function () {
 
             if (!lastStats || !lastStats.ok) return lastStats || { ok: false };
 
-            // Sanity: refined court must stay close to current calibration
+            // Sanity: refined court must stay reasonably close to the view (allow up to 22% shift)
             const nearV = calibrationMode === 'service' ? 0.6478 : 1.0;
             const anchors = [[0, 0], [1, 0], [1, nearV], [0, nearV]];
             const maxShift = Math.max(...anchors.map(([u, v]) => {
@@ -803,7 +839,7 @@ window.ShuttleCV = (function () {
                 const b = projectPoint(H, u, v);
                 return Math.hypot(a.x - b.x, a.y - b.y);
             }));
-            if (maxShift > 0.16 || lastStats.rmsPx > 14) {
+            if (maxShift > 0.22 || lastStats.rmsPx > 12) {
                 return { ok: false, reason: 'unstable', maxShift: +maxShift.toFixed(3), rmsPx: lastStats.rmsPx };
             }
 

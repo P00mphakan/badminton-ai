@@ -29,7 +29,7 @@
             }
         }
     </script>
-    <link rel="stylesheet" href="css/styles.css?v=20261102d">
+    <link rel="stylesheet" href="css/styles.css?v=20261102e">
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500 selection:text-white">
 
@@ -322,7 +322,36 @@
                     </div>
                 </div>
 
-                <!-- ===== BOTTOM ACTION DOCK (Hero Match Button + Quick Setup Tools + Video Controls + Floating Calib Bar) ===== -->
+                <!-- Active Court Calibration Multi-Action Toolbar (Docked cleanly at Top in stadium ceiling dead zone - ZERO court line obstruction) -->
+                <div id="courtCalibrationToolbar" class="hidden absolute top-[112px] inset-x-2 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 z-30 pointer-events-auto flex items-center justify-between sm:justify-center gap-1 sm:gap-1.5 bg-slate-950/90 backdrop-blur-md px-2.5 py-1.5 rounded-2xl border border-amber-500/50 shadow-2xl max-w-lg transition-all duration-150">
+                    <button id="floatingSaveCalibBtn" onclick="toggleCourtCalibrationMode()" class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-500 text-slate-950 font-black text-[11px] sm:text-xs shadow-md shadow-emerald-500/30 flex items-center gap-1 hover:bg-emerald-400 active:scale-95 transition-all shrink-0">
+                        <i class="ph-fill ph-check-fat text-xs"></i>
+                        <span>บันทึกเส้น ✓</span>
+                    </button>
+                    <button id="calibModeToggleBtn" onclick="cycleCourtCalibMode()" class="px-2 sm:px-2.5 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold text-[10.5px] sm:text-xs flex items-center gap-1 hover:bg-amber-500/30 active:scale-95 transition-all shrink-0">
+                        <i class="ph-bold ph-arrows-clockwise text-xs"></i>
+                        <span id="calibModeToggleLabel">13.4m เต็มสนาม</span>
+                    </button>
+                    <button onclick="triggerAutoSnapCourtCV()" class="px-2 sm:px-2.5 py-1.5 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold text-[10.5px] sm:text-xs flex items-center gap-1 active:scale-95 transition-all shrink-0" title="สแกนและดูดเข้าหาเส้นขาวสนามจริง">
+                        <i class="ph-bold ph-scan text-xs"></i>
+                        <span>สแกนเส้น</span>
+                    </button>
+                    <button onclick="resetCourtCalibToDefault()" class="px-2 py-1.5 rounded-xl bg-white/10 text-slate-300 hover:text-white font-medium text-[10.5px] sm:text-xs flex items-center gap-1 active:scale-95 transition-all shrink-0" title="รีเซ็ตตำแหน่งมาตรฐาน">
+                        <i class="ph-bold ph-arrow-counter-clockwise text-xs"></i>
+                        <span>รีเซ็ต</span>
+                    </button>
+                    <button id="btnPeekCalibToolbar" onclick="toggleCalibToolbarPeek()" class="w-7 h-7 rounded-xl bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center text-xs active:scale-95 transition-all shrink-0" title="ย่อแถบเครื่องมือ">
+                        <i class="ph-bold ph-eye-slash text-xs"></i>
+                    </button>
+                </div>
+
+                <!-- Floating Mini Restorer Button when calibration toolbar is minimized -->
+                <button id="btnRestoreCalibToolbar" onclick="toggleCalibToolbarPeek()" class="hidden absolute top-[112px] right-3 z-30 pointer-events-auto px-2.5 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs shadow-lg flex items-center gap-1 active:scale-95 transition-all">
+                    <i class="ph-bold ph-crosshair text-xs"></i>
+                    <span>ทาบเส้น ⚙️</span>
+                </button>
+
+                <!-- ===== BOTTOM ACTION DOCK (Hero Match Button + Quick Setup Tools + Video Controls) ===== -->
                 <div id="floatingBottomDock" class="hud-bottom absolute inset-x-0 z-20 px-2.5 pointer-events-none flex flex-col gap-2">
                     <!-- Left Edge Expand Arrow Tab (Kept for compatibility with collapse state) -->
                     <button id="btnExpandVerticalDock" onclick="toggleVerticalDockCollapse(false)" class="hidden dock-expand-tab pointer-events-auto" title="แสดงแถบปุ่มควบคุม" aria-label="แสดงแถบปุ่มควบคุม">
@@ -357,26 +386,6 @@
                             <input type="range" id="videoSeekSlider" min="0" max="100" value="0" step="0.1" oninput="seekUploadedVideo(this.value)" class="flex-1 accent-emerald-400 h-1">
                             <span id="videoDurTime" class="text-[10px] font-mono text-slate-400">00:00</span>
                         </div>
-                    </div>
-
-                    <!-- ACTIVE COURT CALIBRATION MULTI-ACTION TOOLBAR (Exclusively shown during court calibration) -->
-                    <div id="courtCalibrationToolbar" class="hidden pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 bg-slate-950/95 backdrop-blur-md px-3 py-2 rounded-2xl border border-amber-500/50 shadow-2xl max-w-md w-full">
-                        <button id="floatingSaveCalibBtn" onclick="toggleCourtCalibrationMode()" class="px-3.5 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/30 flex items-center gap-1 hover:bg-emerald-400 active:scale-95 transition-all">
-                            <i class="ph-fill ph-check-fat text-xs"></i>
-                            <span>บันทึกเส้น ✓</span>
-                        </button>
-                        <button id="calibModeToggleBtn" onclick="cycleCourtCalibMode()" class="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold text-xs flex items-center gap-1 hover:bg-amber-500/30 active:scale-95 transition-all">
-                            <i class="ph-bold ph-arrows-clockwise text-xs"></i>
-                            <span>13.4m เต็มสนาม</span>
-                        </button>
-                        <button onclick="resetCourtCalibToDefault()" class="px-2.5 py-2 rounded-xl bg-white/10 text-slate-300 hover:text-white font-semibold text-xs flex items-center gap-1 active:scale-95 transition-all">
-                            <i class="ph-bold ph-arrow-counter-clockwise text-xs"></i>
-                            <span>รีเซ็ต</span>
-                        </button>
-                        <button onclick="triggerAutoSnapCourtCV()" class="px-2.5 py-2 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-semibold text-xs flex items-center gap-1 active:scale-95 transition-all">
-                            <i class="ph-bold ph-scan text-xs"></i>
-                            <span>สแกนเส้น</span>
-                        </button>
                     </div>
 
                     <!-- Bottom Hero Player Bar (Hero Match Button + Quick Setup Tools Bar) -->
@@ -1106,12 +1115,12 @@
         </div>
     </nav>
 
-    <script src="js/env.local.js?v=20261102d" onerror="window.SHUTTLEPRO_ENV={}"></script>
-    <script src="js/state.js?v=20261102d"></script>
-    <script src="js/cv-court.js?v=20261102d"></script>
-    <script src="js/pose-tracker.js?v=20261102d"></script>
-    <script src="js/scoreboard.js?v=20261102d"></script>
-    <script src="js/live-view.js?v=20261102d"></script>
-    <script src="js/analytics-coach.js?v=20261102d"></script>
+    <script src="js/env.local.js?v=20261102e" onerror="window.SHUTTLEPRO_ENV={}"></script>
+    <script src="js/state.js?v=20261102e"></script>
+    <script src="js/cv-court.js?v=20261102e"></script>
+    <script src="js/pose-tracker.js?v=20261102e"></script>
+    <script src="js/scoreboard.js?v=20261102e"></script>
+    <script src="js/live-view.js?v=20261102e"></script>
+    <script src="js/analytics-coach.js?v=20261102e"></script>
 </body>
 </html>

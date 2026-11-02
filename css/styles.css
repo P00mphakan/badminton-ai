@@ -58,6 +58,18 @@ input, textarea {
     bottom: calc(5.1rem + env(safe-area-inset-bottom, 0px));
 }
 
+/* When calibrating court, completely hide the bottom hero dock & scrubber to ensure 100% unobstructed court view */
+.is-calibrating-court #floatingBottomDock {
+    display: none !important;
+}
+
+/* Semi-transparent ghost mode while user is actively dragging calibration handles */
+#courtCalibrationToolbar.is-dragging-handle {
+    opacity: 0.15 !important;
+    pointer-events: none !important;
+    transition: opacity 0.12s ease !important;
+}
+
 .serve-chip {
     display: inline-flex;
     align-items: center;
