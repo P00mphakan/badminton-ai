@@ -2096,22 +2096,24 @@ function drawRealDetectedPlayers(ctx, w, h) {
 
         // Authentic Neon Glowing Floor Tracker Ring (matches reference broadcast graphic)
         // Perspective scale factor based on court depth
-        const depthScale = 0.65 + Math.max(0, Math.min(1, p.v)) * 0.70;
-        const ringRx = 40 * depthScale;
-        const ringRy = ringRx * 0.38;
+        const depthScale = 0.45 + Math.max(0, Math.min(1, p.v)) * 0.75;
+        const ringRx = 38 * depthScale;
+        const ringRy = ringRx * 0.35;
+        // Align ring firmly to the court floor plane under the shoe soles (never hovering at knee height)
+        const floorY = py + ringRy * 0.20;
 
         const isLocked = p.isLocked || (typeof isPlayersLocked !== 'undefined' && isPlayersLocked);
         const neonColor = p.color || '#00ff9d';
 
         // 1. Holographic Floor Wash (Illuminates the blue court mat within the player's stance)
         ctx.save();
-        const floorGrad = ctx.createRadialGradient(px, py, ringRx * 0.15, px, py, ringRx);
+        const floorGrad = ctx.createRadialGradient(px, floorY, ringRx * 0.15, px, floorY, ringRx);
         floorGrad.addColorStop(0, neonColor + '22');
         floorGrad.addColorStop(0.7, neonColor + '0f');
         floorGrad.addColorStop(1, 'transparent');
         ctx.fillStyle = floorGrad;
         ctx.beginPath();
-        ctx.ellipse(px, py, ringRx, ringRy, 0, 0, Math.PI * 2);
+        ctx.ellipse(px, floorY, ringRx, ringRy, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
 
@@ -2123,7 +2125,7 @@ function drawRealDetectedPlayers(ctx, w, h) {
         ctx.lineWidth = 4.5 * depthScale;
         ctx.globalAlpha = 0.85;
         ctx.beginPath();
-        ctx.ellipse(px, py, ringRx, ringRy, 0, 0, Math.PI * 2);
+        ctx.ellipse(px, floorY, ringRx, ringRy, 0, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
 
@@ -2135,7 +2137,7 @@ function drawRealDetectedPlayers(ctx, w, h) {
         ctx.lineWidth = 2.8 * depthScale;
         ctx.globalAlpha = 0.95;
         ctx.beginPath();
-        ctx.ellipse(px, py, ringRx, ringRy, 0, 0, Math.PI * 2);
+        ctx.ellipse(px, floorY, ringRx, ringRy, 0, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
 
@@ -2147,7 +2149,7 @@ function drawRealDetectedPlayers(ctx, w, h) {
         ctx.lineWidth = 1.4 * depthScale;
         ctx.globalAlpha = 0.92;
         ctx.beginPath();
-        ctx.ellipse(px, py, ringRx, ringRy, 0, 0, Math.PI * 2);
+        ctx.ellipse(px, floorY, ringRx, ringRy, 0, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
 
@@ -2160,10 +2162,10 @@ function drawRealDetectedPlayers(ctx, w, h) {
             ctx.lineWidth = 1.8 * depthScale;
             const tick = 8 * depthScale;
             ctx.beginPath();
-            ctx.moveTo(px, py - ringRy - tick); ctx.lineTo(px, py - ringRy + 2);
-            ctx.moveTo(px, py + ringRy + tick); ctx.lineTo(px, py + ringRy - 2);
-            ctx.moveTo(px - ringRx - tick, py); ctx.lineTo(px - ringRx + 2, py);
-            ctx.moveTo(px + ringRx + tick, py); ctx.lineTo(px + ringRx - 2, py);
+            ctx.moveTo(px, floorY - ringRy - tick); ctx.lineTo(px, floorY - ringRy + 2);
+            ctx.moveTo(px, floorY + ringRy + tick); ctx.lineTo(px, floorY + ringRy - 2);
+            ctx.moveTo(px - ringRx - tick, floorY); ctx.lineTo(px - ringRx + 2, floorY);
+            ctx.moveTo(px + ringRx + tick, floorY); ctx.lineTo(px + ringRx - 2, floorY);
             ctx.stroke();
             ctx.restore();
         }
@@ -2172,7 +2174,7 @@ function drawRealDetectedPlayers(ctx, w, h) {
         const label = `${lockBadge}${p.id} • ${p.currentSpeedKmh} km/h`;
         ctx.font = 'bold 10px Prompt, sans-serif';
         const tw = ctx.measureText(label).width + 14;
-        const labelY = py + ringRy + 5;
+        const labelY = floorY + ringRy + 5;
         ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
         ctx.beginPath();
         ctx.roundRect(px - tw / 2, labelY, tw, 17, 6);

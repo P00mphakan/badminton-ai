@@ -78,7 +78,7 @@ function checkAndUpdatePlayerLockState(now) {
     const requiredSlotIds = isDoublesMatch ? ['A1', 'A2', 'B1', 'B2'] : ['A1', 'B1'];
     const activeDetected = requiredSlotIds.filter(id => {
         const p = players[id];
-        return p && p.detected && (now - p.lastSeenMs < 1400);
+        return p && p.detected && (now - p.lastSeenMs < 2000);
     });
 
     const activeCount = activeDetected.length;
@@ -93,6 +93,13 @@ function checkAndUpdatePlayerLockState(now) {
                 if (players[id]) players[id].isLocked = true;
             });
             showToast(`🎯 ล็อคเป้าหมายผู้เล่นครบ ${requiredCount} คนแล้ว! (${isDoublesMatch ? 'A1, A2, B1, B2' : 'A1, B1'})`);
+        } else {
+            // ล็อคเป้ารายตัวให้ Slot ที่ตรวจจับได้เสถียร
+            activeDetected.forEach(id => {
+                if (players[id] && (now - players[id].lastSeenMs < 1200)) {
+                    players[id].isLocked = true;
+                }
+            });
         }
     } else {
         // ขณะอยู่ในสถานะล็อคเป้า: คงสถานะล็อคให้ผู้เล่นทุกคน
@@ -179,8 +186,8 @@ function evaluatePoseCandidate(pose, crop) {
         score: k.score ?? 0
     }));
     const get = n => kps.find(k => k.name === n);
-    const conf = kps.filter(k => k.score > 0.18);
-    if (conf.length < 4) return { mask: null, player: null };
+    const conf = kps.filter(k => k.score > 0.12);
+    if (conf.length < 3) return { mask: null, player: null };
 
     const xs = conf.map(k => k.x), ys = conf.map(k => k.y);
     const box = {
@@ -189,67 +196,73 @@ function evaluatePoseCandidate(pose, crop) {
         yMin: Math.max(0, Math.min(...ys) - 0.03),
         yMax: Math.min(1, Math.max(...ys) + 0.015)
     };
+    const playerH = Math.max(0.06, box.yMax - box.yMin);
 
-    // Foot contact point:
+    // Foot contact point: must contact the court floor mat at the shoe soles (not up at the ankle bone/knees)
     // 1. Ankles (if visible and confident)
-    const ankles = ['left_ankle', 'right_ankle'].map(get).filter(k => k && k.score >= 0.20);
+    const ankles = ['left_ankle', 'right_ankle'].map(get).filter(k => k && k.score >= 0.16);
     let footX, footY;
     if (ankles.length) {
         footX = ankles.reduce((a, k) => a + k.x, 0) / ankles.length;
-        footY = Math.max(...ankles.map(k => k.y));
+        const maxAnkleY = Math.max(...ankles.map(k => k.y));
+        const knees = ['left_knee', 'right_knee'].map(get).filter(k => k && k.score >= 0.16);
+        const ankleToKnee = knees.length ? (maxAnkleY - (knees.reduce((a, k) => a + k.y, 0) / knees.length)) : 0;
+        // Shift lower by sole offset so the tracker ring sits directly on the court mat under the shoe soles
+        const soleOffset = ankleToKnee > 0.02 ? ankleToKnee * 0.22 : playerH * 0.055;
+        footY = Math.min(1.0, maxAnkleY + soleOffset);
     } else {
         // 2. Knees + Hips extrapolation
-        const knees = ['left_knee', 'right_knee'].map(get).filter(k => k && k.score >= 0.18);
-        const hips = ['left_hip', 'right_hip'].map(get).filter(k => k && k.score >= 0.18);
+        const knees = ['left_knee', 'right_knee'].map(get).filter(k => k && k.score >= 0.14);
+        const hips = ['left_hip', 'right_hip'].map(get).filter(k => k && k.score >= 0.14);
         if (knees.length && hips.length) {
             const kneeY = knees.reduce((a, k) => a + k.y, 0) / knees.length;
             const hipY = hips.reduce((a, k) => a + k.y, 0) / hips.length;
             footX = knees.reduce((a, k) => a + k.x, 0) / knees.length;
-            footY = Math.min(1.0, kneeY + (kneeY - hipY) * 0.95);
+            const thighH = Math.max(0.03, kneeY - hipY);
+            // Lower leg + shoe sole length is ~1.18x thigh length
+            footY = Math.min(1.0, kneeY + thighH * 1.18);
         } else if (hips.length) {
             // 3. Net Occlusion: Far court players behind badminton net tape/mesh
-            // In badminton perspective, net blocks ankles/knees of Team A.
-            // Human anatomy: Hip-to-floor length is approx 1.15 - 1.25x shoulder-to-hip torso length.
-            const shoulders = ['left_shoulder', 'right_shoulder'].map(get).filter(k => k && k.score >= 0.18);
+            // Human anatomy: Hip-to-floor length is approx 1.30 - 1.40x torso length
+            const shoulders = ['left_shoulder', 'right_shoulder'].map(get).filter(k => k && k.score >= 0.14);
             const hipY = hips.reduce((a, k) => a + k.y, 0) / hips.length;
             footX = hips.reduce((a, k) => a + k.x, 0) / hips.length;
             if (shoulders.length) {
                 const shoulderY = shoulders.reduce((a, k) => a + k.y, 0) / shoulders.length;
                 const torsoH = Math.max(0.025, hipY - shoulderY);
-                footY = Math.min(1.0, hipY + torsoH * 1.20);
+                footY = Math.min(1.0, hipY + torsoH * 1.35);
             } else {
-                footY = Math.min(1.0, Math.max(...ys) + 0.08);
+                footY = Math.min(1.0, Math.max(...ys) + playerH * 0.12);
             }
         } else {
             footX = xs.reduce((a, b) => a + b, 0) / xs.length;
-            footY = Math.min(1.0, Math.max(...ys) + 0.05);
+            footY = Math.min(1.0, Math.max(...ys) + playerH * 0.08);
         }
     }
 
     const uv = ShuttleCV.screenToCourtNormalized(footX, footY);
     const corners = ShuttleCV.getCorners();
-    const netScreenY = (corners.netL.y + corners.netR.y) / 2;
+    // Net floor line in screen space (where the net meets the court floor, NOT the 1.55m top tape!)
+    const netFloorScreen = ShuttleCV.courtNormalizedToScreen(0.5, 0.5);
+    const netBaseY = (netFloorScreen && netFloorScreen.valid !== false)
+        ? netFloorScreen.y
+        : ((corners.netL.y + corners.netR.y) / 2 + 0.08);
 
     // Team assignment:
-    // In badminton camera view, the net physically separates Far Court (Team A) and Near Court (Team B).
-    // A player whose feet contact the floor above/behind the net line is in the Far Court (Team A).
-    // A player whose feet contact the floor below/in front of the net line is in the Near Court (Team B).
+    // Far Court (Team A): court depth v <= 0.50 (or screen feet behind netBaseY)
+    // Near Court (Team B): court depth v > 0.50 (or screen feet in front of netBaseY)
     let team;
-    if (footY < netScreenY - 0.015) {
-        team = 'A';
-    } else if (footY > netScreenY + 0.015) {
-        team = 'B';
+    if (uv && isFinite(uv.y)) {
+        team = (uv.y <= 0.51) ? 'A' : 'B';
     } else {
-        // Right at the net tape boundary: fall back to homography metric depth
-        team = (uv.y <= 0.50) ? 'A' : 'B';
+        team = (footY < netBaseY) ? 'A' : 'B';
     }
 
     // In-court gating:
-    // Players regularly jump 1.5 - 2.5m behind baseline and dive into tramlines (BWF run-off area).
-    // Tolerate lateral displacement (tolU = 0.32 ≈ 2.0m) and baseline depth displacement (tolV = 0.35 ≈ 4.7m).
-    // Spectators sitting along distant gymnasium walls are excluded.
-    if (ShuttleCV.isCourtTrusted()) {
-        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.32, 0.35);
+    // Players regularly jump behind the baseline (especially Far Court receives) and dive into tramlines.
+    // Tolerate lateral displacement (tolU = 0.45) and depth displacement (tolV = 0.65) so players never drop lock.
+    if (ShuttleCV.isCourtTrusted() && uv && isFinite(uv.x) && isFinite(uv.y)) {
+        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.45, 0.65);
         if (!inCourt) {
             return { mask: box, player: null };
         }
@@ -428,8 +441,8 @@ async function runRealPoseEstimation(videoEl) {
             p.isLocked = false;
             return;
         }
-        // เมื่อล็อคเป้าแล้ว: ขยายเวลา Coasting เป็น 1800ms เผื่อจังหวะคู่ขาวิ่งตัดหน้าหรือกระโดดตบ
-        const timeoutMs = (isPlayersLocked && p.isLocked) ? 1800 : 900;
+        // เมื่อล็อคเป้าแล้ว: ขยายเวลา Coasting เป็น 2400ms เผื่อจังหวะคู่ขาวิ่งตัดหน้าหรือกระโดดตบ
+        const timeoutMs = (isPlayersLocked && p.isLocked) ? 2400 : 1800;
         if (p.detected && now - p.lastSeenMs > timeoutMs) {
             p.detected = false;
             p.currentSpeedKmh = 0;
@@ -474,7 +487,7 @@ async function runRealPoseEstimation(videoEl) {
         const candsB = [];
 
         poses.forEach(pose => {
-            if ((pose.score ?? 0) < 0.18) return;
+            if ((pose.score ?? 0) < 0.12) return;
             const r = evaluatePoseCandidate(pose, crop);
             if (r.mask) masks.push(r.mask);
             if (r.player) {

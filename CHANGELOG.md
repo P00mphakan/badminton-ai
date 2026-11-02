@@ -22,11 +22,25 @@
 | `v1.2.0-court-math-ui-redesign` | เวอร์ชันเสถียร: แก้ไขคณิตศาสตร์เส้นสนามตรง 100%, แก้บั๊กแอปค้าง, UI Redesign สำหรับนักแบด 1-Tap AI | `git checkout v1.2.0-court-math-ui-redesign -- .` |
 | `v1.2.1-fix-dock-overlap` | เวอร์ชันแก้ปัญหาแถบปุ่มลัดทับซ้อนกับแถบเมนูด้านล่าง | `git checkout v1.2.1-fix-dock-overlap -- .` |
 | `v1.2.2-court-geometry-and-ui-cleanup` | แก้ไขมิติมุมสนามตรงจุด 100%, แก้กราฟิกมาร์คคนตรงตัว, แก้ปัญหา UI 5 ชั้นทับซ้อน, และปรับปรุงสแกนเส้น | `git checkout v1.2.2-court-geometry-and-ui-cleanup -- .` |
-| `v1.3.0-physics-aerodynamics-tracking-update` | **เวอร์ชันล่าสุด: ฟิสิกส์แรงต้านอากาศ (Aerodynamic Drag Model), Spatial Gate Filter & Play Volume Box, ป้องกันเส้นบิดเบี้ยวด้วย orderFourCorners อัตโนมัติบน pointerup, และล็อก Letterbox Render** | `git checkout v1.3.0-physics-aerodynamics-tracking-update -- .` |
+| `v1.3.0-physics-aerodynamics-tracking-update` | ฟิสิกส์แรงต้านอากาศ (Aerodynamic Drag Model), Spatial Gate Filter & Play Volume Box, ป้องกันเส้นบิดเบี้ยวด้วย orderFourCorners อัตโนมัติบน pointerup, และล็อก Letterbox Render | `git checkout v1.3.0-physics-aerodynamics-tracking-update -- .` |
+| `v1.3.1-fix-player-ring-and-target-lock` | **เวอร์ชันล่าสุด: ลดระดับวงแหวน Tracker ลงติดพื้นสนามใต้พื้นรองเท้า (Floor Mat Alignment) และแก้ไข Team Separation / In-Court Gating ให้ล็อคเป้าผู้เล่นครบ 4 คน (A1, A2, B1, B2) ได้แม่นยำ ไม่หลุด** | `git checkout v1.3.1-fix-player-ring-and-target-lock -- .` |
 
 ---
 
 ## 🚀 รายการบันทึกการแก้ไขตามเวอร์ชัน
+
+### [v1.3.1-fix-player-ring-and-target-lock] - 2026-11-02
+- **Player Floor Contact & Neon Tracker Ring Height Fix (`js/pose-tracker.js`, `js/live-view.js`):**
+  - แก้ไขปัญหาวงแหวนเรืองแสงลอยสูงอยู่ที่ระดับหัวเข่า/หน้าแข้ง:
+    - ใน `js/pose-tracker.js`: เพิ่มการชดเชยระยะ Sole Offset (`soleOffset = ankleToKnee * 0.22` หรือ `playerH * 0.055`) จากตำแหน่งข้อเท้า (Ankle Joint) ลงสู่พื้นสัมผัสจริงของพื้นรองเท้า (Shoe Soles on Court Mat)
+    - ปรับปรุงการคำนวณกรณีข้อเท้าถูกบดบังด้วยการประมาณจากเข่า-สะโพก (`kneeY + thighH * 1.18`) และสะโพก-ไหล่ (`hipY + torsoH * 1.35`) ให้สอดคล้องกับสรีระจริง
+    - ใน `js/live-view.js`: กำหนดจุดศูนย์กลางของวงแหวนและรัศมี Perspective (`floorY = py + ringRy * 0.20`) ทำให้วงแหวน แสงสะท้อนพื้น (Floor Wash) เส้นกากบาทเล็ง และป้ายชื่อ วางราบแนบสนิทกับพื้นคอร์ทสีเขียวใต้ฝ่าเท้าผู้เล่น 100%
+- **All-Player Target Lock & Far-Court Detection Fix (`js/pose-tracker.js`):**
+  - แก้ไขบั๊กการแบ่งแดนผู้เล่น (Team A vs Team B): เดิมระบบเปรียบเทียบกับ `netScreenY` (ซึ่งเป็นเทปขอบบนของตาข่ายที่ลอยสูง 1.55 เมตร) ทำให้ผู้เล่นแดนไกล (Team A) ที่ยืนอยู่บนพื้นหลังตาข่ายถูกเข้าใจผิดว่าเป็น Team B และถูกตัดทิ้งจนเหลือตรวจจับได้เพียง `ค้นหา [2/4]`
+  - ปรับระบบการแบ่งแดนใหม่ให้ใช้พิกัดความลึกของสนามจริง $v \le 0.51$ (Far Court = Team A, Near Court = Team B) และเปรียบเทียบกับแนวพื้นโคนตาข่าย (`netBaseY`)
+  - ปรับเกณฑ์ MoveNet MultiPose ให้ตรวจจับผู้เล่นแดนไกลที่ตัวเล็กและถูกตาข่ายบังบางส่วนได้แม่นยำขึ้น (คะแนน $\ge 0.12$, Keypoints $\ge 3$)
+  - ขยาย In-Court Gating Tolerance สำหรับแดนไกล (`tolU = 0.45`, `tolV = 0.65`) เพื่อรองรับจังหวะผู้เล่นถอยไปรับลูกโย่งหลังคอร์ทโดยเป้าหมายไม่หลุด
+  - ขยายเวลา Coasting สำหรับเป้าหมายที่ล็อคแล้วเป็น 2400ms รองรับจังหวะกระโดดตบหรือวิ่งตัดหน้ากัน และเสริมระบบล็อคเป้ารายตัวอัตโนมัติ ทำให้ผู้เล่นล็อคครบ 4 คน (`🎯 ล็อคเป้า 4/4`) ได้อย่างรวดเร็วและแม่นยำ
 
 ### [v1.3.0-physics-aerodynamics-tracking-update] - 2026-11-02
 - **Physics Engine (`js/pose-tracker.js`):**
