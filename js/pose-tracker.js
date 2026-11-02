@@ -231,10 +231,18 @@ function evaluatePoseCandidate(pose, crop) {
     const netScreenY = (corners.netL.y + corners.netR.y) / 2;
 
     // Team assignment:
-    // Team A = Far Court (v <= 0.52 OR player upper body is above net line in screen space)
-    // Team B = Near Court (v > 0.52 AND player is below net line)
-    const isFarCourt = (uv.y <= 0.52) || (footY < netScreenY);
-    const team = isFarCourt ? 'A' : 'B';
+    // In badminton camera view, the net physically separates Far Court (Team A) and Near Court (Team B).
+    // A player whose feet contact the floor above/behind the net line is in the Far Court (Team A).
+    // A player whose feet contact the floor below/in front of the net line is in the Near Court (Team B).
+    let team;
+    if (footY < netScreenY - 0.015) {
+        team = 'A';
+    } else if (footY > netScreenY + 0.015) {
+        team = 'B';
+    } else {
+        // Right at the net tape boundary: fall back to homography metric depth
+        team = (uv.y <= 0.50) ? 'A' : 'B';
+    }
 
     // In-court gating:
     // Players regularly jump 1.5 - 2.5m behind baseline and dive into tramlines (BWF run-off area).
@@ -325,7 +333,7 @@ function assignCandidatesToSlots(team, cands, now) {
             const wasTracked = slot.detected && (now - slot.lastSeenMs < 2500);
             if (wasTracked) {
                 const distM = Math.hypot((slot.u - cand.u) * ShuttleCV.COURT_WIDTH_M, (slot.v - cand.v) * ShuttleCV.COURT_LENGTH_M);
-                if (distM > 3.5) return; // ทิ้ง candidate หากพิกัดห่างจากเป้าที่ล็อคไว้เกินไป
+                if (distM > 4.8) return; // ทิ้ง candidate หากพิกัดห่างจากเป้าที่ล็อคไว้เกินกว่าระยะสปรินต์จริง
             }
             updatePlayerSlot(slot, cand, now);
         });
@@ -870,3 +878,5 @@ function classifyRealStroke(hitter, speedKmh, distM, startV = null, endV = null,
     recordShotLog(hitter, typeName, speedKmh);
     updateLiveHUD();
 }
+
+window.resetPlayerLockState = resetPlayerLockState;

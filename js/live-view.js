@@ -497,6 +497,7 @@ async function toggleWebcam() {
             webcamVideo.loop = false;
             await webcamVideo.play();
             isWebcamActive = true;
+            if (typeof window.resetPlayerLockState === 'function') window.resetPlayerLockState();
             ShuttleCV.setCourtLocked(true);
             if (btnText) btnText.textContent = 'ปิดกล้อง';
 
@@ -734,6 +735,7 @@ function handleVideoUpload(event) {
             initPoseDetectionModel();
             resetMatchData(true);
             if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
+            if (typeof window.resetPlayerLockState === 'function') window.resetPlayerLockState();
             webcamVideo.play().catch(() => {});
             resizeCanvases();
             setTimeout(() => {
@@ -901,6 +903,7 @@ function exitUploadedVideoMode() {
     isUploadedVideoActive = false;
     uploadedVideoDurationFixed = 0;
     if (typeof resetShuttleTracker === 'function') resetShuttleTracker();
+    if (typeof window.resetPlayerLockState === 'function') window.resetPlayerLockState();
     document.getElementById('videoPlaybackControls').classList.add('hidden');
     resizeCanvases();
     showToast('ปิดโหมดวิเคราะห์คลิปวิดีโอแล้ว');
@@ -1133,6 +1136,7 @@ function loadDemoBadmintonClip() {
     webcamVideo.oncanplay = () => {
         isUploadedVideoActive = true;
         isWebcamActive = false;
+        if (typeof window.resetPlayerLockState === 'function') window.resetPlayerLockState();
         webcamVideo.play().catch(() => {});
 
         if (window.ShuttleCV && ShuttleCV.setCalibrationMode) {
@@ -1229,6 +1233,9 @@ function handleCalibrationPointerEnd(e) {
             try {
                 liveCanvas.releasePointerCapture(e.pointerId);
             } catch (err) {}
+        }
+        if (typeof ShuttleCV.orderCourtCorners === 'function') {
+            ShuttleCV.orderCourtCorners();
         }
         draggingHandleKey = null;
         dragPointerPos = null;
@@ -2035,8 +2042,9 @@ function drawRealDetectedPlayers(ctx, w, h) {
         // Strict guard: In Singles matches, never render A2 or B2
         if (!isDoublesMatch && (p.id === 'A2' || p.id === 'B2')) return;
 
-        const px = p.screenX * w;
-        const py = p.screenY * h;
+        ctx.save();
+        const px = (Number.isFinite(p.screenX) ? p.screenX : 0.5) * w;
+        const py = (Number.isFinite(p.screenY) ? p.screenY : 0.5) * h;
 
         if (showTrails && p.positions.length > 1 && ShuttleCV.isCourtValidOrLocked()) {
             const recent = p.positions.slice(-25);

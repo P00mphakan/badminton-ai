@@ -209,6 +209,23 @@ window.ShuttleCV = (function () {
         ];
     }
 
+    function orderFourCorners(tl, tr, br, bl) {
+        const pts = [tl, tr, br, bl];
+        const cx = pts.reduce((s, p) => s + p.x, 0) / 4;
+        const cy = pts.reduce((s, p) => s + p.y, 0) / 4;
+        const cw = [...pts].sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+        let top = 0;
+        for (let i = 1; i < 4; i++) {
+            if (cw[i].y + cw[(i + 1) % 4].y < cw[top].y + cw[(top + 1) % 4].y) top = i;
+        }
+        return {
+            tl: { x: cw[top].x, y: cw[top].y },
+            tr: { x: cw[(top + 1) % 4].x, y: cw[(top + 1) % 4].y },
+            br: { x: cw[(top + 2) % 4].x, y: cw[(top + 2) % 4].y },
+            bl: { x: cw[(top + 3) % 4].x, y: cw[(top + 3) % 4].y }
+        };
+    }
+
     function updateHomographyFromCorners() {
         const anchorRect = getAnchorRect();
         let dstQuad;
@@ -1029,6 +1046,16 @@ window.ShuttleCV = (function () {
         COURT_LENGTH_M,
         NET_Y_M,
         getCorners: () => courtCorners,
+        orderCourtCorners: () => {
+            if (calibrationMode === 'full') {
+                const ordered = orderFourCorners(courtCorners.tl, courtCorners.tr, courtCorners.br, courtCorners.bl);
+                courtCorners.tl = ordered.tl;
+                courtCorners.tr = ordered.tr;
+                courtCorners.br = ordered.br;
+                courtCorners.bl = ordered.bl;
+                updateHomographyFromCorners();
+            }
+        },
         setCorner: (key, x, y) => {
             if (courtCorners[key]) {
                 // Allow handles to extend beyond screen [0, 1] to support wide angle cameras & baseline frame overflow

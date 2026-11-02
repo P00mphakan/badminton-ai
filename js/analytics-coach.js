@@ -955,7 +955,14 @@ function resetMatchData(silent = false) {
         p.minSmashKmh = 0;
         p.avgSmashKmh = 0;
         p.positions = [];
+        p.isLocked = false;
+        p._posWindow = [];
+        p._anchor = null;
     });
+
+    if (typeof window.resetPlayerLockState === 'function') {
+        window.resetPlayerLockState();
+    }
 
     updateScoreboardUI();
     updateLiveHUD();
