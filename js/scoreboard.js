@@ -7,7 +7,7 @@
 
 function evaluateRallyEndAndAutoScore() {
     if (shuttle.trail.length < 4) return;
-    const nowMs = performance.now();
+    const nowMs = (typeof trackerNow === 'function') ? trackerNow() : performance.now();
 
     // 1. Strict Court Trust Gate: Never auto-score against an uncalibrated / unverified court geometry
     if (!ShuttleCV.isCourtTrusted()) {
@@ -100,8 +100,12 @@ function awardPointBWF(winnerTeam, callType, callDescription, landingSpot = null
         scoreA: scoreboard.scoreA,
         scoreB: scoreboard.scoreB,
         winner: winnerTeam,
+        winnerTeam: winnerTeam,
         callType,
-        detail: callDescription
+        detail: callDescription,
+        reason: callDescription,
+        marginCm: landingSpot?.marginCm || 0,
+        scoreAfter: `${scoreboard.scoreA}-${scoreboard.scoreB}`
     });
 
     const sA = scoreboard.scoreA;

@@ -318,7 +318,7 @@ function evaluatePoseCandidate(pose, crop) {
     // Court proximity score: give higher weight to players within court lines vs distant spectators
     const lateralDist = Math.abs(uv.x - 0.5);
     const courtProximity = Math.max(0.4, 1.0 - Math.max(0, lateralDist - 0.5) * 1.2);
-    const ankleConf = ankles.length ? Math.max(...ankles.map(k => k.score)) : 0.40;
+    const ankleConf = confidentAnkles.length ? Math.max(...confidentAnkles.map(k => k.score)) : 0.40;
 
     return {
         mask: box,
@@ -591,7 +591,7 @@ async function runRealPoseEstimation(videoEl) {
 
         detectedHumanBoxes = masks;
     } catch (e) {
-        // ignore single-frame inference error
+        console.error('[runRealPoseEstimation error]:', e);
     } finally {
         poseInferenceBusy = false;
     }
@@ -817,14 +817,14 @@ function onTrackConfirmed(now) {
     const first = shuttleTrack[0];
     const second = shuttleTrack[Math.min(2, shuttleTrack.length - 1)];
     const near = nearestPlayerToPoint(first.sx, first.sy);
-    // 2.2 Interference Rejection:
-    // Shuttlecock hit must originate near an active on-court match player
-    if (!near || near.d > 2.2 || !near.p) {
-        shuttleTrack = [];
-        return;
+    let hitter = (near && near.p && near.d <= 3.2) ? near.p : null;
+    if (!hitter) {
+        const uv = ShuttleCV.screenToCourtNormalized(first.sx, first.sy);
+        const isFarHalf = (uv && isFinite(uv.y)) ? (uv.y <= 0.51) : (first.sy < 0.5);
+        hitter = isFarHalf ? players.A1 : players.B1;
     }
     shuttle.trail = [];
-    startShotFromContact(first, second, now, near.p);
+    startShotFromContact(first, second, now, hitter);
 }
 
 function measureTrackInitialSpeedMps(track, hitterV) {
@@ -857,8 +857,8 @@ function finalizeShot(shot, endU, endV, tEnd, isLanding) {
     const x = Math.hypot(dH, dz);
     const tf = (tEnd - shot.tHit) / 1000;
 
-    // Require minimum flight duration (0.24s) and court travel (1.8m) so partial tracks never inflate v0
-    if (tf < 0.24 || tf > 3.2 || dH < 1.8) return;
+    // Require minimum flight duration (0.08s) and court travel (1.0m) so fast smashes and drives are preserved
+    if (tf < 0.08 || tf > 3.8 || dH < 1.0) return;
 
     // 1. Aerodynamic drag model exit speed (BWF standard aerodynamic length L ~ 4.99m)
     const smashSpeedKmh = calculateSmashInitialSpeed(x, tf);
@@ -898,18 +898,21 @@ function handleTrackEnd(now) {
     const realPts = shuttleTrack.filter(pt => !pt.inpainted);
     if (realPts.length >= 3 && activeShot) {
         const last = realPts[realPts.length - 1];
-        const prev = realPts[realPts.length - 2];
         const oppTeam = activeShot.hitter ? (activeShot.hitter.team === 'A' ? 'B' : 'A') : null;
         const rec = nearestPlayerToPoint(last.sx, last.sy, oppTeam);
 
-        if (rec && rec.d < 1.85) {
+        if (rec && rec.d < 2.5) {
             finalizeShot(activeShot, rec.p.u, rec.p.v, last.t, false);
             pendingRallyEnd = null;
         } else {
-            const descending = last.sy > prev.sy;
+            const lastUV = ShuttleCV.screenToCourtNormalized(last.sx, last.sy);
+            const endU = (lastUV && isFinite(lastUV.x)) ? Math.max(-0.3, Math.min(1.3, lastUV.x)) : 0.5;
+            const endV = (lastUV && isFinite(lastUV.y)) ? Math.max(-0.3, Math.min(1.3, lastUV.y)) : 0.5;
+            const prev = realPts[realPts.length - 2];
+            const descending = prev ? last.sy > prev.sy : false;
             const floorUV = descending ? isPointOnCourtFloor(last.sx, last.sy) : null;
-            if (floorUV && realPts.length >= 6 && activeShot.hitter) {
-                finalizeShot(activeShot, Math.max(-0.2, Math.min(1.2, floorUV.x)), Math.max(-0.1, Math.min(1.1, floorUV.y)), last.t, true);
+            finalizeShot(activeShot, endU, endV, last.t, !!floorUV);
+            if (floorUV || realPts.length >= 5) {
                 pendingRallyEnd = { t: now };
             }
         }

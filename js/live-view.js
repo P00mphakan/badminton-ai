@@ -1814,6 +1814,12 @@ function renderLiveScene() {
         const cvRes = ShuttleCV.analyzeVideoFrameCV(webcamVideo, detectedHumanBoxes);
         processRealShuttleAndRally(cvRes);
         updateCVConfidenceBadges();
+        if (typeof updateLiveHUD === 'function') {
+            updateLiveHUD();
+        }
+        if (typeof activeTab !== 'undefined' && (activeTab === 'analytics' || activeTab === 'heatmap') && typeof drawAnalyticsCourt === 'function') {
+            drawAnalyticsCourt();
+        }
     }
 
     const chkCourtLines = document.getElementById('chkShowCourtLines')?.checked ?? true;

@@ -471,11 +471,11 @@ function buildStructuredMatchDataJSON() {
         })),
         point_log: pointLog.slice(0, 15).map(pt => ({
             timestamp: pt.time || '00:00',
-            winner_team: pt.winnerTeam,
-            call_type: pt.callType,
-            reason: pt.reason,
+            winner_team: pt.winnerTeam || pt.winner || 'A',
+            call_type: pt.callType || 'POINT',
+            reason: pt.reason || pt.detail || '',
             margin_cm: pt.marginCm || 0,
-            score_after: pt.scoreAfter
+            score_after: pt.scoreAfter || `${pt.scoreA ?? 0}-${pt.scoreB ?? 0}`
         })),
         shots_log: shotHistory.slice(0, 15).map(s => ({
             timestamp: s.time,

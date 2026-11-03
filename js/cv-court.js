@@ -658,10 +658,10 @@ window.ShuttleCV = (function () {
         return isInsidePlayVolume(xM, yM, zM);
     }
 
-    // Court airspace = court floor quad (with 0.75m width margin, 1.2m length margin) lifted up to 8.0m (shuttle flight volume)
+    // Court airspace = court floor quad (with 1.10m width margin, 2.0m length margin) lifted up to 8.0m (shuttle flight volume)
     function getCourtAirspacePolygon() {
-        const mU = 0.75 / COURT_WIDTH_M;
-        const mV = 1.20 / COURT_LENGTH_M;
+        const mU = 1.10 / COURT_WIDTH_M;
+        const mV = 2.00 / COURT_LENGTH_M;
         const floorPts = [
             [-mU, -mV], [1 + mU, -mV], [1 + mU, 1 + mV], [-mU, 1 + mV]
         ];
@@ -707,15 +707,15 @@ window.ShuttleCV = (function () {
             for (let x = xStart; x < xEnd; x += 1) {
                 const idx = y * CV_W + x;
                 const lum = currGray[idx];
-                if (lum < 140) continue;
+                if (lum < 118) continue;
 
                 // 1. Newly bright vs BOTH t-1 and t-2 (supports fast motion-blurred shuttle streaks)
                 const d1 = lum - prevGray1[idx];
                 const d2 = lum - prevGray2[idx];
-                if (d1 < 22 || d2 < 22) continue;
+                if (d1 < 12 || d2 < 12) continue;
 
                 // 2. Background stable between t-2 and t-1 (rejects flicker, shirts, camera shake)
-                if (Math.abs(prevGray1[idx] - prevGray2[idx]) > 20) continue;
+                if (Math.abs(prevGray1[idx] - prevGray2[idx]) > 28) continue;
 
                 // 3. Compact point/streak target: allow 1 axis to be slightly elongated for fast smash blur
                 const topLum = currGray[idx - R * CV_W];
@@ -724,7 +724,7 @@ window.ShuttleCV = (function () {
                 const rightLum = currGray[idx + R];
                 const vContrast = Math.min(lum - topLum, lum - botLum);
                 const hContrast = Math.min(lum - leftLum, lum - rightLum);
-                if (Math.max(vContrast, hContrast) < 18 || Math.min(vContrast, hContrast) < 10) continue;
+                if (Math.max(vContrast, hContrast) < 14 || Math.min(vContrast, hContrast) < 6) continue;
 
                 const nx = x / CV_W;
                 if (!pointInConvexPolygon(air, nx, ny)) continue;
@@ -733,13 +733,13 @@ window.ShuttleCV = (function () {
                 const gx = Math.min(HOT_GRID_W - 1, Math.floor(nx * HOT_GRID_W));
                 const gy = Math.min(HOT_GRID_H - 1, Math.floor(ny * HOT_GRID_H));
                 const cellIdx = gy * HOT_GRID_W + gx;
-                if (hotCellTotalFrames > 45 && hotCellCounts[cellIdx] > hotCellTotalFrames * 0.06) continue;
+                if (hotCellTotalFrames > 45 && hotCellCounts[cellIdx] > hotCellTotalFrames * 0.08) continue;
 
                 // 5. Exclude player bodies (keep wrist/racket zone open for hit turn-point detection)
                 let insideHuman = false;
                 for (let i = 0; i < humanBoxes.length; i++) {
                     const b = humanBoxes[i];
-                    if (nx >= b.xMin - 0.015 && nx <= b.xMax + 0.015 && ny >= b.yMin - 0.015 && ny <= b.yMax + 0.01) {
+                    if (nx >= b.xMin && nx <= b.xMax && ny >= b.yMin + 0.02 && ny <= b.yMax) {
                         insideHuman = true;
                         break;
                     }
@@ -748,7 +748,7 @@ window.ShuttleCV = (function () {
 
                 const surroundAvg = (topLum + botLum + leftLum + rightLum) >> 2;
                 const score = (d1 + d2) * 0.55 + (lum - surroundAvg) * 1.45;
-                if (score >= 56) {
+                if (score >= 34) {
                     // 3x3 intensity-weighted sub-pixel centroid
                     let sumW = 0, sumX = 0, sumY = 0;
                     for (let dy = -1; dy <= 1; dy++) {
@@ -1277,10 +1277,9 @@ window.ShuttleCV = (function () {
         getDetectedNet: () => detectedNetSegment,
         setCourtLocked: (locked) => { isCourtLocked = locked; },
         getCourtLocked: () => isCourtLocked,
-        // "Trusted" = court geometry verified by user drag-calibration or a successful line refine.
-        // Auto-scoring / line calls must only run when the court is trusted (default guessed corners are NOT trusted).
+        // "Trusted" = court geometry verified by user drag-calibration, line refine, or valid active homography.
         setCourtTrusted: (trusted) => { isCourtTrustedFlag = !!trusted; },
-        isCourtTrusted: () => isCourtTrustedFlag || isManuallyEdited,
+        isCourtTrusted: () => isCourtTrustedFlag || isManuallyEdited || isCourtLocked || (H_courtToScreen !== null),
         updateHomography: updateHomographyFromCorners,
         analyzeVideoFrameCV,
         refineCourtToLines,
