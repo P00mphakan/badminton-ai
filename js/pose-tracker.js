@@ -965,33 +965,128 @@ function processRealShuttleAndRally(cvResult) {
     const m = shuttleTrack.length;
     if (m >= 2) {
         const pred = predictBallisticPoint(shuttleTrack, now);
+        const lastReal = [...shuttleTrack].reverse().find(pt => !pt.inpainted);
         const missedMs = lastReal ? (now - lastReal.t) : 16;
-        const gapMultiplier = 1 + Math.min(2.2, missedMs / 45);
-        const gate = Math.min(0.22, (0.032 + pred.stepLen * 0.85) * gapMultiplier);
-        let bestD = gate;
+        const gapMultiplier = 1 + Math.min(2.0, missedMs / 45);
+
+        // Adaptive search gate: tight enough to prevent jumping across court, wide enough for fast smashes
+        const gate = Math.min(0.12, Math.max(0.038, pred.stepLen * 1.45) * gapMultiplier);
+        let bestCost = Infinity;
+
+        const b = shuttleTrack[m - 1];
+        const a = shuttleTrack[Math.max(0, m - 2)];
+        const prevVx = (b.sx - a.sx);
+        const prevVy = (b.sy - a.sy);
+        const prevSpeed = Math.hypot(prevVx, prevVy);
+
+        // Direction constraint from active hitter:
+        // If Team B hit: direction points towards far court (vy < 0)
+        // If Team A hit: direction points towards near court (vy > 0)
+        const hitterTeam = activeShot?.hitter?.team;
+
         cands.forEach(c => {
-            const d = Math.hypot(c.x - pred.x, c.y - pred.y);
-            if (d < bestD) { bestD = d; chosen = c; }
+            const dPred = Math.hypot(c.x - pred.x, c.y - pred.y);
+            if (dPred > gate) return;
+
+            const candVx = c.x - b.sx;
+            const candVy = c.y - b.sy;
+            const candMag = Math.hypot(candVx, candVy);
+
+            // Speed sanity check: speed cannot exceed 380 km/h (~105 m/s)
+            const dtSec = Math.max(0.008, (now - b.t) / 1000);
+            const metricDist = Math.hypot((c.x - b.sx) * ShuttleCV.COURT_WIDTH_M, (c.y - b.sy) * ShuttleCV.COURT_LENGTH_M);
+            if (metricDist / dtSec > 110) return; // Discard impossible teleportation jumps
+
+            // Direction consistency with existing flight trajectory
+            const dot = candVx * prevVx + candVy * prevVy;
+            const cosAngle = (candMag * prevSpeed > 1e-6) ? (dot / (candMag * prevSpeed)) : 1.0;
+
+            // If in mid-air (no opponent nearby), flight path MUST be straight/smooth (cosAngle >= 0.30)
+            const oppTeam = hitterTeam ? (hitterTeam === 'A' ? 'B' : 'A') : null;
+            const nearOpp = nearestPlayerToPoint(b.sx, b.sy, oppTeam);
+            const isNearOpponent = nearOpp && nearOpp.d < 2.4;
+
+            if (!isNearOpponent && cosAngle < 0.30) {
+                return; // Discard wild mid-air 90-180 degree turns
+            }
+
+            // Hitter directional penalty: if ball is flying backwards towards hitter's wall early in flight
+            let dirPenalty = 0;
+            if (m < 8 && hitterTeam) {
+                if (hitterTeam === 'B' && candVy > 0.01) dirPenalty += 0.08; // Team B hit should move UP towards net
+                if (hitterTeam === 'A' && candVy < -0.01) dirPenalty += 0.08; // Team A hit should move DOWN towards net
+            }
+
+            const cost = dPred * 1.5 + (1.0 - cosAngle) * 0.03 + dirPenalty - (c.confidence / 100) * 0.01;
+            if (cost < bestCost) {
+                bestCost = cost;
+                chosen = c;
+            }
         });
 
         // InpaintNet-style Trajectory Bridge: if no candidate matched right on the ballistic curve,
-        // check if a candidate near a player represents a sharp hit reversal, or inpaint the occluded frame
+        // check if a candidate near a player represents a sharp hit reversal
         if (!chosen && cands.length > 0) {
-            const b = shuttleTrack[m - 1];
-            const nearCand = cands.find(c => Math.hypot(c.x - b.sx, c.y - b.sy) < 0.09);
-            if (nearCand) chosen = nearCand;
+            const bPt = shuttleTrack[m - 1];
+            const nearOpp = nearestPlayerToPoint(bPt.sx, bPt.sy);
+            if (nearOpp && nearOpp.d < 2.0) {
+                const nearCand = cands.find(c => Math.hypot(c.x - bPt.sx, c.y - bPt.sy) < 0.08);
+                if (nearCand) chosen = nearCand;
+            }
         }
     } else if (m === 1) {
         const b = shuttleTrack[0];
-        const maxStep = Math.min(0.16, 0.095 * Math.max(1, (now - b.t) / 16.7));
-        let bestD = maxStep;
+        const maxStep = Math.min(0.12, Math.max(0.035, 0.085 * Math.max(1, (now - b.t) / 16.7)));
+        let bestCost = Infinity;
+
+        // Check if origin b is near a player who hit the shuttle
+        const nearHitter = nearestPlayerToPoint(b.sx, b.sy);
+        const hitterTeam = nearHitter?.p?.team;
+
         cands.forEach(c => {
             const d = Math.hypot(c.x - b.sx, c.y - b.sy);
-            if (d >= 0.0025 && d < bestD) { bestD = d; chosen = c; }
+            if (d < 0.003 || d > maxStep) return;
+
+            const candVy = c.y - b.sy;
+            // Direction verification after player hit:
+            // Team B player must hit forwards towards net (sy decreasing / candVy < 0)
+            // Team A player must hit forwards towards net (sy increasing / candVy > 0)
+            let dirScore = 0;
+            if (hitterTeam === 'B') {
+                if (candVy > 0.01) return; // wrong direction (flying backwards)
+                dirScore = -0.02;
+            } else if (hitterTeam === 'A') {
+                if (candVy < -0.01) return; // wrong direction (flying backwards)
+                dirScore = -0.02;
+            }
+
+            const cost = d + dirScore - (c.confidence / 100) * 0.02;
+            if (cost < bestCost) {
+                bestCost = cost;
+                chosen = c;
+            }
         });
-        if (!chosen && cands.length) shuttleTrack = [{ sx: cands[0].x, sy: cands[0].y, t: now, inpainted: false }];
+
+        if (!chosen) {
+            // Do NOT randomly jump to noise across the screen! Only re-seed if near a player
+            const candNearPlayer = cands.find(c => {
+                const n = nearestPlayerToPoint(c.x, c.y);
+                return n && n.d < 2.0;
+            });
+            if (candNearPlayer) {
+                shuttleTrack = [{ sx: candNearPlayer.x, sy: candNearPlayer.y, t: now, inpainted: false }];
+            }
+        }
     } else if (cands.length) {
-        shuttleTrack = [{ sx: cands[0].x, sy: cands[0].y, t: now, inpainted: false }];
+        // Only seed a brand-new track if the candidate originates near an active player or high-confidence airspace point
+        const candNearPlayer = cands.find(c => {
+            const n = nearestPlayerToPoint(c.x, c.y);
+            return n && n.d < 2.5;
+        }) || cands.find(c => c.confidence >= 45);
+
+        if (candNearPlayer) {
+            shuttleTrack = [{ sx: candNearPlayer.x, sy: candNearPlayer.y, t: now, inpainted: false }];
+        }
     }
 
     if (chosen) {
@@ -1079,8 +1174,13 @@ function processRealShuttleAndRally(cvResult) {
         shuttle.detected = true;
         if (!last.inpainted) shuttle.lastSeenMs = now;
         shuttle.framesInFlight = shuttleTrack.length;
-        shuttle.trail.push({ sx: last.sx, sy: last.sy, u: shuttle.u, v: shuttle.v, t: now });
-        if (shuttle.trail.length > 28) shuttle.trail.shift();
+        // Trail hygiene: reject teleportation jumps into the visual trail
+        const lastTrail = shuttle.trail.length ? shuttle.trail[shuttle.trail.length - 1] : null;
+        const jumpD = lastTrail ? Math.hypot(last.sx - lastTrail.sx, last.sy - lastTrail.sy) : 0;
+        if (!lastTrail || jumpD < 0.12) {
+            shuttle.trail.push({ sx: last.sx, sy: last.sy, u: shuttle.u, v: shuttle.v, t: now });
+            if (shuttle.trail.length > 28) shuttle.trail.shift();
+        }
         return;
     }
 
