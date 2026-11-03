@@ -2183,9 +2183,18 @@ function drawRealDetectedPlayers(ctx, w, h) {
         // Strict guard: In Singles matches, never render A2 or B2
         if (!isDoublesMatch && (p.id === 'A2' || p.id === 'B2')) return;
 
+        // Smooth 60 FPS interpolation for buttery-smooth fluid floor ring motion
+        const targetSX = Number.isFinite(p.screenX) ? p.screenX : 0.5;
+        const targetSY = Number.isFinite(p.screenY) ? p.screenY : 0.5;
+        if (!Number.isFinite(p.renderScreenX)) p.renderScreenX = targetSX;
+        if (!Number.isFinite(p.renderScreenY)) p.renderScreenY = targetSY;
+
+        p.renderScreenX += (targetSX - p.renderScreenX) * 0.38;
+        p.renderScreenY += (targetSY - p.renderScreenY) * 0.38;
+
         ctx.save();
-        const px = (Number.isFinite(p.screenX) ? p.screenX : 0.5) * w;
-        const py = (Number.isFinite(p.screenY) ? p.screenY : 0.5) * h;
+        const px = p.renderScreenX * w;
+        const py = p.renderScreenY * h;
 
         if (showTrails && p.positions.length > 1 && ShuttleCV.isCourtValidOrLocked()) {
             const recent = p.positions.slice(-25);
@@ -2204,8 +2213,21 @@ function drawRealDetectedPlayers(ctx, w, h) {
         }
 
         if (showSkeleton && p.keypoints && p.keypoints.length > 0) {
+            if (!p._renderKp) p._renderKp = {};
             const kpMap = {};
-            p.keypoints.forEach(k => { if (k.score > 0.25) kpMap[k.name] = k; });
+            p.keypoints.forEach(k => {
+                if (k.score > 0.22) {
+                    if (!p._renderKp[k.name]) {
+                        p._renderKp[k.name] = { x: k.x, y: k.y, score: k.score };
+                    } else {
+                        const cur = p._renderKp[k.name];
+                        cur.x += (k.x - cur.x) * 0.40;
+                        cur.y += (k.y - cur.y) * 0.40;
+                        cur.score = k.score;
+                    }
+                    kpMap[k.name] = p._renderKp[k.name];
+                }
+            });
             const bones = [
                 ['left_shoulder', 'right_shoulder'],
                 ['left_shoulder', 'left_elbow'], ['left_elbow', 'left_wrist'],

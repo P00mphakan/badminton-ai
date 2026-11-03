@@ -306,26 +306,28 @@ function evaluatePoseCandidate(pose, crop) {
     }
 
     // In-court gating & Audience rejection:
-    // Allow players to defend behind baseline (up to 4.5m) and jump into tramlines
-    // Tolerate lateral displacement (tolU = 0.45) and depth displacement (tolV = 0.65) so players never drop lock
+    // Allow players to defend behind baseline and jump into tramlines
+    // Strict lateral gate (tolU = 0.16 ~ 0.98m outside doubles tramline): strictly eliminates adjacent courts!
+    // Depth gate (tolV = 0.25 ~ 3.3m behind baseline): allows deep jump smashes and lifts while rejecting spectators
     if (ShuttleCV.isCourtTrusted() && uv && isFinite(uv.x) && isFinite(uv.y)) {
-        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.45, 0.65);
+        const inCourt = ShuttleCV.isInsideCourt(uv.x, uv.y, 0.16, 0.25);
         if (!inCourt) {
             return { mask: box, player: null };
         }
     }
 
-    // Court proximity score: give higher weight to players within court lines vs distant spectators
-    const lateralDist = Math.abs(uv.x - 0.5);
-    const courtProximity = Math.max(0.4, 1.0 - Math.max(0, lateralDist - 0.5) * 1.2);
+    // Court proximity score: give substantially higher weight to players within court lines vs adjacent sidelines
+    const isInsideLines = (uv && isFinite(uv.x) && isFinite(uv.y)) && (uv.x >= 0 && uv.x <= 1 && uv.y >= 0 && uv.y <= 1);
+    const outDistM = (uv && isFinite(uv.x)) ? Math.max(0, -uv.x, uv.x - 1.0) * ShuttleCV.COURT_WIDTH_M : 1.0;
+    const courtProximity = isInsideLines ? 1.0 : Math.max(0.12, 1.0 - outDistM * 1.6);
     const ankleConf = confidentAnkles.length ? Math.max(...confidentAnkles.map(k => k.score)) : 0.40;
 
     return {
         mask: box,
         player: {
             team,
-            u: Math.max(0, Math.min(1, uv.x)),
-            v: Math.max(0, Math.min(1, uv.y)),
+            u: Math.max(-0.2, Math.min(1.2, uv.x)),
+            v: Math.max(-0.3, Math.min(1.3, uv.y)),
             footX, footY, box, kps,
             score: (pose.score ?? 0.5) * courtProximity * (0.6 + 0.4 * ankleConf)
         }
@@ -349,24 +351,26 @@ function assignCandidatesToSlots(team, cands, now) {
 
     const slotCost = (slot, idx, c) => {
         const recent = now - slot.lastSeenMs < (isPlayersLocked ? 2500 : 2000);
+        const boundaryPenalty = (c.u < 0 || c.u > 1) ? 6.0 : 0.0;
         if (recent) {
             const distM = Math.hypot((slot.u - c.u) * ShuttleCV.COURT_WIDTH_M, (slot.v - c.v) * ShuttleCV.COURT_LENGTH_M);
             
             if (isPlayersLocked || slot.isLocked) {
                 // เมื่อเข้าสู่สถานะล็อคเป้า:
                 // 1. ลงโทษอย่างรุนแรงหากพิกัดกระโดดเกิน 2.8 เมตร (ป้องกันการสลับ Slot ID ระหว่างคู่ขา)
-                if (distM > 2.8) return distM * 5.0 + 30.0;
+                if (distM > 2.8) return distM * 5.0 + 30.0 + boundaryPenalty;
                 // 2. ให้ความสำคัญสูงสุดกับความต่อเนื่องของ Track เดิม
-                return distM * 1.6;
+                return distM * 1.6 + boundaryPenalty;
             }
 
             // ก่อนล็อคเป้า: ปกป้องการกระโดดฉับพลันปกติ
-            if (now - slot.lastSeenMs < 300 && distM > 3.0) return distM + 12.0;
-            return distM;
+            let cost = distM + boundaryPenalty;
+            if (now - slot.lastSeenMs < 300 && distM > 3.0) cost += 12.0;
+            return cost;
         }
         // Not tracked yet: slot 1 = left side of screen, slot 2 = right side
         const priorU = slotIds.length === 1 ? 0.5 : (idx === 0 ? 0.25 : 0.75);
-        return Math.abs(c.u - priorU) * ShuttleCV.COURT_WIDTH_M + 1.5;
+        return Math.abs(c.u - priorU) * ShuttleCV.COURT_WIDTH_M + 1.5 + boundaryPenalty;
     };
 
     let best = null;
@@ -408,16 +412,19 @@ function updatePlayerSlot(slot, c, now) {
 
     // One Euro Filter initialization & filtering (removes foot jitter while maintaining instant sprint response)
     if (!slot._filterU) {
-        slot._filterU = new OneEuroFilter(30, 0.8, 0.010, 1.0);
-        slot._filterV = new OneEuroFilter(30, 0.8, 0.010, 1.0);
-        slot._filterSX = new OneEuroFilter(30, 0.9, 0.012, 1.0);
-        slot._filterSY = new OneEuroFilter(30, 0.9, 0.012, 1.0);
+        slot._filterU = new OneEuroFilter(30, 0.45, 0.006, 1.0);
+        slot._filterV = new OneEuroFilter(30, 0.45, 0.006, 1.0);
+        slot._filterSX = new OneEuroFilter(30, 0.45, 0.008, 1.0);
+        slot._filterSY = new OneEuroFilter(30, 0.45, 0.008, 1.0);
     }
     if (!wasTracked) {
         slot._filterU.reset();
         slot._filterV.reset();
         slot._filterSX.reset();
         slot._filterSY.reset();
+        slot.renderScreenX = null;
+        slot.renderScreenY = null;
+        slot._renderKp = null;
     }
 
     const ring = ShuttleCV.courtNormalizedToScreen(c.u, c.v);
@@ -1132,6 +1139,9 @@ window.resetPoseTimestamps = function() {
             p.lastSeenMs = 0;
             p._posWindow = [];
             p._anchor = null;
+            p.renderScreenX = null;
+            p.renderScreenY = null;
+            p._renderKp = null;
         });
     }
 };
