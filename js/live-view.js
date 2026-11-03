@@ -2352,15 +2352,8 @@ function drawRealShuttleAndHawkeye(ctx, w, h) {
             ctx.stroke();
         }
 
-        const targetSX = Number.isFinite(shuttle.screenX) ? shuttle.screenX : 0.5;
-        const targetSY = Number.isFinite(shuttle.screenY) ? shuttle.screenY : 0.5;
-        if (!Number.isFinite(shuttle.renderScreenX)) shuttle.renderScreenX = targetSX;
-        if (!Number.isFinite(shuttle.renderScreenY)) shuttle.renderScreenY = targetSY;
-        shuttle.renderScreenX += (targetSX - shuttle.renderScreenX) * 0.45;
-        shuttle.renderScreenY += (targetSY - shuttle.renderScreenY) * 0.45;
-
-        const sx = shuttle.renderScreenX * w;
-        const sy = shuttle.renderScreenY * h;
+        const sx = shuttle.screenX * w;
+        const sy = shuttle.screenY * h;
         ctx.shadowColor = sColor;
         ctx.shadowBlur = 10;
         ctx.strokeStyle = sColor;
