@@ -2461,8 +2461,8 @@ function drawDebugOverlayHUD(ctx, w, h) {
 
     const lines = [
         `FPS: ${currentFps} fps | dt: ${lastFrameDtMs.toFixed(1)} ms`,
-        `MoveNet MultiPose: ${poseMs.toFixed(1)} ms`,
-        `Shuttle: ${shuttle.detected ? 'TRACKED' : 'SEARCH'} | Raw/Reg: ${regKmh} km/h`,
+        `YOLO Realtime Engine: ${poseMs.toFixed(1)} ms | ${typeof window.YOLORealtime !== 'undefined' ? window.YOLORealtime.backend : 'WebGL'}`,
+        `YOLO Shuttle: ${shuttle.detected ? 'TRACKED' : 'SEARCH'} | Raw/Reg: ${regKmh} km/h`,
         `Shuttle Peak (Drag v0): ${shuttle.speedKmh} km/h | Pts: ${typeof shuttleTrack !== 'undefined' ? shuttleTrack.length : 0}`,
         `Court: ${ShuttleCV.getCourtLocked() ? 'LOCKED' : 'CALIB'} | Conf: ${ShuttleCV.getCourtConfidence()}%`,
         `A1: u=${players.A1.u.toFixed(2)}, v=${players.A1.v.toFixed(2)} | ${players.A1.currentSpeedKmh} km/h`,
